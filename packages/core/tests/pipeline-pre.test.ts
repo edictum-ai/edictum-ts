@@ -371,6 +371,24 @@ describe("TestContractTypeDiscrimination", () => {
     ).toThrow(EdictumConfigError);
   });
 
+  test("contractType_pre_accepted_and_routes_to_preExecute", async () => {
+    const backend = new MemoryBackend();
+    const denyAll: Precondition = {
+      contractType: "pre",
+      tool: "*",
+      check: (_env) => Verdict.fail("fired"),
+    };
+
+    const guard = makeGuard({ contracts: [denyAll], backend });
+    const pipeline = new GovernancePipeline(guard);
+    const session = new Session("t", backend);
+    await session.incrementAttempts();
+
+    const decision = await pipeline.preExecute(createEnvelope("TestTool", {}), session);
+    expect(decision.action).toBe("deny");
+    expect(decision.reason).toBe("fired");
+  });
+
   test("contractType_post_routed_to_postExecute_not_preExecute", async () => {
     const backend = new MemoryBackend();
     const post: Postcondition = {
