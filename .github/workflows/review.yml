@@ -7,7 +7,9 @@ on:
 
 concurrency:
   group: review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # Do NOT cancel in-progress: killing a review mid-flight and restarting
+  # on the latest push loses findings from the full diff analysis.
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -73,9 +75,12 @@ jobs:
                - `/tmp/governance/review-instructions.md` — comment formatting rules
                - `/tmp/governance/review-template.md` — the template to fill in
 
-            2. Get the diff:
-               - `git diff origin/main...HEAD --name-only` for changed files
-               - `git diff origin/main...HEAD` for full diff
+            2. Get the FULL diff against main (not just the latest push):
+               - `git diff origin/main...HEAD --name-only` for ALL changed files in the PR
+               - `git diff origin/main...HEAD` for the complete diff
+               - IMPORTANT: Review the ENTIRE PR diff, not just the latest commit.
+                 This workflow runs on every push. You must review all accumulated
+                 changes to avoid missing issues introduced in earlier commits.
 
             3. Route checks by file type:
                - `packages/core/src/**` → code quality, contract correctness, API design, security
@@ -100,12 +105,18 @@ jobs:
             7. Do NOT post the comment yourself. The workflow handles posting after validation.
 
             ## Rules
-            - **EXHAUSTIVE**: Flag ALL issues in a SINGLE pass. Do not prioritize — report everything you find. The goal is zero follow-up rounds. If you find 8 issues, report all 8. Do not stop at 3.
-            - Review the FULL diff against main (`git diff origin/main...HEAD`), not just the latest commit.
+            - **Exhaustive, single pass.** Find ALL issues on the first review. This
+              workflow runs on every push and the comment is a sticky overwrite. If you
+              miss something, the next run may also miss it because it sees the same diff.
+              There is no "next round" — this is your one shot.
             - A clean PR with zero findings is a good outcome.
             - Do NOT flag style/formatting (linters handle that).
             - ALWAYS include the attack path for security issues.
             - ALWAYS include file path + line number + concrete fix with code.
+            - Check EVERY public method that accepts untrusted input for validation consistency.
+            - Check EVERY collection getter for defensive copies.
+            - Check EVERY fan-out/iteration pattern for shared mutable state.
+            - Check EVERY when/filter predicate is actually called.
 
       - name: Validate and post review comment
         env:
