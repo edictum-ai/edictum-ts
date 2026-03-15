@@ -1,0 +1,43 @@
+name: Notify Docs
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Notify edictum-docs
+    if: |
+      github.event.pull_request.merged == true &&
+      !contains(github.event.pull_request.labels.*.name, 'no-docs') &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: edictum-ai
+          repositories: edictum-docs
+
+      - name: Dispatch to edictum-docs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          gh api repos/edictum-ai/edictum-docs/dispatches \
+            --method POST \
+            -f event_type=source-pr-merged \
+            -f "client_payload[repo]=${REPO}" \
+            -f "client_payload[pr_number]=${PR_NUMBER}" \
+            -f "client_payload[pr_url]=${PR_URL}" \
+            -f "client_payload[pr_author]=${PR_AUTHOR}"
