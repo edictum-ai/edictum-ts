@@ -44,6 +44,24 @@ function makeGuard(opts: MakeGuardOptions = {}): Edictum {
   });
 }
 
+/**
+ * Create an internal observe-mode postcondition using _edictum_* metadata.
+ * This exercises the real _classifyInternal constructor path.
+ */
+function makeObservePostcondition(
+  name: string,
+  checkFn: (envelope: ToolEnvelope, response: unknown) => Verdict,
+) {
+  return {
+    _edictum_type: "postcondition",
+    _edictum_observe: true,
+    name,
+    tool: "*",
+    source: "yaml_postcondition",
+    check: checkFn,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // TestPostExecute
 // ---------------------------------------------------------------------------
@@ -148,35 +166,24 @@ describe("TestPostExecute", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Observe-alongside postconditions
+// Observe-alongside postconditions (injected via _edictum_* constructor path)
 // ---------------------------------------------------------------------------
 
 describe("TestObserveAlongsidePostconditions", () => {
   test("observe_postconditions_evaluated_in_post_execute", async () => {
     const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-pii-check",
-      tool: "*",
-      mode: "observe" as const,
-      source: "yaml_postcondition",
-      check: (_envelope: ToolEnvelope, response: unknown) => {
+    const observePost = makeObservePostcondition(
+      "observe-pii-check",
+      (_envelope: ToolEnvelope, response: unknown) => {
         if (String(response).includes("SSN")) {
           return Verdict.fail("PII detected in output");
         }
         return Verdict.pass_();
       },
-    };
+    );
 
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    const newState = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-    (guard as unknown as Record<string, unknown>)._state = newState;
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guard = makeGuard({ backend, contracts: [observePost as any] });
     const pipeline = new GovernancePipeline(guard);
     const envelope = createEnvelope("TestTool", {});
 
@@ -196,22 +203,13 @@ describe("TestObserveAlongsidePostconditions", () => {
 
   test("observe_postconditions_pass_does_not_warn", async () => {
     const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
+    const observePost = makeObservePostcondition(
+      "observe-check",
+      (_envelope: ToolEnvelope, _response: unknown) => Verdict.pass_(),
+    );
 
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-check",
-      tool: "*",
-      mode: "observe" as const,
-      check: (_envelope: ToolEnvelope, _response: unknown) => Verdict.pass_(),
-    };
-
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    (guard as unknown as Record<string, unknown>)._state = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guard = makeGuard({ backend, contracts: [observePost as any] });
     const pipeline = new GovernancePipeline(guard);
     const envelope = createEnvelope("TestTool", {});
 
@@ -223,22 +221,13 @@ describe("TestObserveAlongsidePostconditions", () => {
 
   test("observe_postcondition_error_does_not_crash", async () => {
     const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
+    const observePost = makeObservePostcondition(
+      "observe-broken",
+      () => { throw new Error("boom"); },
+    );
 
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-broken",
-      tool: "*",
-      mode: "observe" as const,
-      check: () => { throw new Error("boom"); },
-    };
-
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    (guard as unknown as Record<string, unknown>)._state = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guard = makeGuard({ backend, contracts: [observePost as any] });
     const pipeline = new GovernancePipeline(guard);
     const envelope = createEnvelope("TestTool", {});
 

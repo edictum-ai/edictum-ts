@@ -9,6 +9,7 @@ import type {
 } from "../src/contracts.js";
 import { createEnvelope } from "../src/envelope.js";
 import type { ToolEnvelope } from "../src/envelope.js";
+import { EdictumConfigError } from "../src/errors.js";
 import { Edictum } from "../src/guard.js";
 import { HookDecision } from "../src/hooks.js";
 import type { OperationLimits } from "../src/limits.js";
@@ -347,5 +348,45 @@ describe("TestObserveMode", () => {
     const decision = await pipeline.preExecute(envelope, session);
     // Pipeline returns deny — the observe-mode conversion is the caller's job
     expect(decision.action).toBe("deny");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ContractType discrimination
+// ---------------------------------------------------------------------------
+
+describe("TestContractTypeDiscrimination", () => {
+  test("unknown_contractType_throws_EdictumConfigError", () => {
+    expect(
+      () =>
+        new Edictum({
+          contracts: [
+            {
+              tool: "Bash",
+              contractType: "unknown" as unknown as "pre",
+              check: () => Verdict.pass_(),
+            },
+          ],
+        }),
+    ).toThrow(EdictumConfigError);
+  });
+
+  test("contractType_post_routed_to_postExecute_not_preExecute", async () => {
+    const backend = new MemoryBackend();
+    const post: Postcondition = {
+      contractType: "post",
+      tool: "*",
+      check: (_env, _res) => Verdict.fail("post fired"),
+    };
+
+    const guard = makeGuard({ contracts: [post], backend });
+    const pipeline = new GovernancePipeline(guard);
+    const session = new Session("t", backend);
+    await session.incrementAttempts();
+
+    const pre = await pipeline.preExecute(createEnvelope("TestTool", {}), session);
+    // If contractType: "post" were misclassified as precondition, action would be "deny"
+    expect(pre.action).toBe("allow");
+    expect(pre.contractsEvaluated).toHaveLength(0);
   });
 });
