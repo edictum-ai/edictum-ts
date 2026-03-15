@@ -133,9 +133,19 @@ export interface ToolEnvelope {
 // deepFreeze
 // ---------------------------------------------------------------------------
 
-/** Recursively freeze an object and all nested objects. */
+/**
+ * Recursively freeze an object and all nested objects.
+ *
+ * Date objects are skipped — Object.freeze() cannot prevent mutation
+ * via Date prototype methods (setFullYear, setTime, etc.) because Date
+ * stores state in internal slots, not own properties.
+ */
 export function deepFreeze<T>(obj: T): T {
   if (obj === null || obj === undefined || typeof obj !== "object") {
+    return obj;
+  }
+  // Date internal slots are not freezable — skip to avoid false sense of safety
+  if (obj instanceof Date) {
     return obj;
   }
   Object.freeze(obj);

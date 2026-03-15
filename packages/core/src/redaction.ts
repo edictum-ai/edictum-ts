@@ -126,13 +126,16 @@ export class RedactionPolicy {
   /** Check if a key name indicates sensitive data. */
   _isSensitiveKey(key: string): boolean {
     const k = key.toLowerCase();
-    return (
-      this._keys.has(k) ||
-      k.includes("token") ||
-      k.includes("key") ||
-      k.includes("secret") ||
-      k.includes("password") ||
-      k.includes("credential")
+    if (this._keys.has(k)) return true;
+    // Match whole-word segments (split by _ or -) to avoid false positives
+    // like "monkey", "bucket", "socket" matching on "key"
+    const parts = k.split(/[_\-]/);
+    return parts.some((part) =>
+      part === "token" ||
+      part === "key" ||
+      part === "secret" ||
+      part === "password" ||
+      part === "credential",
     );
   }
 
@@ -178,14 +181,17 @@ export class RedactionPolicy {
     return redacted;
   }
 
-  /** Cap total serialized size of audit payload. */
+  /** Cap total serialized size of audit payload. Returns a new object if truncated. */
   capPayload(data: Record<string, unknown>): Record<string, unknown> {
     const serialized = JSON.stringify(data);
     if (serialized.length > RedactionPolicy.MAX_PAYLOAD_SIZE) {
-      data["_truncated"] = true;
-      delete data["resultSummary"];
-      delete data["toolArgs"];
-      data["toolArgs"] = { _redacted: "payload exceeded 32KB" };
+      const { resultSummary: _rs, toolArgs: _ta, ...rest } = data;
+      void _rs; void _ta;
+      return {
+        ...rest,
+        _truncated: true,
+        toolArgs: { _redacted: "payload exceeded 32KB" },
+      };
     }
     return data;
   }

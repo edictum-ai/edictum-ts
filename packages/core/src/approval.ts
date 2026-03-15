@@ -5,6 +5,11 @@ import * as readline from "node:readline";
 
 import { RedactionPolicy } from "./redaction.js";
 
+/** Strip ANSI escape sequences and control characters from terminal output. */
+function sanitizeForTerminal(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f]/g, "");
+}
+
 // ---------------------------------------------------------------------------
 // ApprovalStatus
 // ---------------------------------------------------------------------------
@@ -144,9 +149,9 @@ export class LocalApprovalBackend implements ApprovalBackend {
 
     const redaction = new RedactionPolicy();
     const safeArgs = redaction.redactArgs(toolArgs);
-    process.stdout.write(`[APPROVAL REQUIRED] ${message}\n`);
-    process.stdout.write(`  Tool: ${toolName}\n`);
-    process.stdout.write(`  Args: ${JSON.stringify(safeArgs)}\n`);
+    process.stdout.write(`[APPROVAL REQUIRED] ${sanitizeForTerminal(message)}\n`);
+    process.stdout.write(`  Tool: ${sanitizeForTerminal(toolName)}\n`);
+    process.stdout.write(`  Args: ${sanitizeForTerminal(JSON.stringify(safeArgs))}\n`);
     process.stdout.write(`  ID:   ${approvalId}\n`);
 
     return request;
