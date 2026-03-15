@@ -135,21 +135,18 @@ jobs:
           fi
 
       - name: Fail on any findings
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          COMMENT=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-            --jq '[.[] | select(.body | contains("<!-- edictum-review -->"))] | last | .body // ""')
-          if [ -z "$COMMENT" ]; then
-            echo "::error::No review comment found. Review step may have failed or timed out."
+          # Read the local file directly — immune to comment injection race condition.
+          # /tmp/review.md was written by Claude on this runner and is inaccessible to attackers.
+          if [ ! -f /tmp/review.md ]; then
+            echo "::error::Review file missing."
             exit 1
           fi
-          if echo "$COMMENT" | grep -q '<!-- STATUS: fail -->'; then
+          if grep -q '<!-- STATUS: fail -->' /tmp/review.md; then
             echo "::error::Code review found critical/high issues. See PR comment for details."
             exit 1
           fi
-          if echo "$COMMENT" | grep -q '<!-- STATUS: warn -->'; then
+          if grep -q '<!-- STATUS: warn -->' /tmp/review.md; then
             echo "::error::Code review found warnings. See PR comment for details."
             exit 1
           fi
