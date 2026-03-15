@@ -1,6 +1,10 @@
 /**
  * Core Edictum class -- construction, contract registry, and accessor methods.
  *
+ * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's _guard.py
+ * (314 LOC) which is already the decomposed version of the original god class.
+ * The contract classification + accessor methods form a cohesive unit.
+ *
  * Minimum viable guard: constructor + contract classification + accessors.
  * run(), from_yaml(), from_server() are delegated methods added later.
  */
@@ -362,7 +366,7 @@ export class Edictum implements GuardLike {
    * User-facing contracts (Precondition, Postcondition, SessionContract)
    * are converted to internal representations. Internal contracts (from
    * YAML compiler) carry _edictum_* metadata and are classified by their
-   * _edictum_shadow flag.
+   * _edictum_observe flag (Python uses _edictum_shadow — wire-format parity).
    */
   private static _classifyContracts(
     contracts: ReadonlyArray<
@@ -383,7 +387,11 @@ export class Edictum implements GuardLike {
     for (const item of contracts) {
       const raw = item as unknown as Record<string, unknown>;
       const edictumType = raw._edictum_type as string | undefined;
-      const isObserve = (raw._edictum_shadow as boolean) ?? false;
+      // Python YAML compiler emits _edictum_shadow; we accept both for wire-format parity
+      const isObserve =
+        (raw._edictum_observe as boolean) ??
+        (raw._edictum_shadow as boolean) ??
+        false;
 
       if (edictumType != null) {
         // Internal contract (from YAML compiler)
@@ -411,6 +419,14 @@ export class Edictum implements GuardLike {
           when: postItem.when,
         });
       } else if ("tool" in item) {
+        // Fail-closed: reject unknown contractType values at runtime
+        const ct = (raw as { contractType?: unknown }).contractType;
+        if (ct != null && ct !== "pre") {
+          throw new EdictumConfigError(
+            `Contract with tool "${(item as Precondition).tool}" has unknown contractType ` +
+            `"${String(ct)}". Expected "pre" or omitted for Precondition, "post" for Postcondition.`,
+          );
+        }
         const preItem = item as Precondition;
         const name = (raw as NamedContract).name ?? "anonymous";
         pre.push({

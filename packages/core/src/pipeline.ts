@@ -1,4 +1,10 @@
-/** GovernancePipeline -- single source of governance logic. */
+/**
+ * GovernancePipeline -- single source of governance logic.
+ *
+ * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's pipeline.py
+ * (485 LOC). PreDecision + PostDecision types + the 5-stage pre/post engine
+ * form a single cohesive evaluation flow that would be harder to follow if split.
+ */
 
 import { Verdict } from "./contracts.js";
 import { SideEffect } from "./envelope.js";
