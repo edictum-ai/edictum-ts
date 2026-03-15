@@ -500,9 +500,13 @@ export class GovernancePipeline {
       }
     }
 
+    // Exclude observe-mode records from the "real failure" check —
+    // observe-mode failures are logged but should not signal a real failure
     const postconditionsPassed =
       contractsEvaluated.length > 0
-        ? contractsEvaluated.every((c) => c["passed"] === true)
+        ? contractsEvaluated.every(
+            (c) => c["passed"] === true || c["observed"] === true,
+          )
         : true;
     const pe = hasPolicyError(contractsEvaluated);
 

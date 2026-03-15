@@ -11,6 +11,7 @@ import type { ApprovalBackend } from "./approval.js";
 import { CollectingAuditSink, CompositeSink } from "./audit.js";
 import type { AuditSink } from "./audit.js";
 import { createCompiledState } from "./compiled-state.js";
+import { EdictumConfigError } from "./errors.js";
 import type { CompiledState } from "./compiled-state.js";
 import type {
   Precondition,
@@ -134,6 +135,25 @@ export class Edictum implements GuardLike {
     this.mode = options.mode ?? "enforce";
     this.backend = options.backend ?? new MemoryBackend();
     this.redaction = options.redaction ?? new RedactionPolicy();
+    // Callbacks are wired up in run() — throw if provided before run() exists
+    if (options.onDeny != null) {
+      throw new EdictumConfigError(
+        "onDeny requires Edictum.run() which is not yet implemented. " +
+        "Remove it until run() is available.",
+      );
+    }
+    if (options.onAllow != null) {
+      throw new EdictumConfigError(
+        "onAllow requires Edictum.run() which is not yet implemented. " +
+        "Remove it until run() is available.",
+      );
+    }
+    if (options.successCheck != null) {
+      throw new EdictumConfigError(
+        "successCheck requires Edictum.run() which is not yet implemented. " +
+        "Remove it until run() is available.",
+      );
+    }
     this._onDeny = options.onDeny ?? null;
     this._onAllow = options.onAllow ?? null;
     this._successCheck = options.successCheck ?? null;

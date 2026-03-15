@@ -438,7 +438,11 @@ describe("TestPostExecute", () => {
 // ---------------------------------------------------------------------------
 
 describe("TestObserveMode", () => {
-  test("observe_mode_converts_deny_to_allow", async () => {
+  test("global_observe_mode_pipeline_still_returns_deny", async () => {
+    // Global observe mode (mode="observe") is handled by Edictum.run() / adapters,
+    // NOT by the pipeline. The pipeline always evaluates contracts at face value.
+    // When mode="observe", run() converts the deny to allow + CALL_WOULD_DENY audit.
+    // This test verifies the pipeline itself does NOT handle global observe mode.
     const backend = new MemoryBackend();
     const alwaysFail: Precondition = {
       tool: "*",
@@ -455,9 +459,8 @@ describe("TestObserveMode", () => {
     const envelope = createEnvelope("TestTool", {});
     await session.incrementAttempts();
 
-    // Pipeline still returns deny (mode handling is in adapter/guard.run)
     const decision = await pipeline.preExecute(envelope, session);
+    // Pipeline returns deny — the observe-mode conversion is the caller's job
     expect(decision.action).toBe("deny");
-    // The observe mode conversion happens in the adapter/Edictum.run(), not pipeline
   });
 });
