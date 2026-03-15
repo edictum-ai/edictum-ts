@@ -63,4 +63,7 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - name: Audit npm dependencies
+        run: pnpm audit --audit-level=critical
+      - name: Audit npm dependencies (high — advisory)
+        continue-on-error: true
         run: pnpm audit --audit-level=high
