@@ -60,7 +60,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ steps.app-token.outputs.token }}
           model: claude-sonnet-4-6
-          claude_args: '--max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh api:*),Bash(cat:*),Read,Glob,Grep,Write"'
+          claude_args: '--max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(cat:*),Read,Glob,Grep,Write"'
           prompt: |
             You are an adversarial code reviewer for Edictum JS — a **security product** (runtime contract enforcement for AI agent tool calls). A single vulnerability destroys the credibility of a startup that sells trust. Think like an attacker first, reviewer second.
 
@@ -98,10 +98,7 @@ jobs:
 
             6. Fill in the template from `/tmp/governance/review-template.md` per `/tmp/governance/review-instructions.md`. Write to `/tmp/review.md`.
 
-            7. Post the sticky summary comment:
-               - Check for existing: `gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --jq '.[] | select(.body | contains("<!-- edictum-review -->")) | .id'`
-               - If found, update: `gh api "repos/${{ github.repository }}/issues/comments/COMMENT_ID" -X PATCH -f body=@/tmp/review.md`
-               - If not found, create: `gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review.md`
+            7. Do NOT post the comment yourself. The workflow handles posting after validation.
 
             ## Rules
             - One pass. If the PR is clean, say so and stop.
@@ -109,6 +106,34 @@ jobs:
             - Do NOT flag style/formatting (linters handle that).
             - ALWAYS include the attack path for security issues.
             - ALWAYS include file path + line number + concrete fix with code.
+
+      - name: Validate and post review comment
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Validate review file exists and contains the required marker
+          if [ ! -f /tmp/review.md ]; then
+            echo "::error::Review file /tmp/review.md not found. Claude may have failed."
+            exit 1
+          fi
+          if ! grep -q '<!-- edictum-review -->' /tmp/review.md; then
+            echo "::error::Review file missing <!-- edictum-review --> marker. Content:"
+            head -5 /tmp/review.md
+            exit 1
+          fi
+
+          # Post or update sticky comment
+          EXISTING_ID=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq '[.[] | select(.body | contains("<!-- edictum-review -->"))] | last | .id // empty')
+          if [ -n "$EXISTING_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              -X PATCH -F body=@/tmp/review.md
+            echo "Updated existing review comment ${EXISTING_ID}"
+          else
+            gh pr comment "${PR_NUMBER}" --body-file /tmp/review.md
+            echo "Created new review comment"
+          fi
 
       - name: Fail on critical or high findings
         env:
