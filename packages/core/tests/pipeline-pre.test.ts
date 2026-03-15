@@ -1,14 +1,13 @@
-/** Tests for GovernancePipeline -- full preExecute and postExecute flows. */
+/** Tests for GovernancePipeline.preExecute — pre-execution governance flows. */
 
 import { describe, expect, test } from "vitest";
 
 import { Verdict } from "../src/contracts.js";
 import type {
   Precondition,
-  Postcondition,
   SessionContract,
 } from "../src/contracts.js";
-import { createEnvelope, SideEffect, ToolRegistry } from "../src/envelope.js";
+import { createEnvelope } from "../src/envelope.js";
 import type { ToolEnvelope } from "../src/envelope.js";
 import { Edictum } from "../src/guard.js";
 import { HookDecision } from "../src/hooks.js";
@@ -18,6 +17,7 @@ import { Session } from "../src/session.js";
 import { MemoryBackend } from "../src/storage.js";
 import type { HookRegistration } from "../src/types.js";
 import { NullAuditSink } from "./helpers.js";
+import type { Postcondition } from "../src/contracts.js";
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -74,7 +74,6 @@ describe("TestPreExecute", () => {
     const pipeline = new GovernancePipeline(guard);
     const envelope = createEnvelope("TestTool", {});
 
-    // Simulate 2 attempts (>= maxAttempts=2)
     await session.incrementAttempts();
     await session.incrementAttempts();
 
@@ -190,8 +189,6 @@ describe("TestPreExecute", () => {
     };
 
     const session = new Session("pipeline-test", backend);
-
-    // Simulate 3 executions
     for (let i = 0; i < 3; i++) {
       await session.recordExecution("T", true);
     }
@@ -215,7 +212,6 @@ describe("TestPreExecute", () => {
     const session = new Session("test", backend);
     const pipeline = new GovernancePipeline(guard);
 
-    // Record 2 executions
     await session.recordExecution("T", true);
     await session.recordExecution("T", true);
     await session.incrementAttempts();
@@ -250,7 +246,6 @@ describe("TestPreExecute", () => {
   });
 
   test("evaluation_order", async () => {
-    /** Verify hooks run before preconditions. */
     const backend = new MemoryBackend();
     const order: string[] = [];
 
@@ -316,120 +311,14 @@ describe("TestPreExecute", () => {
     const pipeline = new GovernancePipeline(guard);
     const session = new Session("pipeline-test", backend);
 
-    // Non-Bash tool should not be affected
     const readEnvelope = createEnvelope("Read", { file_path: "/tmp/x" });
     await session.incrementAttempts();
     const readDecision = await pipeline.preExecute(readEnvelope, session);
     expect(readDecision.action).toBe("allow");
 
-    // Bash tool should be denied
     const bashEnvelope = createEnvelope("Bash", { command: "ls" });
     const bashDecision = await pipeline.preExecute(bashEnvelope, session);
     expect(bashDecision.action).toBe("deny");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TestPostExecute
-// ---------------------------------------------------------------------------
-
-describe("TestPostExecute", () => {
-  test("success_no_postconditions", async () => {
-    const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    const decision = await pipeline.postExecute(envelope, "ok", true);
-    expect(decision.toolSuccess).toBe(true);
-    expect(decision.postconditionsPassed).toBe(true);
-    expect(decision.warnings).toEqual([]);
-  });
-
-  test("postcondition_failure_pure_tool", async () => {
-    const backend = new MemoryBackend();
-    // Postcondition check takes 2 args: (envelope, result)
-    const checkResult: Postcondition = {
-      contractType: "post",
-      tool: "TestTool",
-      check: (_envelope, result) => {
-        if (result !== "expected") {
-          return Verdict.fail("Unexpected result");
-        }
-        return Verdict.pass_();
-      },
-    };
-
-    const guard = makeGuard({
-      contracts: [checkResult],
-      backend,
-      tools: { TestTool: { side_effect: "pure" } },
-    });
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {}, {
-      registry: guard.toolRegistry,
-    });
-
-    const decision = await pipeline.postExecute(envelope, "wrong", true);
-    expect(decision.postconditionsPassed).toBe(false);
-    expect(decision.warnings).toHaveLength(1);
-    expect(decision.warnings[0]!.toLowerCase()).toContain("consider retrying");
-  });
-
-  test("postcondition_failure_write_tool", async () => {
-    const backend = new MemoryBackend();
-    const checkWrite: Postcondition = {
-      contractType: "post",
-      tool: "WriteTool",
-      check: (_envelope, _result) => {
-        return Verdict.fail("Write verification failed");
-      },
-    };
-
-    const guard = makeGuard({ contracts: [checkWrite], backend });
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("WriteTool", {});
-
-    const decision = await pipeline.postExecute(envelope, "result", true);
-    expect(decision.postconditionsPassed).toBe(false);
-    expect(decision.warnings[0]!.toLowerCase()).toContain(
-      "assess before proceeding",
-    );
-  });
-
-  test("after_hooks_called", async () => {
-    const backend = new MemoryBackend();
-    const called: unknown[] = [];
-
-    function afterHook(_envelope: ToolEnvelope, result: unknown): void {
-      called.push(result);
-    }
-
-    const hook: HookRegistration = {
-      phase: "after",
-      tool: "*",
-      callback: afterHook,
-    };
-    const guard = makeGuard({ hooks: [hook], backend });
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    await pipeline.postExecute(envelope, "the_result", true);
-    expect(called).toEqual(["the_result"]);
-  });
-
-  test("tool_failure_reported", async () => {
-    const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    const decision = await pipeline.postExecute(
-      envelope,
-      "Error: failed",
-      false,
-    );
-    expect(decision.toolSuccess).toBe(false);
   });
 });
 
@@ -439,10 +328,6 @@ describe("TestPostExecute", () => {
 
 describe("TestObserveMode", () => {
   test("global_observe_mode_pipeline_still_returns_deny", async () => {
-    // Global observe mode (mode="observe") is handled by Edictum.run() / adapters,
-    // NOT by the pipeline. The pipeline always evaluates contracts at face value.
-    // When mode="observe", run() converts the deny to allow + CALL_WOULD_DENY audit.
-    // This test verifies the pipeline itself does NOT handle global observe mode.
     const backend = new MemoryBackend();
     const alwaysFail: Precondition = {
       tool: "*",
@@ -462,117 +347,5 @@ describe("TestObserveMode", () => {
     const decision = await pipeline.preExecute(envelope, session);
     // Pipeline returns deny — the observe-mode conversion is the caller's job
     expect(decision.action).toBe("deny");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Observe-alongside postconditions
-// ---------------------------------------------------------------------------
-
-describe("TestObserveAlongsidePostconditions", () => {
-  test("observe_postconditions_evaluated_in_post_execute", async () => {
-    // Simulate an observe_alongside postcondition by creating a guard
-    // with an internal postcondition marked as observe-mode
-    const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-
-    // Manually inject an observe-mode postcondition into the compiled state
-    // (normally done by YAML compiler for observe_alongside bundles)
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-pii-check",
-      tool: "*",
-      mode: "observe" as const,
-      source: "yaml_postcondition",
-      check: (_envelope: ToolEnvelope, response: unknown) => {
-        if (String(response).includes("SSN")) {
-          return Verdict.fail("PII detected in output");
-        }
-        return Verdict.pass_();
-      },
-    };
-
-    // Access internal state to add observe postcondition
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    const newState = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-    (guard as unknown as Record<string, unknown>)._state = newState;
-
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    const decision = await pipeline.postExecute(envelope, "Patient SSN: 123-45-6789", true);
-
-    // Observe-mode postcondition should produce a warning
-    expect(decision.warnings.some((w: string) => w.includes("[observe]"))).toBe(true);
-    expect(decision.warnings.some((w: string) => w.includes("PII detected"))).toBe(true);
-
-    // But postconditionsPassed should still be true (observe doesn't count as real failure)
-    expect(decision.postconditionsPassed).toBe(true);
-
-    // The contract should appear in contractsEvaluated with observed: true
-    const observeRecord = decision.contractsEvaluated.find(
-      (c: Record<string, unknown>) => c["name"] === "observe-pii-check",
-    );
-    expect(observeRecord).toBeDefined();
-    expect(observeRecord!["observed"]).toBe(true);
-    expect(observeRecord!["passed"]).toBe(false);
-  });
-
-  test("observe_postconditions_pass_does_not_warn", async () => {
-    const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-check",
-      tool: "*",
-      mode: "observe" as const,
-      check: (_envelope: ToolEnvelope, _response: unknown) => Verdict.pass_(),
-    };
-
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    (guard as unknown as Record<string, unknown>)._state = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    const decision = await pipeline.postExecute(envelope, "safe output", true);
-
-    expect(decision.warnings.length).toBe(0);
-    expect(decision.postconditionsPassed).toBe(true);
-  });
-
-  test("observe_postcondition_error_does_not_crash", async () => {
-    const backend = new MemoryBackend();
-    const guard = makeGuard({ backend });
-
-    const observePost = {
-      type: "postcondition" as const,
-      name: "observe-broken",
-      tool: "*",
-      mode: "observe" as const,
-      check: () => { throw new Error("boom"); },
-    };
-
-    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
-    (guard as unknown as Record<string, unknown>)._state = {
-      ...state,
-      observePostconditions: [observePost],
-    };
-
-    const pipeline = new GovernancePipeline(guard);
-    const envelope = createEnvelope("TestTool", {});
-
-    // Should not throw — error is caught and recorded
-    const decision = await pipeline.postExecute(envelope, "output", true);
-
-    expect(decision.warnings.some((w: string) => w.includes("[observe]"))).toBe(true);
-    expect(decision.postconditionsPassed).toBe(true);
   });
 });
