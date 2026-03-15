@@ -464,3 +464,115 @@ describe("TestObserveMode", () => {
     expect(decision.action).toBe("deny");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Observe-alongside postconditions
+// ---------------------------------------------------------------------------
+
+describe("TestObserveAlongsidePostconditions", () => {
+  test("observe_postconditions_evaluated_in_post_execute", async () => {
+    // Simulate an observe_alongside postcondition by creating a guard
+    // with an internal postcondition marked as observe-mode
+    const backend = new MemoryBackend();
+    const guard = makeGuard({ backend });
+
+    // Manually inject an observe-mode postcondition into the compiled state
+    // (normally done by YAML compiler for observe_alongside bundles)
+    const observePost = {
+      type: "postcondition" as const,
+      name: "observe-pii-check",
+      tool: "*",
+      mode: "observe" as const,
+      source: "yaml_postcondition",
+      check: (_envelope: ToolEnvelope, response: unknown) => {
+        if (String(response).includes("SSN")) {
+          return Verdict.fail("PII detected in output");
+        }
+        return Verdict.pass_();
+      },
+    };
+
+    // Access internal state to add observe postcondition
+    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
+    const newState = {
+      ...state,
+      observePostconditions: [observePost],
+    };
+    (guard as unknown as Record<string, unknown>)._state = newState;
+
+    const pipeline = new GovernancePipeline(guard);
+    const envelope = createEnvelope("TestTool", {});
+
+    const decision = await pipeline.postExecute(envelope, "Patient SSN: 123-45-6789", true);
+
+    // Observe-mode postcondition should produce a warning
+    expect(decision.warnings.some((w: string) => w.includes("[observe]"))).toBe(true);
+    expect(decision.warnings.some((w: string) => w.includes("PII detected"))).toBe(true);
+
+    // But postconditionsPassed should still be true (observe doesn't count as real failure)
+    expect(decision.postconditionsPassed).toBe(true);
+
+    // The contract should appear in contractsEvaluated with observed: true
+    const observeRecord = decision.contractsEvaluated.find(
+      (c: Record<string, unknown>) => c["name"] === "observe-pii-check",
+    );
+    expect(observeRecord).toBeDefined();
+    expect(observeRecord!["observed"]).toBe(true);
+    expect(observeRecord!["passed"]).toBe(false);
+  });
+
+  test("observe_postconditions_pass_does_not_warn", async () => {
+    const backend = new MemoryBackend();
+    const guard = makeGuard({ backend });
+
+    const observePost = {
+      type: "postcondition" as const,
+      name: "observe-check",
+      tool: "*",
+      mode: "observe" as const,
+      check: (_envelope: ToolEnvelope, _response: unknown) => Verdict.pass_(),
+    };
+
+    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
+    (guard as unknown as Record<string, unknown>)._state = {
+      ...state,
+      observePostconditions: [observePost],
+    };
+
+    const pipeline = new GovernancePipeline(guard);
+    const envelope = createEnvelope("TestTool", {});
+
+    const decision = await pipeline.postExecute(envelope, "safe output", true);
+
+    expect(decision.warnings.length).toBe(0);
+    expect(decision.postconditionsPassed).toBe(true);
+  });
+
+  test("observe_postcondition_error_does_not_crash", async () => {
+    const backend = new MemoryBackend();
+    const guard = makeGuard({ backend });
+
+    const observePost = {
+      type: "postcondition" as const,
+      name: "observe-broken",
+      tool: "*",
+      mode: "observe" as const,
+      check: () => { throw new Error("boom"); },
+    };
+
+    const state = (guard as unknown as Record<string, unknown>)._state as Record<string, unknown>;
+    (guard as unknown as Record<string, unknown>)._state = {
+      ...state,
+      observePostconditions: [observePost],
+    };
+
+    const pipeline = new GovernancePipeline(guard);
+    const envelope = createEnvelope("TestTool", {});
+
+    // Should not throw — error is caught and recorded
+    const decision = await pipeline.postExecute(envelope, "output", true);
+
+    expect(decision.warnings.some((w: string) => w.includes("[observe]"))).toBe(true);
+    expect(decision.postconditionsPassed).toBe(true);
+  });
+});

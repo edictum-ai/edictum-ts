@@ -507,6 +507,35 @@ export class GovernancePipeline {
       }
     }
 
+    // 3. Observe-mode postconditions (from observe_alongside bundles)
+    // These never affect the decision — only produce audit findings.
+    for (const contract of this._guard.getObservePostconditions(envelope)) {
+      let verdict: Verdict;
+      try {
+        verdict = await contract.check(envelope, toolResponse);
+      } catch (exc) {
+        verdict = Verdict.fail(
+          `Observe-mode postcondition error: ${exc}`,
+          { policy_error: true },
+        );
+      }
+      const record: Record<string, unknown> = {
+        name: contract.name,
+        type: "postcondition",
+        passed: verdict.passed,
+        message: verdict.message,
+        observed: true,
+        source: contract.source ?? "yaml_postcondition",
+      };
+      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
+        record["metadata"] = verdict.metadata;
+      }
+      contractsEvaluated.push(record);
+      if (!verdict.passed) {
+        warnings.push(`\u26a0\ufe0f [observe] ${verdict.message}`);
+      }
+    }
+
     // Exclude observe-mode records from the "real failure" check —
     // observe-mode failures are logged but should not signal a real failure
     const postconditionsPassed =
