@@ -420,12 +420,20 @@ export class Edictum implements GuardLike {
           when: postItem.when,
         });
       } else if ("tool" in item) {
-        // Fail-closed: reject unknown contractType values at runtime
+        // Fail-closed: reject unknown contractType and detect missing "post"
         const ct = (raw as { contractType?: unknown }).contractType;
         if (ct != null && ct !== "pre") {
           throw new EdictumConfigError(
             `Contract with tool "${(item as Precondition).tool}" has unknown contractType ` +
             `"${String(ct)}". Expected "pre" or omitted for Precondition, "post" for Postcondition.`,
+          );
+        }
+        // Warn JS consumers: if check takes 2+ args but no contractType, likely a Postcondition
+        if (ct == null && item.check.length >= 2) {
+          throw new EdictumConfigError(
+            `Contract with tool "${(item as Precondition).tool}" has a check function with ` +
+            `${item.check.length} parameters (looks like a Postcondition) but is missing ` +
+            `contractType: "post". Add it to prevent misclassification.`,
           );
         }
         const preItem = item as Precondition;

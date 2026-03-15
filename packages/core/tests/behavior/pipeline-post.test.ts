@@ -2,20 +2,20 @@
 
 import { describe, expect, test } from "vitest";
 
-import { Verdict } from "../src/contracts.js";
+import { Verdict } from "../../src/contracts.js";
 import type {
   Precondition,
   Postcondition,
   SessionContract,
-} from "../src/contracts.js";
-import { createEnvelope } from "../src/envelope.js";
-import type { ToolEnvelope } from "../src/envelope.js";
-import { Edictum } from "../src/guard.js";
-import type { OperationLimits } from "../src/limits.js";
-import { GovernancePipeline } from "../src/pipeline.js";
-import { MemoryBackend } from "../src/storage.js";
-import type { HookRegistration } from "../src/types.js";
-import { NullAuditSink } from "./helpers.js";
+} from "../../src/contracts.js";
+import { createEnvelope } from "../../src/envelope.js";
+import type { ToolEnvelope } from "../../src/envelope.js";
+import { Edictum } from "../../src/guard.js";
+import type { OperationLimits } from "../../src/limits.js";
+import { GovernancePipeline } from "../../src/pipeline.js";
+import { MemoryBackend } from "../../src/storage.js";
+import type { HookRegistration } from "../../src/types.js";
+import { NullAuditSink } from "../helpers.js";
 
 // ---------------------------------------------------------------------------
 // Helper

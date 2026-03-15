@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import { fnmatch } from "../src/fnmatch.js";
+import { fnmatch } from "../../src/fnmatch.js";
 
 describe("fnmatch", () => {
   test("wildcard_star_matches_everything", () => {

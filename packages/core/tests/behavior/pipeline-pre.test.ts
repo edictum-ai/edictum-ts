@@ -2,23 +2,23 @@
 
 import { describe, expect, test } from "vitest";
 
-import { Verdict } from "../src/contracts.js";
+import { Verdict } from "../../src/contracts.js";
 import type {
   Precondition,
   SessionContract,
-} from "../src/contracts.js";
-import { createEnvelope } from "../src/envelope.js";
-import type { ToolEnvelope } from "../src/envelope.js";
-import { EdictumConfigError } from "../src/errors.js";
-import { Edictum } from "../src/guard.js";
-import { HookDecision } from "../src/hooks.js";
-import type { OperationLimits } from "../src/limits.js";
-import { GovernancePipeline } from "../src/pipeline.js";
-import { Session } from "../src/session.js";
-import { MemoryBackend } from "../src/storage.js";
-import type { HookRegistration } from "../src/types.js";
-import { NullAuditSink } from "./helpers.js";
-import type { Postcondition } from "../src/contracts.js";
+} from "../../src/contracts.js";
+import { createEnvelope } from "../../src/envelope.js";
+import type { ToolEnvelope } from "../../src/envelope.js";
+import { EdictumConfigError } from "../../src/errors.js";
+import { Edictum } from "../../src/guard.js";
+import { HookDecision } from "../../src/hooks.js";
+import type { OperationLimits } from "../../src/limits.js";
+import { GovernancePipeline } from "../../src/pipeline.js";
+import { Session } from "../../src/session.js";
+import { MemoryBackend } from "../../src/storage.js";
+import type { HookRegistration } from "../../src/types.js";
+import { NullAuditSink } from "../helpers.js";
+import type { Postcondition } from "../../src/contracts.js";
 
 // ---------------------------------------------------------------------------
 // Helper
