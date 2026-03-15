@@ -76,3 +76,28 @@ export {
   createPostCallResult,
 } from "./findings.js";
 export type { Finding, PostCallResult, PostDecisionLike } from "./findings.js";
+
+// Internal contract types (for adapter and YAML engine authors)
+export type {
+  GuardLike,
+  InternalContract,
+  InternalPrecondition,
+  InternalPostcondition,
+  InternalSessionContract,
+  InternalSandboxContract,
+} from "./internal-contracts.js";
+
+// Compiled state
+export { createCompiledState } from "./compiled-state.js";
+export type { CompiledState } from "./compiled-state.js";
+
+// Pipeline
+export { GovernancePipeline, createPreDecision, createPostDecision } from "./pipeline.js";
+export type { PreDecision, PostDecision } from "./pipeline.js";
+
+// Guard
+export { Edictum } from "./guard.js";
+export type { EdictumOptions } from "./guard.js";
+
+// Fnmatch
+export { fnmatch } from "./fnmatch.js";
