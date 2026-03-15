@@ -24,6 +24,7 @@ import type {
 } from "./contracts.js";
 import { SideEffect, ToolRegistry } from "./envelope.js";
 import type { Principal, ToolEnvelope } from "./envelope.js";
+import type { EvaluationResult } from "./evaluation.js";
 import { fnmatch } from "./fnmatch.js";
 import type {
   GuardLike,
@@ -140,25 +141,6 @@ export class Edictum implements GuardLike {
     this.mode = options.mode ?? "enforce";
     this.backend = options.backend ?? new MemoryBackend();
     this.redaction = options.redaction ?? new RedactionPolicy();
-    // Callbacks are wired up in run() — throw if provided before run() exists
-    if (options.onDeny != null) {
-      throw new EdictumConfigError(
-        "onDeny requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
-    if (options.onAllow != null) {
-      throw new EdictumConfigError(
-        "onAllow requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
-    if (options.successCheck != null) {
-      throw new EdictumConfigError(
-        "successCheck requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
     this._onDeny = options.onDeny ?? null;
     this._onAllow = options.onAllow ?? null;
     this._successCheck = options.successCheck ?? null;
@@ -523,5 +505,62 @@ export class Edictum implements GuardLike {
       }
     }
     return result;
+  }
+
+  // -----------------------------------------------------------------------
+  // Delegated methods — run, evaluate, evaluateBatch
+  // -----------------------------------------------------------------------
+
+  /** Execute a tool call with full governance pipeline. */
+  async run(
+    toolName: string,
+    args: Record<string, unknown>,
+    toolCallable: (
+      args: Record<string, unknown>,
+    ) => unknown | Promise<unknown>,
+    options?: {
+      sessionId?: string;
+      environment?: string;
+      principal?: Principal;
+    },
+  ): Promise<unknown> {
+    const { run } = await import("./runner.js");
+    return run(this, toolName, args, toolCallable, options);
+  }
+
+  /**
+   * Dry-run evaluation of a tool call against all matching contracts.
+   *
+   * Never executes the tool. Evaluates exhaustively (no short-circuit).
+   * Session contracts are skipped.
+   */
+  evaluate(
+    toolName: string,
+    args: Record<string, unknown>,
+    options?: {
+      principal?: Principal;
+      output?: string;
+      environment?: string;
+    },
+  ): Promise<EvaluationResult> {
+    // Dynamic import avoids circular dependency
+    return import("./dry-run.js").then(({ evaluate }) =>
+      evaluate(this, toolName, args, options),
+    );
+  }
+
+  /** Evaluate a batch of tool calls. Thin wrapper over evaluate(). */
+  evaluateBatch(
+    calls: Array<{
+      tool: string;
+      args?: Record<string, unknown>;
+      principal?: Record<string, unknown>;
+      output?: string | Record<string, unknown>;
+      environment?: string;
+    }>,
+  ): Promise<EvaluationResult[]> {
+    return import("./dry-run.js").then(({ evaluateBatch }) =>
+      evaluateBatch(this, calls),
+    );
   }
 }

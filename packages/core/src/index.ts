@@ -99,5 +99,12 @@ export type { PreDecision, PostDecision } from "./pipeline.js";
 export { Edictum } from "./guard.js";
 export type { EdictumOptions } from "./guard.js";
 
+// Runner (framework-agnostic tool execution)
+export { defaultSuccessCheck, run } from "./runner.js";
+export type { RunOptions } from "./runner.js";
+
+// Dry-run evaluation
+export type { BatchCall, EvaluateOptions } from "./dry-run.js";
+
 // Fnmatch
 export { fnmatch } from "./fnmatch.js";
