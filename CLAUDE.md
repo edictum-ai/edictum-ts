@@ -201,7 +201,7 @@ The contract schema lives in the `edictum-schemas` repo — single source of tru
 Edictum is four repos that work together:
 
 - **edictum** (core Python): `edictum-ai/edictum` — MIT Python library. PyPI: `edictum`.
-- **edictum-js** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
+- **edictum-ts** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
 - **edictum-console** (server): `edictum-ai/edictum-console` — Self-hostable FastAPI + React SPA.
 - **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared YAML contract schema.
 

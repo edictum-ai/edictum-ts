@@ -1,5 +1,5 @@
 {
-  "name": "edictum-js",
+  "name": "edictum-ts",
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "engines": {
@@ -11,5 +11,9 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.57.0"
   }
 }
