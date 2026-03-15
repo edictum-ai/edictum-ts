@@ -131,6 +131,7 @@ export class Session {
     const keyLabels: string[] = ["attempts", "execs"];
 
     if (options?.includeTool != null) {
+      _validateStorageKeyComponent(options.includeTool, "tool_name");
       keys.push(`s:${this._sid}:tool:${options.includeTool}`);
       keyLabels.push(`tool:${options.includeTool}`);
     }

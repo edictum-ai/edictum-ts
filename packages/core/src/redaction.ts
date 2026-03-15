@@ -61,6 +61,7 @@ export class RedactionPolicy {
   private readonly _keys: ReadonlySet<string>;
   private readonly _patterns: ReadonlyArray<readonly [string, string]>;
   private readonly _compiledPatterns: ReadonlyArray<readonly [RegExp, string]>;
+  private readonly _compiledSecretPatterns: ReadonlyArray<RegExp>;
   private readonly _detectValues: boolean;
 
   constructor(
@@ -87,6 +88,9 @@ export class RedactionPolicy {
     ];
     this._compiledPatterns = this._patterns.map(
       ([pattern, replacement]) => [new RegExp(pattern, "g"), replacement] as const,
+    );
+    this._compiledSecretPatterns = RedactionPolicy.SECRET_VALUE_PATTERNS.map(
+      (p) => new RegExp(p),
     );
     this._detectValues = detectSecretValues;
   }
@@ -134,8 +138,11 @@ export class RedactionPolicy {
 
   /** Check if a string value looks like a known secret format. */
   _looksLikeSecret(value: string): boolean {
-    for (const pattern of RedactionPolicy.SECRET_VALUE_PATTERNS) {
-      if (new RegExp(pattern).test(value)) {
+    const capped = value.length > RedactionPolicy.MAX_REGEX_INPUT
+      ? value.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+      : value;
+    for (const regex of this._compiledSecretPatterns) {
+      if (regex.test(capped)) {
         return true;
       }
     }

@@ -117,8 +117,12 @@ jobs:
         run: |
           COMMENT=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             --jq '[.[] | select(.body | contains("<!-- edictum-review -->"))] | last | .body // ""')
+          if [ -z "$COMMENT" ]; then
+            echo "::error::No review comment found. Review step may have failed or timed out."
+            exit 1
+          fi
           if echo "$COMMENT" | grep -q '<!-- STATUS: fail -->'; then
             echo "::error::Code review found critical/high issues. See PR comment for details."
             exit 1
           fi
-          echo "Code review passed or no issues found."
+          echo "Code review passed."
