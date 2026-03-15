@@ -9,7 +9,7 @@
 
 import { describe, test, expect } from "vitest";
 
-import { RedactionPolicy } from "../src/index.js";
+import { EdictumConfigError, RedactionPolicy } from "../src/index.js";
 
 describe("TestRedactionPolicy", () => {
   test("redactSensitiveKeys", () => {
@@ -174,5 +174,36 @@ describe("TestRedactionPolicy", () => {
     const result = policy.redactArgs(args) as Record<string, unknown>;
     expect(result["my_custom_field"]).toBe("[REDACTED]");
     expect(result["other"]).toBe("safe");
+  });
+});
+
+describe("security", () => {
+  test("custom pattern exceeding 10k chars rejected", () => {
+    const longPattern = "a".repeat(10_001);
+    expect(
+      () => new RedactionPolicy(null, [[longPattern, ""]]),
+    ).toThrow(EdictumConfigError);
+  });
+
+  test("custom pattern at exactly 10k chars accepted", () => {
+    const pattern = "a".repeat(10_000);
+    expect(
+      () => new RedactionPolicy(null, [[pattern, ""]]),
+    ).not.toThrow();
+  });
+
+  test("redactBashCommand caps input at 10k chars", () => {
+    const policy = new RedactionPolicy();
+    const longCmd = "x".repeat(20_000);
+    const result = policy.redactBashCommand(longCmd);
+    // Input is capped to 10k before regex processing
+    expect(result.length).toBe(10_000);
+  });
+
+  test("redactResult caps input at 10k chars", () => {
+    const policy = new RedactionPolicy();
+    const longResult = "x".repeat(20_000);
+    const result = policy.redactResult(longResult);
+    expect(result.length).toBeLessThanOrEqual(500);
   });
 });

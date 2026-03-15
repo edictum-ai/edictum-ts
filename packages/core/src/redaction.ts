@@ -1,5 +1,7 @@
 /** Redaction policy for sensitive data in audit events. */
 
+import { EdictumConfigError } from "./errors.js";
+
 // ---------------------------------------------------------------------------
 // RedactionPolicy
 // ---------------------------------------------------------------------------
@@ -53,9 +55,12 @@ export class RedactionPolicy {
   ];
 
   static readonly MAX_PAYLOAD_SIZE = 32_768;
+  static readonly MAX_REGEX_INPUT = 10_000;
+  static readonly MAX_PATTERN_LENGTH = 10_000;
 
   private readonly _keys: ReadonlySet<string>;
   private readonly _patterns: ReadonlyArray<readonly [string, string]>;
+  private readonly _compiledPatterns: ReadonlyArray<readonly [RegExp, string]>;
   private readonly _detectValues: boolean;
 
   constructor(
@@ -67,10 +72,22 @@ export class RedactionPolicy {
       ? new Set([...RedactionPolicy.DEFAULT_SENSITIVE_KEYS, ...sensitiveKeys])
       : new Set(RedactionPolicy.DEFAULT_SENSITIVE_KEYS);
     this._keys = new Set([...baseKeys].map((k) => k.toLowerCase()));
+    if (customPatterns) {
+      for (const [pattern] of customPatterns) {
+        if (pattern.length > RedactionPolicy.MAX_PATTERN_LENGTH) {
+          throw new EdictumConfigError(
+            `Custom redaction pattern exceeds ${RedactionPolicy.MAX_PATTERN_LENGTH} characters`,
+          );
+        }
+      }
+    }
     this._patterns = [
       ...(customPatterns ?? []),
       ...RedactionPolicy.BASH_REDACTION_PATTERNS,
     ];
+    this._compiledPatterns = this._patterns.map(
+      ([pattern, replacement]) => [new RegExp(pattern, "g"), replacement] as const,
+    );
     this._detectValues = detectSecretValues;
   }
 
@@ -127,18 +144,26 @@ export class RedactionPolicy {
 
   /** Apply redaction patterns to a bash command string. */
   redactBashCommand(command: string): string {
-    let result = command;
-    for (const [pattern, replacement] of this._patterns) {
-      result = result.replace(new RegExp(pattern, "g"), replacement);
+    const capped = command.length > RedactionPolicy.MAX_REGEX_INPUT
+      ? command.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+      : command;
+    let result = capped;
+    for (const [regex, replacement] of this._compiledPatterns) {
+      regex.lastIndex = 0;
+      result = result.replace(regex, replacement);
     }
     return result;
   }
 
   /** Apply redaction patterns and truncate a result string. */
   redactResult(result: string, maxLength: number = 500): string {
-    let redacted = result;
-    for (const [pattern, replacement] of this._patterns) {
-      redacted = redacted.replace(new RegExp(pattern, "g"), replacement);
+    const capped = result.length > RedactionPolicy.MAX_REGEX_INPUT
+      ? result.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+      : result;
+    let redacted = capped;
+    for (const [regex, replacement] of this._compiledPatterns) {
+      regex.lastIndex = 0;
+      redacted = redacted.replace(regex, replacement);
     }
     if (redacted.length > maxLength) {
       redacted = redacted.slice(0, maxLength - 3) + "...";

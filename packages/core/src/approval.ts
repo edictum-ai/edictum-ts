@@ -3,6 +3,8 @@
 import { randomUUID } from "node:crypto";
 import * as readline from "node:readline";
 
+import { RedactionPolicy } from "./redaction.js";
+
 // ---------------------------------------------------------------------------
 // ApprovalStatus
 // ---------------------------------------------------------------------------
@@ -140,9 +142,11 @@ export class LocalApprovalBackend implements ApprovalBackend {
     });
     this._pending.set(approvalId, request);
 
+    const redaction = new RedactionPolicy();
+    const safeArgs = redaction.redactArgs(toolArgs);
     process.stdout.write(`[APPROVAL REQUIRED] ${message}\n`);
     process.stdout.write(`  Tool: ${toolName}\n`);
-    process.stdout.write(`  Args: ${JSON.stringify(toolArgs)}\n`);
+    process.stdout.write(`  Args: ${JSON.stringify(safeArgs)}\n`);
     process.stdout.write(`  ID:   ${approvalId}\n`);
 
     return request;

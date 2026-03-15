@@ -1,7 +1,7 @@
 /** Tests for Session async counter operations — ported from test_session.py. */
 
 import { describe, test, expect } from "vitest";
-import { MemoryBackend, Session } from "../src/index.js";
+import { EdictumConfigError, MemoryBackend, Session } from "../src/index.js";
 
 describe("TestSession", () => {
   test("incrementAttempts", async () => {
@@ -88,5 +88,43 @@ describe("TestSession", () => {
     await session.recordExecution("Bash", true);
     expect((backend as any)._counters.get("s:test-sess:execs")).toBe(1);
     expect((backend as any)._counters.get("s:test-sess:tool:Bash")).toBe(1);
+  });
+});
+
+describe("security", () => {
+  describe("SessionIdValidation", () => {
+    test("empty session ID rejected", () => {
+      expect(() => new Session("", new MemoryBackend())).toThrow(EdictumConfigError);
+    });
+
+    test("null byte in session ID rejected", () => {
+      expect(() => new Session("sess\x00ion", new MemoryBackend())).toThrow(EdictumConfigError);
+    });
+
+    test("newline in session ID rejected", () => {
+      expect(() => new Session("sess\nion", new MemoryBackend())).toThrow(EdictumConfigError);
+    });
+
+    test("control char in session ID rejected", () => {
+      expect(() => new Session("sess\x01ion", new MemoryBackend())).toThrow(EdictumConfigError);
+    });
+
+    test("valid session IDs accepted", () => {
+      expect(() => new Session("test-session", new MemoryBackend())).not.toThrow();
+      expect(() => new Session("user:abc:123", new MemoryBackend())).not.toThrow();
+      expect(() => new Session("sess_v2", new MemoryBackend())).not.toThrow();
+    });
+  });
+
+  describe("ToolNameValidationInSession", () => {
+    test("null byte in tool name rejected in recordExecution", async () => {
+      const session = new Session("test", new MemoryBackend());
+      await expect(session.recordExecution("tool\x00name", true)).rejects.toThrow(EdictumConfigError);
+    });
+
+    test("null byte in tool name rejected in toolExecutionCount", async () => {
+      const session = new Session("test", new MemoryBackend());
+      await expect(session.toolExecutionCount("tool\x00name")).rejects.toThrow(EdictumConfigError);
+    });
   });
 });

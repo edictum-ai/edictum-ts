@@ -1,5 +1,6 @@
 /** Session -- atomic counters backed by StorageBackend. */
 
+import { EdictumConfigError } from "./errors.js";
 import type { StorageBackend } from "./storage.js";
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,31 @@ function hasBatchGet(
   backend: StorageBackend,
 ): backend is BatchCapableBackend {
   return "batchGet" in backend;
+}
+
+// ---------------------------------------------------------------------------
+// Input validation
+// ---------------------------------------------------------------------------
+
+const MAX_ID_LENGTH = 10_000;
+
+/**
+ * Validate a string used in storage keys: reject empty, control chars.
+ * Mirrors _validateToolName logic for any key component.
+ */
+function _validateStorageKeyComponent(value: string, label: string): void {
+  if (!value) {
+    throw new EdictumConfigError(`Invalid ${label}: ${JSON.stringify(value)}`);
+  }
+  if (value.length > MAX_ID_LENGTH) {
+    throw new EdictumConfigError(`Invalid ${label}: exceeds ${MAX_ID_LENGTH} characters`);
+  }
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      throw new EdictumConfigError(`Invalid ${label}: ${JSON.stringify(value)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +63,7 @@ export class Session {
   private readonly _backend: StorageBackend;
 
   constructor(sessionId: string, backend: StorageBackend) {
+    _validateStorageKeyComponent(sessionId, "session_id");
     this._sid = sessionId;
     this._backend = backend;
   }
@@ -56,6 +83,7 @@ export class Session {
 
   /** Record a tool execution. Called in PostToolUse. */
   async recordExecution(toolName: string, success: boolean): Promise<void> {
+    _validateStorageKeyComponent(toolName, "tool_name");
     await this._backend.increment(`s:${this._sid}:execs`);
     await this._backend.increment(`s:${this._sid}:tool:${toolName}`);
 
@@ -71,6 +99,7 @@ export class Session {
   }
 
   async toolExecutionCount(tool: string): Promise<number> {
+    _validateStorageKeyComponent(tool, "tool_name");
     return Number(
       (await this._backend.get(`s:${this._sid}:tool:${tool}`)) ?? 0,
     );
