@@ -109,3 +109,16 @@ jobs:
             - Do NOT flag style/formatting (linters handle that).
             - ALWAYS include the attack path for security issues.
             - ALWAYS include file path + line number + concrete fix with code.
+
+      - name: Fail on critical or high findings
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          COMMENT=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq '[.[] | select(.body | contains("<!-- edictum-review -->"))] | last | .body // ""')
+          if echo "$COMMENT" | grep -q '<!-- STATUS: fail -->'; then
+            echo "::error::Code review found critical/high issues. See PR comment for details."
+            exit 1
+          fi
+          echo "Code review passed or no issues found."
