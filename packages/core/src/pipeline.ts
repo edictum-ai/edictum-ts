@@ -441,6 +441,7 @@ export class GovernancePipeline {
 
         // Observe mode takes precedence
         if (contractMode === "observe") {
+          contractRecord["observed"] = true;
           warnings.push(`\u26a0\ufe0f [observe] ${verdict.message}`);
         } else if (effect === "redact" && isSafe) {
           const patterns = contract.redactPatterns ?? [];

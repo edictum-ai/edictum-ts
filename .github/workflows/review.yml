@@ -135,7 +135,7 @@ jobs:
             echo "Created new review comment"
           fi
 
-      - name: Fail on critical or high findings
+      - name: Fail on any findings
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -150,4 +150,8 @@ jobs:
             echo "::error::Code review found critical/high issues. See PR comment for details."
             exit 1
           fi
-          echo "Code review passed."
+          if echo "$COMMENT" | grep -q '<!-- STATUS: warn -->'; then
+            echo "::error::Code review found warnings. See PR comment for details."
+            exit 1
+          fi
+          echo "Code review passed — no findings."
