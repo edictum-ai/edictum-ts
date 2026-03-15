@@ -100,7 +100,8 @@ jobs:
             7. Do NOT post the comment yourself. The workflow handles posting after validation.
 
             ## Rules
-            - One pass. If the PR is clean, say so and stop.
+            - **EXHAUSTIVE**: Flag ALL issues in a SINGLE pass. Do not prioritize — report everything you find. The goal is zero follow-up rounds. If you find 8 issues, report all 8. Do not stop at 3.
+            - Review the FULL diff against main (`git diff origin/main...HEAD`), not just the latest commit.
             - A clean PR with zero findings is a good outcome.
             - Do NOT flag style/formatting (linters handle that).
             - ALWAYS include the attack path for security issues.
