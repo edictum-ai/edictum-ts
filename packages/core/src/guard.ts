@@ -113,16 +113,17 @@ export class Edictum implements GuardLike {
   private readonly _afterHooks: HookRegistration[];
   private readonly _sessionId: string;
 
-  // Callbacks and resolution
-  readonly _onDeny:
+  // Callbacks and resolution — not private because _runner.ts needs access
+  // (Python's _runner.py accesses self._on_deny etc. directly)
+  /** @internal */ readonly _onDeny:
     | ((
         envelope: ToolEnvelope,
         reason: string,
         source: string | null,
       ) => void)
     | null;
-  readonly _onAllow: ((envelope: ToolEnvelope) => void) | null;
-  readonly _successCheck:
+  /** @internal */ readonly _onAllow: ((envelope: ToolEnvelope) => void) | null;
+  /** @internal */ readonly _successCheck:
     | ((toolName: string, result: unknown) => boolean)
     | null;
   private _principal: Principal | null;
@@ -132,7 +133,7 @@ export class Edictum implements GuardLike {
         toolInput: Record<string, unknown>,
       ) => Principal)
     | null;
-  readonly _approvalBackend: ApprovalBackend | null;
+  /** @internal */ readonly _approvalBackend: ApprovalBackend | null;
 
   constructor(options: EdictumOptions = {}) {
     this.environment = options.environment ?? "production";

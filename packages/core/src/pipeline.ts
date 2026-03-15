@@ -503,7 +503,7 @@ export class GovernancePipeline {
       try {
         await hookReg.callback(envelope, toolResponse);
       } catch {
-        // After hook errors are logged but do not affect the decision
+        // After hook errors are silently swallowed — they must not affect governance decisions.
       }
     }
 
