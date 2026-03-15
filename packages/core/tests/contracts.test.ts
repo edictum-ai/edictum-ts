@@ -78,6 +78,7 @@ describe("TestPrecondition", () => {
 describe("TestPostcondition", () => {
   test("plain_object_sets_attributes", () => {
     const verifyOutput: Postcondition = {
+      contractType: "post",
       tool: "Write",
       check: () => Verdict.pass_(),
     };

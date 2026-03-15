@@ -51,7 +51,7 @@ function makeGuard(opts: MakeGuardOptions = {}): Edictum {
 // ---------------------------------------------------------------------------
 
 describe("TestPreExecute", () => {
-  test("allow_with_no_rules", async () => {
+  test("allow_with_no_contracts", async () => {
     const backend = new MemoryBackend();
     const guard = makeGuard({ backend });
     const pipeline = new GovernancePipeline(guard);
@@ -350,6 +350,7 @@ describe("TestPostExecute", () => {
     const backend = new MemoryBackend();
     // Postcondition check takes 2 args: (envelope, result)
     const checkResult: Postcondition = {
+      contractType: "post",
       tool: "TestTool",
       check: (_envelope, result) => {
         if (result !== "expected") {
@@ -378,6 +379,7 @@ describe("TestPostExecute", () => {
   test("postcondition_failure_write_tool", async () => {
     const backend = new MemoryBackend();
     const checkWrite: Postcondition = {
+      contractType: "post",
       tool: "WriteTool",
       check: (_envelope, _result) => {
         return Verdict.fail("Write verification failed");

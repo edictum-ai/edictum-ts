@@ -54,3 +54,35 @@ describe("fnmatch", () => {
     expect(fnmatch("a_b", "*_*_*")).toBe(false);
   });
 });
+
+describe("security", () => {
+  test("regex_special_chars_in_name_treated_as_literals", () => {
+    // Regex metacharacters in the name should not break matching
+    expect(fnmatch("tool.v2", "tool.v2")).toBe(true);
+    expect(fnmatch("tool(v2)", "tool(v2)")).toBe(true);
+    expect(fnmatch("tool[0]", "tool[0]")).toBe(true);
+    expect(fnmatch("a+b", "a+b")).toBe(true);
+    expect(fnmatch("a^b$c", "a^b$c")).toBe(true);
+  });
+
+  test("regex_special_chars_in_pattern_treated_as_literals", () => {
+    // Regex metacharacters in the pattern (except * and ?) should be literal
+    expect(fnmatch("tool.v2", "tool.v2")).toBe(true);
+    expect(fnmatch("toolXv2", "tool.v2")).toBe(false); // . is literal, not regex any
+    expect(fnmatch("tool(v2)", "tool(v2)")).toBe(true);
+  });
+
+  test("long_input_does_not_hang", () => {
+    // Input capped at 10k chars for regex DoS prevention
+    const longName = "a".repeat(20_000);
+    // Should not hang — returns false because pattern doesn't match truncated input
+    expect(fnmatch(longName, "b")).toBe(false);
+  });
+
+  test("catastrophic_backtracking_pattern_safe", () => {
+    // Even with patterns that could cause catastrophic backtracking,
+    // the 10k cap prevents hanging
+    const input = "a".repeat(100);
+    expect(fnmatch(input, "*a*a*a*a*b")).toBe(false);
+  });
+});

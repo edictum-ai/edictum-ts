@@ -380,8 +380,7 @@ export class Edictum implements GuardLike {
           name,
           check: (item as SessionContract).check,
         });
-      // Postcondition check takes 2 args (envelope, response) vs precondition's 1 (envelope)
-      } else if ("tool" in item && item.check.length >= 2) {
+      } else if ("tool" in item && (item as { contractType?: string }).contractType === "post") {
         const postItem = item as Postcondition;
         const name = (raw as NamedContract).name ?? "anonymous";
         post.push({

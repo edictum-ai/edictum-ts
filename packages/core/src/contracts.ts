@@ -45,6 +45,7 @@ export const Verdict = {
 
 /** Before execution. Safe to deny — tool hasn't run yet. */
 export interface Precondition {
+  readonly contractType?: "pre";
   readonly tool: string;
   readonly check: (envelope: ToolEnvelope) => Verdict | Promise<Verdict>;
   readonly when?: ((envelope: ToolEnvelope) => boolean) | null;
@@ -57,6 +58,7 @@ export interface Precondition {
  * On failure for write/irreversible: warn only, NO retry coaching.
  */
 export interface Postcondition {
+  readonly contractType: "post";
   readonly tool: string;
   readonly check: (
     envelope: ToolEnvelope,
