@@ -131,22 +131,70 @@ describe("EvaluatePostconditions", () => {
 });
 
 // ---------------------------------------------------------------------------
+// evaluate() — postcondition effect: deny → verdict "deny"
+// ---------------------------------------------------------------------------
+
+describe("EvaluatePostconditionDenyEffect", () => {
+  test("postcondition_effect_deny_returns_deny_verdict", async () => {
+    // Simulate a YAML-compiled postcondition with effect: deny
+    const denyPost = {
+      _edictum_type: "postcondition",
+      name: "block-pii",
+      tool: "*",
+      effect: "deny",
+      check: (_envelope: unknown, _response: unknown) =>
+        Verdict.fail("PII detected"),
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guard = makeGuard({ contracts: [denyPost as any] });
+    const result = await guard.evaluate("TestTool", {}, {
+      output: "SSN: 123-45-6789",
+    });
+
+    expect(result.verdict).toBe("deny");
+    expect(result.denyReasons.length).toBe(1);
+    expect(result.denyReasons[0]).toContain("PII detected");
+  });
+
+  test("postcondition_effect_warn_returns_warn_verdict", async () => {
+    const warnPost = {
+      _edictum_type: "postcondition",
+      name: "warn-pii",
+      tool: "*",
+      effect: "warn",
+      check: (_envelope: unknown, _response: unknown) =>
+        Verdict.fail("PII detected"),
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guard = makeGuard({ contracts: [warnPost as any] });
+    const result = await guard.evaluate("TestTool", {}, {
+      output: "SSN: 123-45-6789",
+    });
+
+    expect(result.verdict).toBe("warn");
+    expect(result.warnReasons.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // evaluate() — exhaustive evaluation (no short-circuit)
 // ---------------------------------------------------------------------------
 
 describe("EvaluateExhaustive", () => {
   test("multiple_contracts_evaluated_exhaustively", async () => {
-    const ruleA: Precondition = {
-      name: "rule-a",
+    const contractA: Precondition = {
+      name: "contract-a",
       tool: "*",
-      check: () => Verdict.fail("Rule A denied"),
+      check: () => Verdict.fail("Contract A denied"),
     };
-    const ruleB: Precondition = {
-      name: "rule-b",
+    const contractB: Precondition = {
+      name: "contract-b",
       tool: "*",
-      check: () => Verdict.fail("Rule B denied"),
+      check: () => Verdict.fail("Contract B denied"),
     };
-    const guard = makeGuard({ contracts: [ruleA, ruleB] });
+    const guard = makeGuard({ contracts: [contractA, contractB] });
     const result = await guard.evaluate("TestTool", {});
 
     expect(result.contractsEvaluated).toBe(2);
@@ -168,7 +216,7 @@ describe("EvaluateObserveMode", () => {
     const observePre = {
       _edictum_type: "precondition",
       _edictum_observe: false,
-      name: "observe-rule",
+      name: "observe-contract",
       tool: "*",
       mode: "observe",
       check: () => Verdict.fail("would deny"),
@@ -216,7 +264,7 @@ describe("EvaluateContractException", () => {
 describe("EvaluateContractResultFields", () => {
   test("contract_result_has_correct_fields", async () => {
     const tagged: Precondition = {
-      name: "tagged-rule",
+      name: "tagged-contract",
       tool: "*",
       check: () =>
         Verdict.fail("denied", { tags: ["safety", "security"] }),
@@ -225,7 +273,7 @@ describe("EvaluateContractResultFields", () => {
     const result = await guard.evaluate("TestTool", {});
 
     const cr = result.contracts[0]!;
-    expect(cr.contractId).toBe("tagged-rule");
+    expect(cr.contractId).toBe("tagged-contract");
     expect(cr.contractType).toBe("precondition");
     expect(cr.passed).toBe(false);
     expect(cr.message).toContain("denied");

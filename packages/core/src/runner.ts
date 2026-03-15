@@ -381,7 +381,9 @@ export async function run(
     let result: unknown;
     let toolSuccess: boolean;
     try {
-      result = toolCallable(args);
+      // Use the frozen envelope.args snapshot — prevents TOCTOU between
+      // governance evaluation and tool execution
+      result = toolCallable(envelope.args as Record<string, unknown>);
       // Await if the callable returns a promise
       if (
         result != null &&

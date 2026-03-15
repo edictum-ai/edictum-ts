@@ -188,7 +188,11 @@ export async function evaluate(
       contracts.push(contractResult);
 
       if (!verdict.passed && !isObserved) {
-        warnReasons.push(verdict.message ?? "");
+        if (effect === "deny") {
+          denyReasons.push(verdict.message ?? "");
+        } else {
+          warnReasons.push(verdict.message ?? "");
+        }
       }
     }
   }

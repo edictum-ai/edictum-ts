@@ -484,8 +484,13 @@ export class Edictum implements GuardLike {
       if (tool !== "*" && !fnmatch(envelope.toolName, tool)) {
         continue;
       }
-      if (when != null && !when(envelope)) {
-        continue;
+      if (when != null) {
+        try {
+          if (!when(envelope)) continue;
+        } catch {
+          // Fail-closed: throwing predicate includes the contract (not excludes)
+          // so it gets evaluated and can deny — safer than silently skipping.
+        }
       }
       result.push(p);
     }
