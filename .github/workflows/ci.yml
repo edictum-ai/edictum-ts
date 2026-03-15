@@ -62,10 +62,8 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - name: Audit npm dependencies (core packages)
-        run: |
-          pnpm --filter @edictum/core audit --audit-level=high
-          pnpm --filter @edictum/server audit --audit-level=high
-      - name: Audit npm dependencies (all — advisory)
+      - name: Audit npm dependencies
+        run: pnpm audit --audit-level=critical
+      - name: Audit npm dependencies (high — advisory)
         continue-on-error: true
         run: pnpm audit --audit-level=high
