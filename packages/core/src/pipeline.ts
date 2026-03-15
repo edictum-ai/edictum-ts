@@ -535,7 +535,7 @@ export class GovernancePipeline {
    * internal contract. Results are returned as dicts for audit emission
    * but never block calls.
    */
-  async _evaluateObserveContracts(
+  private async _evaluateObserveContracts(
     envelope: ToolEnvelope,
     session: Session,
   ): Promise<Record<string, unknown>[]> {
