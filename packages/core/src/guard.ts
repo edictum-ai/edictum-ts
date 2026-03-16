@@ -12,6 +12,12 @@
 import { randomUUID } from "node:crypto";
 
 import type { ApprovalBackend } from "./approval.js";
+import {
+  fromYaml as _fromYaml,
+  fromYamlString as _fromYamlString,
+  reload as _reload,
+} from "./factory.js";
+import type { FromYamlOptions, YamlFactoryOptions } from "./factory.js";
 import { CollectingAuditSink, CompositeSink } from "./audit.js";
 import type { AuditSink } from "./audit.js";
 import { createCompiledState } from "./compiled-state.js";
@@ -577,5 +583,40 @@ export class Edictum implements GuardLike {
     return import("./dry-run.js").then(({ evaluateBatch }) =>
       evaluateBatch(this, calls),
     );
+  }
+
+  // -----------------------------------------------------------------------
+  // YAML factory methods — delegate to factory.ts
+  // Circular dependency (factory.ts imports guard.ts) is safe because
+  // ESM resolves all bindings before user code calls these methods.
+  // -----------------------------------------------------------------------
+
+  /**
+   * Create an Edictum instance from one or more YAML contract bundle paths.
+   *
+   * When multiple paths are given, bundles are composed left-to-right
+   * (later layers override earlier ones).
+   */
+  static fromYaml(
+    ...args: [...string[], FromYamlOptions] | string[]
+  ): Edictum {
+    return _fromYaml(...args) as Edictum;
+  }
+
+  /**
+   * Create an Edictum instance from a YAML string or Uint8Array.
+   */
+  static fromYamlString(
+    content: string | Uint8Array,
+    options?: YamlFactoryOptions,
+  ): Edictum {
+    return _fromYamlString(content, options);
+  }
+
+  /**
+   * Atomically replace this guard's contracts from a YAML string.
+   */
+  reload(yamlContent: string): void {
+    _reload(this, yamlContent);
   }
 }
