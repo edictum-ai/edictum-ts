@@ -24,6 +24,7 @@ import type {
 } from "./contracts.js";
 import { SideEffect, ToolRegistry } from "./envelope.js";
 import type { Principal, ToolEnvelope } from "./envelope.js";
+import type { EvaluationResult } from "./evaluation.js";
 import { fnmatch } from "./fnmatch.js";
 import type {
   GuardLike,
@@ -140,25 +141,6 @@ export class Edictum implements GuardLike {
     this.mode = options.mode ?? "enforce";
     this.backend = options.backend ?? new MemoryBackend();
     this.redaction = options.redaction ?? new RedactionPolicy();
-    // Callbacks are wired up in run() — throw if provided before run() exists
-    if (options.onDeny != null) {
-      throw new EdictumConfigError(
-        "onDeny requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
-    if (options.onAllow != null) {
-      throw new EdictumConfigError(
-        "onAllow requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
-    if (options.successCheck != null) {
-      throw new EdictumConfigError(
-        "successCheck requires Edictum.run() which is not yet implemented. " +
-        "Remove it until run() is available.",
-      );
-    }
     this._onDeny = options.onDeny ?? null;
     this._onAllow = options.onAllow ?? null;
     this._successCheck = options.successCheck ?? null;
@@ -428,7 +410,11 @@ export class Edictum implements GuardLike {
             `"${String(ct)}". Expected "pre" or omitted for Precondition, "post" for Postcondition.`,
           );
         }
-        // Warn JS consumers: if check takes 2+ args but no contractType, likely a Postcondition
+        // Best-effort heuristic for JS consumers who forget contractType: "post".
+        // NOTE: Function.length is unreliable for rest parameters (...args) and
+        // default-valued params — both give length 0. This catches the common
+        // case (explicit (envelope, output)) but cannot guarantee detection.
+        // Always set contractType: "post" explicitly.
         if (ct == null && item.check.length >= 2) {
           throw new EdictumConfigError(
             `Contract with tool "${(item as Precondition).tool}" has a check function with ` +
@@ -502,8 +488,13 @@ export class Edictum implements GuardLike {
       if (tool !== "*" && !fnmatch(envelope.toolName, tool)) {
         continue;
       }
-      if (when != null && !when(envelope)) {
-        continue;
+      if (when != null) {
+        try {
+          if (!when(envelope)) continue;
+        } catch {
+          // Fail-closed: throwing predicate includes the contract (not excludes)
+          // so it gets evaluated and can deny — safer than silently skipping.
+        }
       }
       result.push(p);
     }
@@ -523,5 +514,62 @@ export class Edictum implements GuardLike {
       }
     }
     return result;
+  }
+
+  // -----------------------------------------------------------------------
+  // Delegated methods — run, evaluate, evaluateBatch
+  // -----------------------------------------------------------------------
+
+  /** Execute a tool call with full governance pipeline. */
+  async run(
+    toolName: string,
+    args: Record<string, unknown>,
+    toolCallable: (
+      args: Record<string, unknown>,
+    ) => unknown | Promise<unknown>,
+    options?: {
+      sessionId?: string;
+      environment?: string;
+      principal?: Principal;
+    },
+  ): Promise<unknown> {
+    const { run } = await import("./runner.js");
+    return run(this, toolName, args, toolCallable, options);
+  }
+
+  /**
+   * Dry-run evaluation of a tool call against all matching contracts.
+   *
+   * Never executes the tool. Evaluates exhaustively (no short-circuit).
+   * Session contracts are skipped.
+   */
+  evaluate(
+    toolName: string,
+    args: Record<string, unknown>,
+    options?: {
+      principal?: Principal;
+      output?: string;
+      environment?: string;
+    },
+  ): Promise<EvaluationResult> {
+    // Dynamic import avoids circular dependency
+    return import("./dry-run.js").then(({ evaluate }) =>
+      evaluate(this, toolName, args, options),
+    );
+  }
+
+  /** Evaluate a batch of tool calls. Thin wrapper over evaluate(). */
+  evaluateBatch(
+    calls: Array<{
+      tool: string;
+      args?: Record<string, unknown>;
+      principal?: Record<string, unknown>;
+      output?: string | Record<string, unknown>;
+      environment?: string;
+    }>,
+  ): Promise<EvaluationResult[]> {
+    return import("./dry-run.js").then(({ evaluateBatch }) =>
+      evaluateBatch(this, calls),
+    );
   }
 }
