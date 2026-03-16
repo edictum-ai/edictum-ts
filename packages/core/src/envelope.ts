@@ -342,11 +342,10 @@ export function createEnvelope(
   let filePath: string | null = null;
 
   // Registry overrides defaults but not explicit options
-  if (registry && options.sideEffect == null) {
-    [sideEffect, idempotent] = registry.classify(toolName, safeArgs);
-    if (options.idempotent != null) {
-      idempotent = options.idempotent;
-    }
+  if (registry) {
+    const [regEffect, regIdempotent] = registry.classify(toolName, safeArgs);
+    if (options.sideEffect == null) sideEffect = regEffect;
+    if (options.idempotent == null) idempotent = regIdempotent;
   }
 
   // Extract convenience fields (handle both snake_case and camelCase keys)
