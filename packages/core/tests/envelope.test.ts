@@ -397,3 +397,37 @@ describe("TestSideEffect", () => {
     expect(val).toBe(SideEffect.READ);
   });
 });
+
+describe("CreateEnvelopeSideEffectOverride", () => {
+  test("explicit_sideEffect_overrides_default", () => {
+    const envelope = createEnvelope("CustomTool", {}, {
+      sideEffect: SideEffect.PURE,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.PURE);
+  });
+
+  test("explicit_sideEffect_overrides_registry", () => {
+    const registry = new ToolRegistry();
+    registry.register("CustomTool", SideEffect.WRITE);
+    const envelope = createEnvelope("CustomTool", {}, {
+      sideEffect: SideEffect.READ,
+      registry,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.READ);
+  });
+
+  test("explicit_idempotent_overrides_default", () => {
+    const envelope = createEnvelope("CustomTool", {}, {
+      idempotent: true,
+    });
+    expect(envelope.idempotent).toBe(true);
+  });
+
+  test("registry_used_when_no_explicit_override", () => {
+    const registry = new ToolRegistry();
+    registry.register("CustomTool", SideEffect.PURE, true);
+    const envelope = createEnvelope("CustomTool", {}, { registry });
+    expect(envelope.sideEffect).toBe(SideEffect.PURE);
+    expect(envelope.idempotent).toBe(true);
+  });
+});

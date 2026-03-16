@@ -472,6 +472,12 @@ export class Edictum implements GuardLike {
     else if (edictumType === "postcondition") target.post.push(raw as unknown as InternalPostcondition);
     else if (edictumType === "session_contract") target.session.push(raw as unknown as InternalSessionContract);
     else if (edictumType === "sandbox") target.sandbox.push(raw as unknown as InternalSandboxContract);
+    else {
+      throw new EdictumConfigError(
+        `Unknown _edictum_type "${edictumType}". ` +
+        `Expected "precondition", "postcondition", "session_contract", or "sandbox".`,
+      );
+    }
   }
 
   /** Filter contracts by tool pattern and optional `when` guard. */

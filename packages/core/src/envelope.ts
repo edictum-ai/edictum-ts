@@ -334,15 +334,19 @@ export function createEnvelope(
     });
   }
 
-  // Classification
+  // Classification: explicit options > registry > defaults
   const registry = options.registry ?? null;
-  let sideEffect: SideEffect = SideEffect.IRREVERSIBLE;
-  let idempotent = false;
+  let sideEffect: SideEffect = options.sideEffect ?? SideEffect.IRREVERSIBLE;
+  let idempotent = options.idempotent ?? false;
   let bashCommand: string | null = null;
   let filePath: string | null = null;
 
-  if (registry) {
+  // Registry overrides defaults but not explicit options
+  if (registry && options.sideEffect == null) {
     [sideEffect, idempotent] = registry.classify(toolName, safeArgs);
+    if (options.idempotent != null) {
+      idempotent = options.idempotent;
+    }
   }
 
   // Extract convenience fields (handle both snake_case and camelCase keys)

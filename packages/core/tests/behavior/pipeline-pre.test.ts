@@ -407,4 +407,20 @@ describe("TestContractTypeDiscrimination", () => {
     expect(pre.action).toBe("allow");
     expect(pre.contractsEvaluated).toHaveLength(0);
   });
+
+  test("unknown_edictum_type_throws", () => {
+    const badContract = {
+      _edictum_type: "unknown_type",
+      name: "bad",
+      tool: "*",
+      check: () => Verdict.pass_(),
+    };
+
+    expect(
+      () => new Edictum({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        contracts: [badContract as any],
+      }),
+    ).toThrow(EdictumConfigError);
+  });
 });
