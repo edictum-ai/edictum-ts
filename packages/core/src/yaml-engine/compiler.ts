@@ -3,6 +3,7 @@
 import type { OperationLimits } from "../limits.js";
 import { DEFAULT_LIMITS } from "../limits.js";
 import type { CustomOperator, CustomSelector } from "./evaluator.js";
+import { EdictumConfigError } from "../errors.js";
 import { validateOperators } from "./compiler-utils.js";
 import { compilePre, compilePost, compileSession, mergeSessionLimits } from "./compile-contracts.js";
 import { compileSandbox } from "./sandbox-compile-fn.js";
@@ -45,13 +46,18 @@ export interface CompileOptions {
  */
 export function compileContracts(
   bundle: Record<string, unknown>,
-  options?: CompileOptions,
+  options: CompileOptions = {},
 ): CompiledBundle {
   const customOps = options?.customOperators ?? null;
   const customSels = options?.customSelectors ?? null;
 
   validateOperators(bundle, customOps);
 
+  if (bundle.defaults == null || typeof bundle.defaults !== "object") {
+    throw new EdictumConfigError(
+      "Bundle missing required 'defaults' section with 'mode' field",
+    );
+  }
   const defaults = bundle.defaults as Record<string, unknown>;
   const defaultMode = defaults.mode as string;
   const preconditions: unknown[] = [];

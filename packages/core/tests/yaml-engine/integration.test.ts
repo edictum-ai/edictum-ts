@@ -428,4 +428,91 @@ contracts: []
     guard.reload(newBundle);
     expect(guard.policyVersion).not.toBe(oldVersion);
   });
+
+  test("reload passes custom operators", () => {
+    const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
+      auditSink: new NullAuditSink(),
+      customOperators: { is_even: (v) => (v as number) % 2 === 0 },
+    });
+
+    const newBundle = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: custom-op
+defaults:
+  mode: enforce
+contracts:
+  - id: even-check
+    type: pre
+    tool: "*"
+    when:
+      args.count:
+        is_even: true
+    then:
+      effect: deny
+      message: "Even count denied."
+`;
+    // Should not throw when custom operator is provided to reload
+    expect(() =>
+      guard.reload(newBundle, {
+        customOperators: { is_even: (v) => (v as number) % 2 === 0 },
+      }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security: adversarial integration tests
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  test("fromYaml returnReport returns tuple", () => {
+    const { writeFileSync, mkdtempSync } = require("node:fs");
+    const { join } = require("node:path");
+    const { tmpdir } = require("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "edictum-sec-"));
+    const filePath = join(dir, "bundle.yaml");
+    writeFileSync(filePath, BASIC_PRE_BUNDLE, "utf-8");
+
+    const result = Edictum.fromYaml(filePath, { returnReport: true });
+    expect(Array.isArray(result)).toBe(true);
+    const [guard, report] = result as [Edictum, unknown];
+    expect(guard).toBeInstanceOf(Edictum);
+    expect(report).toBeDefined();
+  });
+
+  test("YAML without defaults section throws config error", () => {
+    const badBundle = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: no-defaults
+contracts:
+  - id: rule
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: "denied"
+`;
+    expect(() => Edictum.fromYamlString(badBundle)).toThrow();
+  });
+
+  test("deny verdict propagates end-to-end through run()", async () => {
+    const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
+      auditSink: new NullAuditSink(),
+    });
+    // Verify deny is never silently converted to allow
+    let toolExecuted = false;
+    await expect(
+      guard.run("read_file", { path: ".env" }, async () => {
+        toolExecuted = true;
+        return "should not reach";
+      }),
+    ).rejects.toThrow(EdictumDenied);
+    expect(toolExecuted).toBe(false);
+  });
 });

@@ -17,7 +17,8 @@ import {
   fromYamlString as _fromYamlString,
   reload as _reload,
 } from "./factory.js";
-import type { FromYamlOptions, YamlFactoryOptions } from "./factory.js";
+import type { FromYamlOptions, ReloadOptions, YamlFactoryOptions } from "./factory.js";
+import type { CompositionReport } from "./yaml-engine/composer.js";
 import { CollectingAuditSink, CompositeSink } from "./audit.js";
 import type { AuditSink } from "./audit.js";
 import { createCompiledState } from "./compiled-state.js";
@@ -596,11 +597,20 @@ export class Edictum implements GuardLike {
    *
    * When multiple paths are given, bundles are composed left-to-right
    * (later layers override earlier ones).
+   *
+   * When the trailing options object has `returnReport: true`, returns
+   * a tuple of [Edictum, CompositionReport].
    */
   static fromYaml(
+    ...args: [...string[], FromYamlOptions & { returnReport: true }]
+  ): [Edictum, CompositionReport];
+  static fromYaml(
     ...args: [...string[], FromYamlOptions] | string[]
-  ): Edictum {
-    return _fromYaml(...args) as Edictum;
+  ): Edictum;
+  static fromYaml(
+    ...args: [...string[], FromYamlOptions] | string[]
+  ): Edictum | [Edictum, CompositionReport] {
+    return _fromYaml(...args);
   }
 
   /**
@@ -615,8 +625,11 @@ export class Edictum implements GuardLike {
 
   /**
    * Atomically replace this guard's contracts from a YAML string.
+   *
+   * Pass customOperators/customSelectors if the new YAML uses custom
+   * operators or selectors that were passed to fromYaml/fromYamlString.
    */
-  reload(yamlContent: string): void {
-    _reload(this, yamlContent);
+  reload(yamlContent: string, options?: ReloadOptions): void {
+    _reload(this, yamlContent, options);
   }
 }

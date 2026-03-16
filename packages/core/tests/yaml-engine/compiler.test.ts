@@ -460,6 +460,57 @@ describe("SessionLimitsMerging", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Security: adversarial compiler inputs
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  test("missing defaults section throws EdictumConfigError", () => {
+    const bundle = {
+      apiVersion: "edictum/v1",
+      kind: "ContractBundle",
+      metadata: { name: "test" },
+      contracts: [
+        {
+          id: "rule",
+          type: "pre",
+          tool: "*",
+          when: { "args.x": { equals: 1 } },
+          then: { effect: "deny", message: "denied" },
+        },
+      ],
+    };
+    expect(() => compileContracts(bundle)).toThrow(EdictumConfigError);
+  });
+
+  test("defaults: null throws EdictumConfigError", () => {
+    const bundle = {
+      apiVersion: "edictum/v1",
+      kind: "ContractBundle",
+      metadata: { name: "test" },
+      defaults: null,
+      contracts: [],
+    };
+    expect(() => compileContracts(bundle as unknown as Record<string, unknown>)).toThrow(EdictumConfigError);
+  });
+
+  test("contract with unknown type is silently skipped (not crash)", () => {
+    const bundle = _makeBundle([
+      {
+        id: "weird-type",
+        type: "unknown_type",
+        tool: "*",
+        when: { "args.x": { equals: 1 } },
+        then: { effect: "deny", message: "denied" },
+      },
+    ]);
+    // Should not throw — unknown types are ignored
+    const compiled = compileContracts(bundle);
+    expect(compiled.preconditions.length).toBe(0);
+    expect(compiled.postconditions.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Operator validation
 // ---------------------------------------------------------------------------
 

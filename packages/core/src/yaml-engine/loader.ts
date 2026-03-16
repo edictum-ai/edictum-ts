@@ -1,7 +1,7 @@
 /** YAML Bundle Loader — parse, validate, compute bundle hash. */
 
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 
 import { EdictumConfigError } from "../errors.js";
 import {
@@ -99,14 +99,16 @@ function validateBundle(data: Record<string, unknown>): void {
  * @throws Error if the file does not exist.
  */
 export function loadBundle(source: string): [Record<string, unknown>, BundleHash] {
-  const fileSize = statSync(source).size;
+  // Resolve symlinks before reading to prevent path traversal attacks.
+  const resolved = realpathSync(source);
+  const fileSize = statSync(resolved).size;
   if (fileSize > MAX_BUNDLE_SIZE) {
     throw new EdictumConfigError(
       `Bundle file too large (${fileSize} bytes, max ${MAX_BUNDLE_SIZE})`,
     );
   }
 
-  const rawBytes = readFileSync(source);
+  const rawBytes = readFileSync(resolved);
   const bundleHash = computeHash(rawBytes);
   const data = parseYaml(rawBytes.toString("utf-8"));
 

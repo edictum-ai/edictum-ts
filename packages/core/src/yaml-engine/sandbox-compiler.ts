@@ -14,6 +14,15 @@ import { fnmatch } from "../fnmatch.js";
 const _REDIRECT_PREFIX_RE = /^(?:\d*>>|>>|\d*>|>|<<|<)/;
 
 /**
+ * Shell command separators and metacharacters that allow chaining
+ * multiple commands. If any of these appear in a raw command string,
+ * the command is unsafe — the shell would execute multiple commands.
+ *
+ * Covers: ;  |  &&  ||  \n  \r  $()  backtick  ${}  <()
+ */
+const _SHELL_SEPARATOR_RE = /[;|&\n\r`]|\$\(|\$\{|<\(/;
+
+/**
  * Shell-aware tokenization of a command string.
  *
  * Handles single/double quotes. Strips shell redirection operators from
@@ -126,6 +135,11 @@ export function extractCommand(envelope: ToolEnvelope): string | null {
   if (!cmd || typeof cmd !== "string") return null;
   const stripped = cmd.trim();
   if (!stripped) return null;
+
+  // Check for shell command separators/metacharacters BEFORE extracting.
+  // If any are present, the shell would execute multiple commands — return
+  // sentinel value that never matches any allowlist.
+  if (_SHELL_SEPARATOR_RE.test(stripped)) return "\x00";
 
   const rawFirst = stripped.split(/\s/)[0] ?? "";
   if (_REDIRECT_PREFIX_RE.test(rawFirst)) return "\x00";

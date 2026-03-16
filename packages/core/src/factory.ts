@@ -151,6 +151,12 @@ export function fromYamlString(
 // reload
 // ---------------------------------------------------------------------------
 
+/** Options for reload(). */
+export interface ReloadOptions {
+  readonly customOperators?: Record<string, CustomOperator>;
+  readonly customSelectors?: Record<string, CustomSelector>;
+}
+
 /**
  * Atomically replace a guard's contracts from a YAML string.
  *
@@ -159,9 +165,16 @@ export function fromYamlString(
  * started before reload() see the old state; evaluations after
  * see the new state.
  */
-export function reload(guard: Edictum, yamlContent: string): void {
+export function reload(
+  guard: Edictum,
+  yamlContent: string,
+  options: ReloadOptions = {},
+): void {
   const [bundleData, bundleHash] = loadBundleString(yamlContent);
-  const compiled = compileContracts(bundleData);
+  const compiled = compileContracts(bundleData, {
+    customOperators: options.customOperators ?? null,
+    customSelectors: options.customSelectors ?? null,
+  });
 
   const allContracts = [
     ...compiled.preconditions,

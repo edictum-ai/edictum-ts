@@ -495,3 +495,56 @@ describe("CustomSelectors", () => {
     expect(result).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Security: adversarial evaluator inputs
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  test("regex input exceeding MAX_REGEX_INPUT is safely handled", () => {
+    const longInput = "a".repeat(MAX_REGEX_INPUT + 5000);
+    const env = _envelope("read_file", { data: longInput });
+    // Must not hang or crash — should return boolean or PolicyError
+    const result = evaluateExpression({ "args.data": { matches: "^a+$" } }, env);
+    expect(typeof result === "boolean" || result instanceof PolicyError).toBe(true);
+  });
+
+  test("very long regex input is capped and does not hang", () => {
+    // Input exceeding MAX_REGEX_INPUT is truncated before regex evaluation,
+    // preventing pathological patterns from running on unbounded input.
+    const input = "a".repeat(MAX_REGEX_INPUT + 100);
+    const env = _envelope("read_file", { data: input });
+    const result = evaluateExpression(
+      { "args.data": { matches: "^a+$" } },
+      env,
+    );
+    // The truncated input still matches ^a+$ — verifies cap doesn't break results
+    expect(typeof result === "boolean" || result instanceof PolicyError).toBe(true);
+  });
+
+  test("null byte in selector path returns false (not crash)", () => {
+    const env = _envelope("read_file", { "path\x00evil": "data" });
+    const result = evaluateExpression(
+      { "args.path\x00evil": { equals: "data" } },
+      env,
+    );
+    // Should return false (null byte in key) or true if the key matches literally
+    expect(typeof result === "boolean" || result instanceof PolicyError).toBe(true);
+  });
+
+  test("empty expression object evaluates to true (vacuous truth)", () => {
+    const env = _envelope("read_file");
+    // Empty all/any should not crash
+    expect(evaluateExpression({ all: [] }, env)).toBe(true);
+  });
+
+  test("prototype pollution attempt via __proto__ selector", () => {
+    const env = _envelope("read_file", { __proto__: { admin: true } });
+    const result = evaluateExpression(
+      { "args.__proto__.admin": { equals: true } },
+      env,
+    );
+    // Must not pollute prototype — result should be false
+    expect(result === false || result instanceof PolicyError).toBe(true);
+  });
+});

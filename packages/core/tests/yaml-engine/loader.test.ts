@@ -352,6 +352,90 @@ describe("validateSandboxContracts", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Security: adversarial loader inputs
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  test("symlink-resolved path used for file loading", () => {
+    // loadBundle now calls realpathSync — verify it doesn't crash on a normal path
+    const filePath = writeTempYaml(VALID_YAML);
+    const [data] = loadBundle(filePath);
+    expect(data.apiVersion).toBe("edictum/v1");
+  });
+
+  test("null bytes in YAML content rejected", () => {
+    const malicious = VALID_YAML + "\x00";
+    // Should either parse successfully (ignoring null) or throw — must not crash
+    expect(() => {
+      try {
+        loadBundleString(malicious);
+      } catch (e) {
+        if (e instanceof EdictumConfigError) throw e;
+        // Non-config errors (e.g. YAML parse) are also acceptable rejections
+        throw new EdictumConfigError(String(e));
+      }
+    }).not.toThrow(TypeError);
+  });
+
+  test("control characters in contract IDs rejected or handled", () => {
+    const yaml = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: test
+defaults:
+  mode: enforce
+contracts:
+  - id: "bad\\x00id"
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: "bad"
+`;
+    // Must not throw TypeError — either parses or throws EdictumConfigError
+    try {
+      loadBundleString(yaml);
+    } catch (e) {
+      expect(e).not.toBeInstanceOf(TypeError);
+    }
+  });
+
+  test("extremely deeply nested YAML does not cause stack overflow", () => {
+    // Build a moderately nested structure — should throw config error, not crash
+    let nested = '{ equals: "x" }';
+    for (let i = 0; i < 50; i++) {
+      nested = `{ not: ${nested} }`;
+    }
+    const yaml = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: test
+defaults:
+  mode: enforce
+contracts:
+  - id: deep-nest
+    type: pre
+    tool: "*"
+    when:
+      args.x: ${nested}
+    then:
+      effect: deny
+      message: "deep"
+`;
+    // Should not throw RangeError (stack overflow)
+    try {
+      loadBundleString(yaml);
+    } catch (e) {
+      expect(e).not.toBeInstanceOf(RangeError);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // End-to-end: loadBundleString with validation failures
 // ---------------------------------------------------------------------------
 

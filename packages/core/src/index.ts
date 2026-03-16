@@ -111,7 +111,7 @@ export { fnmatch } from "./fnmatch.js";
 
 // YAML Factory
 export { fromYaml, fromYamlString, reload } from "./factory.js";
-export type { YamlFactoryOptions, FromYamlOptions } from "./factory.js";
+export type { YamlFactoryOptions, FromYamlOptions, ReloadOptions } from "./factory.js";
 
 // YAML Engine (public API)
 export {
