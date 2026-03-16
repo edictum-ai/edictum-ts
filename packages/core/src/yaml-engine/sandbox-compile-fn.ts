@@ -59,6 +59,12 @@ export function compileSandbox(
 
   const check = (envelope: ToolEnvelope): Verdict => {
     // Path checks
+    // LIMITATION (Python parity): If extractPaths() returns empty (e.g., relative
+    // paths, ~, $HOME, or args that don't match known path keys), within/not_within
+    // enforcement is silently skipped. This matches Python's behavior — sandbox only
+    // checks paths it can extract. A tool call with unrecognized path arguments will
+    // pass through unchecked. Consider using command allowlists as a complementary
+    // control for tools that accept non-standard path arguments.
     if (within.length > 0 || notWithin.length > 0) {
       const paths = extractPaths(envelope);
       if (paths.length > 0) {

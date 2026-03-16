@@ -88,6 +88,11 @@ export function compileContracts(
       sessionContracts.push(compileSession(contract, contractMode, limits));
     } else if (contractType === "sandbox") {
       sandboxContracts.push(compileSandbox(contract, contractMode));
+    } else {
+      throw new EdictumConfigError(
+        `Unknown contract type "${contractType}" in contract "${contract.id ?? "unknown"}". ` +
+        `Expected "pre", "post", "session", or "sandbox".`,
+      );
     }
   }
 

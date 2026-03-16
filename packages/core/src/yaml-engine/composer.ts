@@ -1,5 +1,7 @@
 /** Bundle Composer — merge multiple parsed YAML bundles into one. */
 
+import { EdictumConfigError } from "../errors.js";
+
 /** Records a contract that was replaced during composition. */
 export interface CompositionOverride {
   readonly contractId: string;
@@ -158,6 +160,18 @@ function mergeObserveAlongside(
   for (const contract of (layer.contracts ?? []) as Record<string, unknown>[]) {
     const cid = contract.id as string;
     const observeId = `${cid}:candidate`;
+
+    // Check for ID collisions — the generated observe ID must not clash
+    // with any existing contract in the merged bundle.
+    const existingIds = new Set(
+      (mc as Record<string, unknown>[]).map((c) => c.id as string),
+    );
+    if (existingIds.has(observeId)) {
+      throw new EdictumConfigError(
+        `observe_alongside collision: generated ID "${observeId}" already exists in the bundle. ` +
+        `Rename the conflicting contract or use a different ID for "${cid}".`,
+      );
+    }
 
     const observeContract = deepCopyBundle(contract);
     observeContract.id = observeId;

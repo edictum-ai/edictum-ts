@@ -191,9 +191,8 @@ export function reload(
     policyVersion: bundleHash.hex,
   });
 
-  // Atomic state swap — single reference assignment
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (guard as any)._state = (temp as any)._state;
+  // Atomic state swap via package-internal methods
+  guard._replaceState(temp._getState());
 }
 
 // ---------------------------------------------------------------------------

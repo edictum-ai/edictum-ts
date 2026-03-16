@@ -493,7 +493,7 @@ describe("security", () => {
     expect(() => compileContracts(bundle as unknown as Record<string, unknown>)).toThrow(EdictumConfigError);
   });
 
-  test("contract with unknown type is silently skipped (not crash)", () => {
+  test("contract with unknown type throws EdictumConfigError", () => {
     const bundle = _makeBundle([
       {
         id: "weird-type",
@@ -503,10 +503,8 @@ describe("security", () => {
         then: { effect: "deny", message: "denied" },
       },
     ]);
-    // Should not throw — unknown types are ignored
-    const compiled = compileContracts(bundle);
-    expect(compiled.preconditions.length).toBe(0);
-    expect(compiled.postconditions.length).toBe(0);
+    expect(() => compileContracts(bundle)).toThrow(EdictumConfigError);
+    expect(() => compileContracts(bundle)).toThrow(/Unknown contract type "unknown_type"/);
   });
 });
 

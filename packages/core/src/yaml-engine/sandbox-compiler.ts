@@ -54,7 +54,17 @@ function _shlexSplit(s: string): string[] {
       if (inSingle) {
         if (ch === "'") { inSingle = false; } else { current += ch; }
       } else if (inDouble) {
-        if (ch === '"') { inDouble = false; } else { current += ch; }
+        if (ch === '\\' && i + 1 < s.length) {
+          // Backslash escaping inside double quotes: \", \\, \$, \`, \newline
+          const next = s.charAt(i + 1);
+          if (next === '"' || next === '\\' || next === '$' || next === '`' || next === '\n') {
+            current += next;
+            i++;
+          } else {
+            // Literal backslash for other characters (POSIX behavior)
+            current += ch;
+          }
+        } else if (ch === '"') { inDouble = false; } else { current += ch; }
       } else if (ch === "'") {
         inSingle = true;
       } else if (ch === '"') {

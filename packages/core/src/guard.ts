@@ -226,6 +226,24 @@ export class Edictum implements GuardLike {
     return this._state.policyVersion;
   }
 
+  /**
+   * Replace the compiled state atomically.
+   *
+   * @internal — used by factory.ts reload(). Not part of the public API.
+   */
+  _replaceState(newState: CompiledState): void {
+    this._state = newState;
+  }
+
+  /**
+   * Read the current compiled state.
+   *
+   * @internal — used by factory.ts reload(). Not part of the public API.
+   */
+  _getState(): CompiledState {
+    return this._state;
+  }
+
   /** Update policy version (replaces compiled state atomically). */
   set policyVersion(value: string | null) {
     this._state = createCompiledState({
