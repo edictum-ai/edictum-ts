@@ -74,7 +74,16 @@ export function evaluateExpression(
     return _evalNot(expr.not as Record<string, unknown>, envelope, outputText, customOps, customSels);
   }
 
-  // Leaf node: exactly one selector key
+  // Leaf node: exactly one selector key (schema enforces single-key leaves).
+  // Guard: if a malformed leaf has multiple keys, fail-closed with PolicyError
+  // rather than silently dropping extra keys. Python takes next(iter(leaf))
+  // which also ignores extras — this is a strictness improvement.
+  const leafKeys = Object.keys(expr);
+  if (leafKeys.length !== 1) {
+    return new PolicyError(
+      `Leaf expression must have exactly one selector key, got ${leafKeys.length}: [${leafKeys.join(", ")}]`,
+    );
+  }
   return _evalLeaf(expr, envelope, outputText, customOps, customSels);
 }
 

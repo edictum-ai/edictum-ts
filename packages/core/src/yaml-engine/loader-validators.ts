@@ -35,16 +35,32 @@ export function validateSchema(data: Record<string, unknown>): void {
 // Unique IDs
 // ---------------------------------------------------------------------------
 
-/** Ensure all contract IDs are unique within the bundle. */
+// Reject control characters in contract IDs — null bytes, newlines, carriage
+// returns, and other C0/C1 control chars could corrupt storage keys or logs.
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f]/;
+
+/** Validate a single contract ID for dangerous characters. */
+function validateContractId(contractId: string): void {
+  if (CONTROL_CHAR_RE.test(contractId)) {
+    throw new EdictumConfigError(
+      `Contract id contains control characters: '${contractId.replace(CONTROL_CHAR_RE, "\\x??")}'`,
+    );
+  }
+}
+
+/** Ensure all contract IDs are unique within the bundle and free of control characters. */
 export function validateUniqueIds(data: Record<string, unknown>): void {
   const ids = new Set<string>();
   const contracts = (data.contracts ?? []) as Record<string, unknown>[];
   for (const contract of contracts) {
     const contractId = contract.id as string | undefined;
-    if (contractId != null && ids.has(contractId)) {
-      throw new EdictumConfigError(`Duplicate contract id: '${contractId}'`);
+    if (contractId != null) {
+      validateContractId(contractId);
+      if (ids.has(contractId)) {
+        throw new EdictumConfigError(`Duplicate contract id: '${contractId}'`);
+      }
+      ids.add(contractId);
     }
-    if (contractId != null) ids.add(contractId);
   }
 }
 

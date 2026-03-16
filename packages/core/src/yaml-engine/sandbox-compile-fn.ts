@@ -59,12 +59,16 @@ export function compileSandbox(
 
   const check = (envelope: ToolEnvelope): Verdict => {
     // Path checks
-    // LIMITATION (Python parity): If extractPaths() returns empty (e.g., relative
-    // paths, ~, $HOME, or args that don't match known path keys), within/not_within
-    // enforcement is silently skipped. This matches Python's behavior — sandbox only
-    // checks paths it can extract. A tool call with unrecognized path arguments will
-    // pass through unchecked. Consider using command allowlists as a complementary
-    // control for tools that accept non-standard path arguments.
+    // SECURITY LIMITATION (Python parity — intentional fail-open on empty paths):
+    // If extractPaths() returns empty (e.g., relative paths, ~, $HOME, or args
+    // that don't match known path keys), within/not_within enforcement is silently
+    // skipped. This matches Python's behavior — sandbox only checks paths it can
+    // extract. A tool call with unrecognized path arguments will pass through
+    // unchecked. This is a known gap: an attacker who crafts args that bypass
+    // extractPaths() can evade sandbox path restrictions.
+    // Mitigations: (1) use command allowlists as a complementary control,
+    // (2) restrict tool access at the adapter level, (3) validate tool args
+    // via precondition contracts that match the specific arg patterns.
     if (within.length > 0 || notWithin.length > 0) {
       const paths = extractPaths(envelope);
       if (paths.length > 0) {
@@ -126,8 +130,9 @@ export function compileSandbox(
     _edictum_timeout_effect: timeoutEffect,
   };
 
-  // Use _observe (TS) not _shadow (Python)
-  if (contract._observe || contract._shadow) {
+  // Use _observe (TS) not _shadow (Python). Strict === true to prevent
+  // truthy coercion of non-boolean values (e.g., strings, numbers).
+  if (contract._observe === true || contract._shadow === true) {
     result._edictum_observe = true;
   }
 

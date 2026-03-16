@@ -62,6 +62,13 @@ export interface FromYamlOptions extends YamlFactoryOptions {
  *
  * When multiple paths are given, bundles are composed left-to-right
  * (later layers override earlier ones).
+ *
+ * EXCEPTION TO "ALL ASYNC" RULE: This factory is intentionally synchronous,
+ * matching Python's from_yaml(). File I/O uses Node's readFileSync and YAML
+ * parsing is CPU-bound — neither benefits from async. The returned Edictum
+ * instance's run()/evaluate()/evaluateBatch() methods are fully async.
+ * Making this async would force all callers to await at module init time
+ * for no concurrency benefit.
  */
 export function fromYaml(
   ...args: [...string[], FromYamlOptions] | string[]
@@ -131,6 +138,8 @@ export function fromYaml(
  * Create an Edictum instance from a YAML string or Uint8Array.
  *
  * Like fromYaml but accepts YAML content directly instead of a file path.
+ *
+ * EXCEPTION TO "ALL ASYNC" RULE: Synchronous by design — see fromYaml docs.
  */
 export function fromYamlString(
   content: string | Uint8Array,

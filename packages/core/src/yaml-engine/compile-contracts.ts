@@ -2,6 +2,7 @@
 
 import { Verdict } from "../contracts.js";
 import type { ToolEnvelope } from "../envelope.js";
+import { EdictumConfigError } from "../errors.js";
 import type { OperationLimits } from "../limits.js";
 import type { Session } from "../session.js";
 import { evaluateExpression, PolicyError, type CustomOperator, type CustomSelector } from "./evaluator.js";
@@ -39,7 +40,7 @@ function _evalAndVerdict(
 
 /** Stamp _edictum_observe on the result if the contract is in observe mode. */
 function _maybeObserve(result: Record<string, unknown>, contract: Record<string, unknown>): void {
-  if (contract._observe || contract._shadow) result._edictum_observe = true;
+  if (contract._observe === true || contract._shadow === true) result._edictum_observe = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +150,7 @@ export function compileSession(
     _edictum_then_metadata: thenMetadata,
     _edictum_source: "yaml_session",
   };
-  if (contract._observe || contract._shadow) {
+  if (contract._observe === true || contract._shadow === true) {
     result._edictum_observe = true;
   }
   return result;
@@ -173,14 +174,27 @@ export function mergeSessionLimits(
   const maxCallsPerTool: Record<string, number> = { ...existing.maxCallsPerTool };
 
   if ("max_tool_calls" in sessionLimits) {
-    maxToolCalls = Math.min(maxToolCalls, sessionLimits.max_tool_calls as number);
+    const raw = sessionLimits.max_tool_calls;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      throw new EdictumConfigError(`Session limit max_tool_calls must be a finite number, got: ${String(raw)}`);
+    }
+    maxToolCalls = Math.min(maxToolCalls, raw);
   }
   if ("max_attempts" in sessionLimits) {
-    maxAttempts = Math.min(maxAttempts, sessionLimits.max_attempts as number);
+    const raw = sessionLimits.max_attempts;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      throw new EdictumConfigError(`Session limit max_attempts must be a finite number, got: ${String(raw)}`);
+    }
+    maxAttempts = Math.min(maxAttempts, raw);
   }
   if ("max_calls_per_tool" in sessionLimits) {
-    const perTool = sessionLimits.max_calls_per_tool as Record<string, number>;
+    const perTool = sessionLimits.max_calls_per_tool as Record<string, unknown>;
     for (const [tool, limit] of Object.entries(perTool)) {
+      if (typeof limit !== "number" || !Number.isFinite(limit)) {
+        throw new EdictumConfigError(
+          `Session limit max_calls_per_tool['${tool}'] must be a finite number, got: ${String(limit)}`,
+        );
+      }
       if (tool in maxCallsPerTool) {
         maxCallsPerTool[tool] = Math.min(maxCallsPerTool[tool] as number, limit);
       } else {

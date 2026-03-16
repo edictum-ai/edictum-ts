@@ -72,6 +72,12 @@ export function resolveSelector(
     return outputText == null ? _MISSING : outputText;
   }
 
+  // SECURITY NOTE (Python parity): env.* selector intentionally reads from
+  // process.env, matching Python's os.environ.get(). This is by design — YAML
+  // contracts use env.* to gate behavior on environment variables (e.g.,
+  // env.EDICTUM_MODE). The message template expansion layer handles secret
+  // redaction. Bundle authors control which env vars are referenced; untrusted
+  // YAML bundles should not be loaded without review.
   if (selector.startsWith("env.")) {
     const varName = selector.slice(4);
     const raw = process.env[varName];
@@ -117,7 +123,7 @@ export function resolveNested(path: string, data: unknown): unknown {
   for (const part of parts) {
     if (current == null || typeof current !== "object") return _MISSING;
     const obj = current as Record<string, unknown>;
-    if (!(part in obj)) return _MISSING;
+    if (!Object.hasOwn(obj, part)) return _MISSING;
     current = obj[part];
   }
   return current;
