@@ -430,4 +430,16 @@ describe("CreateEnvelopeSideEffectOverride", () => {
     expect(envelope.sideEffect).toBe(SideEffect.PURE);
     expect(envelope.idempotent).toBe(true);
   });
+
+  test("explicit_sideEffect_overrides_BashClassifier", () => {
+    // Without override, "ls" would be READ via BashClassifier
+    const defaultEnvelope = createEnvelope("Bash", { command: "ls" });
+    expect(defaultEnvelope.sideEffect).toBe(SideEffect.READ);
+
+    // With explicit override, caller wins over BashClassifier
+    const overridden = createEnvelope("Bash", { command: "ls" }, {
+      sideEffect: SideEffect.WRITE,
+    });
+    expect(overridden.sideEffect).toBe(SideEffect.WRITE);
+  });
 });

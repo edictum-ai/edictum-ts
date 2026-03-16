@@ -352,8 +352,10 @@ export function createEnvelope(
   // Extract convenience fields (handle both snake_case and camelCase keys)
   if (toolName === "Bash") {
     bashCommand = (safeArgs.command as string) ?? "";
-    // BashClassifier always wins over registry for Bash tools
-    sideEffect = BashClassifier.classify(bashCommand);
+    // BashClassifier wins over registry but NOT over explicit caller options
+    if (options.sideEffect == null) {
+      sideEffect = BashClassifier.classify(bashCommand);
+    }
   } else if (
     toolName === "Read" ||
     toolName === "Glob" ||
