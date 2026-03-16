@@ -195,7 +195,7 @@ export function mergeSessionLimits(
           `Session limit max_calls_per_tool['${tool}'] must be a finite number, got: ${String(limit)}`,
         );
       }
-      if (tool in maxCallsPerTool) {
+      if (Object.hasOwn(maxCallsPerTool, tool)) {
         maxCallsPerTool[tool] = Math.min(maxCallsPerTool[tool] as number, limit);
       } else {
         maxCallsPerTool[tool] = limit;

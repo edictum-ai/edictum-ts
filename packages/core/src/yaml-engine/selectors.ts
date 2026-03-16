@@ -97,7 +97,7 @@ export function resolveSelector(
     const dotPos = selector.indexOf(".");
     if (dotPos > 0) {
       const prefix = selector.slice(0, dotPos);
-      if (prefix in customSelectors) {
+      if (Object.hasOwn(customSelectors, prefix)) {
         const resolver = customSelectors[prefix] as CustomSelector;
         const data = resolver(envelope);
         const rest = selector.slice(dotPos + 1);

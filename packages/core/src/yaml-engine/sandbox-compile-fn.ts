@@ -109,6 +109,10 @@ export function compileSandbox(
           if (allowedDomains.length > 0 && !domainMatches(hostname, allowedDomains)) {
             return Verdict.fail(expandMessage(messageTemplate, envelope));
           }
+        } else if (allowedDomains.length > 0) {
+          // Fail-closed: URLs without extractable hostname (file://, data:, etc.)
+          // cannot be verified against domain allowlist → deny
+          return Verdict.fail(expandMessage(messageTemplate, envelope));
         }
       }
     }

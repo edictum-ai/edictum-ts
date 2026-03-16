@@ -176,8 +176,8 @@ function _applyOperator(
   if (fieldValue === _MISSING || fieldValue == null) return false;
 
   try {
-    if (op in OPERATORS) return (OPERATORS[op] as (fv: unknown, ov: unknown) => boolean)(fieldValue, opValue);
-    if (customOperators && op in customOperators) {
+    if (Object.hasOwn(OPERATORS, op)) return (OPERATORS[op] as (fv: unknown, ov: unknown) => boolean)(fieldValue, opValue);
+    if (customOperators && Object.hasOwn(customOperators, op)) {
       return Boolean((customOperators[op] as CustomOperator)(fieldValue, opValue));
     }
     return new PolicyError(`Unknown operator: '${op}'`);
