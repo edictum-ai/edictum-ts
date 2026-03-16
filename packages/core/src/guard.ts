@@ -410,7 +410,11 @@ export class Edictum implements GuardLike {
             `"${String(ct)}". Expected "pre" or omitted for Precondition, "post" for Postcondition.`,
           );
         }
-        // Warn JS consumers: if check takes 2+ args but no contractType, likely a Postcondition
+        // Best-effort heuristic for JS consumers who forget contractType: "post".
+        // NOTE: Function.length is unreliable for rest parameters (...args) and
+        // default-valued params — both give length 0. This catches the common
+        // case (explicit (envelope, output)) but cannot guarantee detection.
+        // Always set contractType: "post" explicitly.
         if (ct == null && item.check.length >= 2) {
           throw new EdictumConfigError(
             `Contract with tool "${(item as Precondition).tool}" has a check function with ` +

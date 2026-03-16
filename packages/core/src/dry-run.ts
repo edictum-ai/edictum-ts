@@ -3,6 +3,9 @@
  *
  * Ports Python's _dry_run.py. Exhaustive contract evaluation without
  * tool execution. Session contracts are skipped (no session state).
+ *
+ * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's
+ * _dry_run.py (205 LOC). evaluate() + evaluateBatch() are a cohesive unit.
  */
 
 import type { Edictum } from "./guard.js";
@@ -173,10 +176,7 @@ export async function evaluate(
         continue;
       }
 
-      const tags =
-        verdict.metadata
-          ? (verdict.metadata["tags"] as string[]) ?? []
-          : [];
+      const tags = safeTags(verdict.metadata);
       const isObserved =
         contract.mode === "observe" && !verdict.passed;
       const pe = verdict.metadata
