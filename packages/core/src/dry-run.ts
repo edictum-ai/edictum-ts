@@ -255,7 +255,9 @@ export async function evaluateBatch(
         ticketRef:
           call.principal["ticketRef"] as string | undefined ?? undefined,
         claims:
-          (call.principal["claims"] as Record<string, unknown>) ?? {},
+          (typeof call.principal["claims"] === "object" && call.principal["claims"] != null
+            ? call.principal["claims"] as Record<string, unknown>
+            : {}),
       });
     }
 
