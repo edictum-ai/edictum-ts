@@ -12,6 +12,13 @@
 import { randomUUID } from "node:crypto";
 
 import type { ApprovalBackend } from "./approval.js";
+import {
+  fromYaml as _fromYaml,
+  fromYamlString as _fromYamlString,
+  reload as _reload,
+} from "./factory.js";
+import type { FromYamlOptions, ReloadOptions, YamlFactoryOptions } from "./factory.js";
+import type { CompositionReport } from "./yaml-engine/composer.js";
 import { CollectingAuditSink, CompositeSink } from "./audit.js";
 import type { AuditSink } from "./audit.js";
 import { createCompiledState } from "./compiled-state.js";
@@ -217,6 +224,24 @@ export class Edictum implements GuardLike {
   /** SHA256 hash identifying the active contract bundle. */
   get policyVersion(): string | null {
     return this._state.policyVersion;
+  }
+
+  /**
+   * Replace the compiled state atomically.
+   *
+   * @internal — used by factory.ts reload(). Not part of the public API.
+   */
+  _replaceState(newState: CompiledState): void {
+    this._state = newState;
+  }
+
+  /**
+   * Read the current compiled state.
+   *
+   * @internal — used by factory.ts reload(). Not part of the public API.
+   */
+  _getState(): CompiledState {
+    return this._state;
   }
 
   /** Update policy version (replaces compiled state atomically). */
@@ -577,5 +602,52 @@ export class Edictum implements GuardLike {
     return import("./dry-run.js").then(({ evaluateBatch }) =>
       evaluateBatch(this, calls),
     );
+  }
+
+  // -----------------------------------------------------------------------
+  // YAML factory methods — delegate to factory.ts
+  // Circular dependency (factory.ts imports guard.ts) is safe because
+  // ESM resolves all bindings before user code calls these methods.
+  // -----------------------------------------------------------------------
+
+  /**
+   * Create an Edictum instance from one or more YAML contract bundle paths.
+   *
+   * When multiple paths are given, bundles are composed left-to-right
+   * (later layers override earlier ones).
+   *
+   * When the trailing options object has `returnReport: true`, returns
+   * a tuple of [Edictum, CompositionReport].
+   */
+  static fromYaml(
+    ...args: [...string[], FromYamlOptions & { returnReport: true }]
+  ): [Edictum, CompositionReport];
+  static fromYaml(
+    ...args: [...string[], FromYamlOptions] | string[]
+  ): Edictum;
+  static fromYaml(
+    ...args: [...string[], FromYamlOptions] | string[]
+  ): Edictum | [Edictum, CompositionReport] {
+    return _fromYaml(...args);
+  }
+
+  /**
+   * Create an Edictum instance from a YAML string or Uint8Array.
+   */
+  static fromYamlString(
+    content: string | Uint8Array,
+    options?: YamlFactoryOptions,
+  ): Edictum {
+    return _fromYamlString(content, options);
+  }
+
+  /**
+   * Atomically replace this guard's contracts from a YAML string.
+   *
+   * Pass customOperators/customSelectors if the new YAML uses custom
+   * operators or selectors that were passed to fromYaml/fromYamlString.
+   */
+  reload(yamlContent: string, options?: ReloadOptions): void {
+    _reload(this, yamlContent, options);
   }
 }

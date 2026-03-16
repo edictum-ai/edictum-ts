@@ -108,3 +108,37 @@ export type { BatchCall, EvaluateOptions } from "./dry-run.js";
 
 // Fnmatch
 export { fnmatch } from "./fnmatch.js";
+
+// YAML Factory
+export { fromYaml, fromYamlString, reload } from "./factory.js";
+export type { YamlFactoryOptions, FromYamlOptions, ReloadOptions } from "./factory.js";
+
+// YAML Engine (public API)
+export {
+  evaluateExpression,
+  PolicyError,
+  BUILTIN_OPERATOR_NAMES,
+  BUILTIN_SELECTOR_PREFIXES,
+  MAX_REGEX_INPUT,
+} from "./yaml-engine/index.js";
+export type {
+  CustomOperator,
+  CustomSelector,
+} from "./yaml-engine/index.js";
+export {
+  compileContracts,
+  loadBundle,
+  loadBundleString,
+  computeHash,
+  MAX_BUNDLE_SIZE,
+  composeBundles,
+  expandMessage,
+  validateOperators,
+} from "./yaml-engine/index.js";
+export type {
+  CompiledBundle,
+  CompileOptions,
+  BundleHash,
+  ComposedBundle,
+  CompositionReport,
+} from "./yaml-engine/index.js";
