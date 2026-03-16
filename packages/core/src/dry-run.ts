@@ -9,6 +9,14 @@ import type { Edictum } from "./guard.js";
 import type { Principal } from "./envelope.js";
 
 import { createEnvelope, createPrincipal } from "./envelope.js";
+
+/** Safely extract tags array from verdict metadata. */
+function safeTags(metadata: Readonly<Record<string, unknown>> | null | undefined): string[] {
+  if (!metadata) return [];
+  const raw = metadata["tags"];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((t): t is string => typeof t === "string");
+}
 import {
   createContractResult,
   createEvaluationResult,
@@ -73,10 +81,7 @@ export async function evaluate(
       continue;
     }
 
-    const tags =
-      verdict.metadata
-        ? (verdict.metadata["tags"] as string[]) ?? []
-        : [];
+    const tags = safeTags(verdict.metadata);
     const isObserved =
       contract.mode === "observe" && !verdict.passed;
     const pe = verdict.metadata
@@ -118,10 +123,7 @@ export async function evaluate(
       continue;
     }
 
-    const tags =
-      verdict.metadata
-        ? (verdict.metadata["tags"] as string[]) ?? []
-        : [];
+    const tags = safeTags(verdict.metadata);
     const isObserved =
       contract.mode === "observe" && !verdict.passed;
     const pe = verdict.metadata
@@ -262,7 +264,9 @@ export async function evaluateBatch(
         ticketRef:
           call.principal["ticketRef"] as string | undefined ?? undefined,
         claims:
-          (typeof call.principal["claims"] === "object" && call.principal["claims"] != null
+          (typeof call.principal["claims"] === "object"
+            && call.principal["claims"] != null
+            && !Array.isArray(call.principal["claims"])
             ? call.principal["claims"] as Record<string, unknown>
             : {}),
       });
