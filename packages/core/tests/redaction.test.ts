@@ -206,4 +206,38 @@ describe("security", () => {
     const result = policy.redactResult(longResult);
     expect(result.length).toBeLessThanOrEqual(500);
   });
+
+  test("camelCase sensitive keys redacted", () => {
+    const policy = new RedactionPolicy();
+    const args = {
+      accessToken: "tok-123",
+      clientSecret: "sec-456",
+      databaseUrl: "postgres://...",
+      dbPassword: "pass",
+      refreshToken: "ref-789",
+      normalField: "safe",
+    };
+    const result = policy.redactArgs(args) as Record<string, unknown>;
+    expect(result["accessToken"]).toBe("[REDACTED]");
+    expect(result["clientSecret"]).toBe("[REDACTED]");
+    expect(result["databaseUrl"]).toBe("[REDACTED]");
+    expect(result["dbPassword"]).toBe("[REDACTED]");
+    expect(result["refreshToken"]).toBe("[REDACTED]");
+    expect(result["normalField"]).toBe("safe");
+  });
+
+  test("camelCase does not false positive on non-sensitive", () => {
+    const policy = new RedactionPolicy();
+    const args = {
+      monkey: "george",
+      bucket: "s3-data",
+      socket: "ws://...",
+      market: "nasdaq",
+    };
+    const result = policy.redactArgs(args) as Record<string, unknown>;
+    expect(result["monkey"]).toBe("george");
+    expect(result["bucket"]).toBe("s3-data");
+    expect(result["socket"]).toBe("ws://...");
+    expect(result["market"]).toBe("nasdaq");
+  });
 });

@@ -127,9 +127,12 @@ export class RedactionPolicy {
   _isSensitiveKey(key: string): boolean {
     const k = key.toLowerCase();
     if (this._keys.has(k)) return true;
-    // Match whole-word segments (split by _ or -) to avoid false positives
-    // like "monkey", "bucket", "socket" matching on "key"
-    const parts = k.split(/[_\-]/);
+    // Normalize camelCase → snake_case for set lookup (e.g. databaseUrl → database_url)
+    const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+    if (normalized !== k && this._keys.has(normalized)) return true;
+    // Split on _ , - , and camelCase boundaries (e.g. accessToken → [access, token])
+    // to catch both snake_case and camelCase field names common in JS/TS.
+    const parts = normalized.split(/[_\-]/);
     return parts.some((part) =>
       part === "token" ||
       part === "key" ||

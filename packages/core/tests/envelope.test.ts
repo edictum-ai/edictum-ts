@@ -397,3 +397,72 @@ describe("TestSideEffect", () => {
     expect(val).toBe(SideEffect.READ);
   });
 });
+
+describe("CreateEnvelopeSideEffectOverride", () => {
+  test("explicit_sideEffect_overrides_default", () => {
+    const envelope = createEnvelope("CustomTool", {}, {
+      sideEffect: SideEffect.PURE,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.PURE);
+  });
+
+  test("explicit_sideEffect_overrides_registry", () => {
+    const registry = new ToolRegistry();
+    registry.register("CustomTool", SideEffect.WRITE);
+    const envelope = createEnvelope("CustomTool", {}, {
+      sideEffect: SideEffect.READ,
+      registry,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.READ);
+  });
+
+  test("explicit_idempotent_overrides_default", () => {
+    const envelope = createEnvelope("CustomTool", {}, {
+      idempotent: true,
+    });
+    expect(envelope.idempotent).toBe(true);
+  });
+
+  test("registry_used_when_no_explicit_override", () => {
+    const registry = new ToolRegistry();
+    registry.register("CustomTool", SideEffect.PURE, true);
+    const envelope = createEnvelope("CustomTool", {}, { registry });
+    expect(envelope.sideEffect).toBe(SideEffect.PURE);
+    expect(envelope.idempotent).toBe(true);
+  });
+
+  test("explicit_sideEffect_with_registry_idempotent_preserved", () => {
+    const registry = new ToolRegistry();
+    registry.register("MyTool", SideEffect.WRITE, true);
+    // Explicit sideEffect overrides registry, but registry idempotent still applies
+    const envelope = createEnvelope("MyTool", {}, {
+      sideEffect: SideEffect.READ,
+      registry,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.READ);
+    expect(envelope.idempotent).toBe(true);
+  });
+
+  test("explicit_idempotent_overrides_registry", () => {
+    const registry = new ToolRegistry();
+    registry.register("MyTool", SideEffect.PURE, true);
+    const envelope = createEnvelope("MyTool", {}, {
+      idempotent: false,
+      registry,
+    });
+    expect(envelope.sideEffect).toBe(SideEffect.PURE);
+    expect(envelope.idempotent).toBe(false);
+  });
+
+  test("explicit_sideEffect_overrides_BashClassifier", () => {
+    // Without override, "ls" would be READ via BashClassifier
+    const defaultEnvelope = createEnvelope("Bash", { command: "ls" });
+    expect(defaultEnvelope.sideEffect).toBe(SideEffect.READ);
+
+    // With explicit override, caller wins over BashClassifier
+    const overridden = createEnvelope("Bash", { command: "ls" }, {
+      sideEffect: SideEffect.WRITE,
+    });
+    expect(overridden.sideEffect).toBe(SideEffect.WRITE);
+  });
+});

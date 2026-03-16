@@ -334,22 +334,27 @@ export function createEnvelope(
     });
   }
 
-  // Classification
+  // Classification: explicit options > registry > defaults
   const registry = options.registry ?? null;
-  let sideEffect: SideEffect = SideEffect.IRREVERSIBLE;
-  let idempotent = false;
+  let sideEffect: SideEffect = options.sideEffect ?? SideEffect.IRREVERSIBLE;
+  let idempotent = options.idempotent ?? false;
   let bashCommand: string | null = null;
   let filePath: string | null = null;
 
+  // Registry overrides defaults but not explicit options
   if (registry) {
-    [sideEffect, idempotent] = registry.classify(toolName, safeArgs);
+    const [regEffect, regIdempotent] = registry.classify(toolName, safeArgs);
+    if (options.sideEffect == null) sideEffect = regEffect;
+    if (options.idempotent == null) idempotent = regIdempotent;
   }
 
   // Extract convenience fields (handle both snake_case and camelCase keys)
   if (toolName === "Bash") {
     bashCommand = (safeArgs.command as string) ?? "";
-    // BashClassifier always wins over registry for Bash tools
-    sideEffect = BashClassifier.classify(bashCommand);
+    // BashClassifier wins over registry but NOT over explicit caller options
+    if (options.sideEffect == null) {
+      sideEffect = BashClassifier.classify(bashCommand);
+    }
   } else if (
     toolName === "Read" ||
     toolName === "Glob" ||
