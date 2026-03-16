@@ -160,7 +160,14 @@ export async function evaluate(
           policyError: true,
         });
         contracts.push(contractResult);
-        warnReasons.push(contractResult.message ?? "");
+        // Route to correct bucket based on effect — deny-effect errors
+        // must produce deny verdict, not warn
+        const excEffect = contract.effect ?? "warn";
+        if (excEffect === "deny") {
+          denyReasons.push(contractResult.message ?? "");
+        } else {
+          warnReasons.push(contractResult.message ?? "");
+        }
         continue;
       }
 
@@ -265,7 +272,11 @@ export async function evaluateBatch(
     let output: string | undefined;
     if (call.output != null) {
       if (typeof call.output === "object") {
-        output = JSON.stringify(call.output);
+        try {
+          output = JSON.stringify(call.output);
+        } catch {
+          output = "[unserializable output]";
+        }
       } else {
         output = call.output;
       }
