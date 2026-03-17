@@ -16,7 +16,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  type AuditEvent,
   AuditAction,
   createAuditEvent,
   createEnvelope,
@@ -142,14 +141,12 @@ export class OpenAIAgentsAdapter {
   } {
     this._onPostconditionWarn = options?.onPostconditionWarn ?? null;
 
-    const adapter = this;
-
     const inputGuardrail: InputGuardrail = {
       name: "edictum_input_guardrail",
       execute: async ({ input }) => {
         // Parse input: expect { toolName, toolInput, callId } or similar
-        const parsed = adapter._parseInput(input);
-        const result = await adapter._pre(
+        const parsed = this._parseInput(input);
+        const result = await this._pre(
           parsed.toolName,
           parsed.toolInput,
           parsed.callId,
@@ -168,9 +165,9 @@ export class OpenAIAgentsAdapter {
           agentOutput != null ? String(agentOutput) : "";
 
         // Try FIFO correlation (insertion-order) for sequential execution
-        if (adapter._pending.size > 0) {
-          const callId = adapter._pending.keys().next().value as string;
-          const postResult = await adapter._post(callId, toolOutput);
+        if (this._pending.size > 0) {
+          const callId = this._pending.keys().next().value as string;
+          const postResult = await this._post(callId, toolOutput);
           if (postResult.outputSuppressed) {
             return {
               tripwireTriggered: true,
