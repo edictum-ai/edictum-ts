@@ -241,7 +241,7 @@ export class EdictumServerClient {
       }
     }
 
-    throw lastError!;
+    throw lastError ?? new Error("Request failed after retries");
   }
 
   /**

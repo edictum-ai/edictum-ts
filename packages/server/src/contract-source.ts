@@ -5,7 +5,8 @@
  * logic, and event handling form a cohesive streaming client.
  */
 
-import { SAFE_IDENTIFIER_RE, EdictumServerClient } from "./client.js";
+import type { EdictumServerClient } from "./client.js";
+import { SAFE_IDENTIFIER_RE } from "./client.js";
 
 const STABLE_CONNECTION_SECS = 30_000; // 30s in ms
 
@@ -50,7 +51,7 @@ export class ServerContractSource {
    */
   async *watch(): AsyncGenerator<Record<string, unknown>> {
     let delay = this._reconnectDelay;
-    let consecutiveFailures = 0;
+    // Track consecutive failures for backoff reset
     let connectedAt: number | null = null;
 
     while (!this._closed) {
@@ -132,8 +133,7 @@ export class ServerContractSource {
         this._connected = false;
         connectedAt = null;
         delay = this._reconnectDelay;
-        consecutiveFailures = 0;
-      } catch (error) {
+      } catch {
         if (this._closed) {
           return;
         }
@@ -144,12 +144,10 @@ export class ServerContractSource {
           const elapsed = Date.now() - connectedAt;
           if (elapsed >= STABLE_CONNECTION_SECS) {
             delay = this._reconnectDelay;
-            consecutiveFailures = 0;
           }
           connectedAt = null;
         }
 
-        consecutiveFailures += 1;
 
         await sleep(delay);
         delay = Math.min(delay * 2, this._maxReconnectDelay);

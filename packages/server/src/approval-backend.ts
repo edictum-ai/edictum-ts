@@ -7,7 +7,7 @@ import type {
 } from "@edictum/core";
 import { ApprovalStatus } from "@edictum/core";
 
-import { EdictumServerClient } from "./client.js";
+import type { EdictumServerClient } from "./client.js";
 
 /**
  * Approval backend that delegates to the edictum-server approval queue.

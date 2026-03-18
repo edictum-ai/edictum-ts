@@ -10,7 +10,8 @@
 
 import type { StorageBackend } from "@edictum/core";
 
-import { EdictumServerClient, EdictumServerError } from "./client.js";
+import type { EdictumServerClient} from "./client.js";
+import { EdictumServerError } from "./client.js";
 
 /**
  * Storage backend that delegates session state to edictum-server.

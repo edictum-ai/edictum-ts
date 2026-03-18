@@ -2,7 +2,7 @@
 
 import type { AuditEvent, AuditSink } from "@edictum/core";
 
-import { EdictumServerClient } from "./client.js";
+import type { EdictumServerClient } from "./client.js";
 
 interface ServerEventPayload {
   call_id: string;
