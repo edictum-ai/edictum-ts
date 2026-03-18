@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createAuditEvent, AuditAction } from "@edictum/core";
+import { createAuditEvent, AuditAction, EdictumConfigError } from "@edictum/core";
 
 import { EdictumServerClient } from "../src/client.js";
 import { ServerAuditSink } from "../src/audit-sink.js";
@@ -389,5 +389,102 @@ describe("ServerAuditSink.close", () => {
     await vi.advanceTimersByTimeAsync(6000);
 
     expect(client.post).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Constructor validation
+// ---------------------------------------------------------------------------
+
+describe("ServerAuditSink constructor validation", () => {
+  it("rejects batchSize of 0", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { batchSize: 0 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects negative batchSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { batchSize: -1 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects non-integer batchSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { batchSize: 2.5 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects NaN batchSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { batchSize: NaN })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects flushInterval of 0", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { flushInterval: 0 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects negative flushInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { flushInterval: -100 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects Infinity flushInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { flushInterval: Infinity })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects NaN flushInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { flushInterval: NaN })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects maxBufferSize of 0", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { maxBufferSize: 0 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects negative maxBufferSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { maxBufferSize: -1 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects non-integer maxBufferSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { maxBufferSize: 1.5 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects NaN maxBufferSize", () => {
+    const client = mockClient();
+    expect(() => new ServerAuditSink(client, { maxBufferSize: NaN })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("accepts valid constructor options", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { batchSize: 10, flushInterval: 1000, maxBufferSize: 500 }),
+    ).not.toThrow();
   });
 });

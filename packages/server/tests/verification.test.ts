@@ -96,6 +96,30 @@ describe("encoding validation", () => {
     );
   });
 
+  it("throws on hex string with non-hex characters that Buffer.from would silently accept", () => {
+    const yamlBytes = Buffer.from("data");
+    // "zz" is not valid hex — Buffer.from("zz", "hex") returns empty Buffer silently
+    // 64 chars to pass the length/2 == 32 check if regex weren't there
+    const sneakyKey = "zz".repeat(32);
+    expect(() => verifyBundleSignature(yamlBytes, "AAAA", sneakyKey)).toThrow(
+      "Invalid public key hex encoding",
+    );
+    expect(() => verifyBundleSignature(yamlBytes, "AAAA", sneakyKey)).toThrow(
+      "contains non-hex characters",
+    );
+  });
+
+  it("throws on hex string with spaces (even length)", () => {
+    const yamlBytes = Buffer.from("data");
+    // 64 chars total, even length, but contains spaces — should be caught by regex
+    const keyWithSpaces = "ab cd ef 01 23 45 67 89 ab cd ef 01 23 45 67 89";
+    // Pad to 64 chars (even length)
+    const padded = (keyWithSpaces + "00".repeat(32)).slice(0, 64);
+    expect(() => verifyBundleSignature(yamlBytes, "AAAA", padded)).toThrow(
+      "contains non-hex characters",
+    );
+  });
+
   it("throws on wrong-length public key", () => {
     const yamlBytes = Buffer.from("data");
     const sig = signData(yamlBytes);
