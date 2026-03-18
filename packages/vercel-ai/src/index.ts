@@ -380,8 +380,8 @@ export class VercelAIAdapter {
     this._pending.set(callId, { envelope });
 
     // Observe-mode audits — errors swallowed (must not block execution)
-    try {
-      for (const sr of decision.observeResults) {
+    for (const sr of decision.observeResults) {
+      try {
         const observeAction = sr["passed"]
           ? AA.CALL_ALLOWED
           : AA.CALL_WOULD_DENY;
@@ -407,9 +407,9 @@ export class VercelAIAdapter {
             policyVersion: this._guard.policyVersion,
           }),
         );
+      } catch {
+        // Observe audit errors must not block tool execution — continue with remaining
       }
-    } catch {
-      // Observe audit errors must not block tool execution
     }
 
     return null;
