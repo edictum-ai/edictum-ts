@@ -221,3 +221,33 @@ describe("ServerApprovalBackend.waitForDecision", () => {
     expect(Object.isFrozen(decision)).toBe(true);
   });
 });
+
+describe("security", () => {
+  it("rejects path traversal in waitForDecision approvalId", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.waitForDecision("../../admin/secrets"),
+    ).rejects.toThrow(/Invalid approvalId/);
+  });
+
+  it("rejects control characters in waitForDecision approvalId", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.waitForDecision("id\x00injected"),
+    ).rejects.toThrow(/Invalid approvalId/);
+  });
+
+  it("rejects path traversal in server-returned approvalId", async () => {
+    const client = mockClient();
+    (client.post as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "../../../etc" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(/invalid approvalId|Invalid/i);
+  });
+});

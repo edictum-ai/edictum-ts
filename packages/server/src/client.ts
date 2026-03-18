@@ -287,10 +287,14 @@ export class EdictumServerClient {
       const searchParams = new URLSearchParams(params);
       url += `?${searchParams.toString()}`;
     }
+    // Compose caller signal with a connection timeout so rawFetch doesn't
+    // hang indefinitely if server accepts TCP but never sends headers.
+    const signals: AbortSignal[] = [AbortSignal.timeout(this.timeout * 1000)];
+    if (options?.signal) signals.push(options.signal);
     return fetch(url, {
       method: "GET",
       headers: this._headers(),
-      signal: options?.signal,
+      signal: AbortSignal.any(signals),
     });
   }
 

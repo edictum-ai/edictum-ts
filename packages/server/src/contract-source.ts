@@ -170,10 +170,11 @@ export class ServerContractSource {
           return;
         }
 
-        // Stream ended cleanly — full reset
+        // Stream ended cleanly — wait before reconnecting to avoid tight loop
         this._connected = false;
         connectedAt = null;
         delay = this._reconnectDelay;
+        await sleep(delay);
       } catch {
         if (this._closed) {
           return;
