@@ -137,7 +137,7 @@ describe("ServerBackend.increment", () => {
     const backend = new ServerBackend(client);
 
     await expect(backend.increment("counter")).rejects.toThrow(
-      "Server returned non-number value for increment",
+      "Server returned invalid value for increment",
     );
   });
 
@@ -147,7 +147,27 @@ describe("ServerBackend.increment", () => {
     const backend = new ServerBackend(client);
 
     await expect(backend.increment("counter")).rejects.toThrow(
-      "Server returned non-number value for increment",
+      "Server returned invalid value for increment",
+    );
+  });
+
+  it("throws on NaN response value", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ value: NaN });
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter")).rejects.toThrow(
+      "Server returned invalid value for increment",
+    );
+  });
+
+  it("throws on Infinity response value", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ value: Infinity });
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter")).rejects.toThrow(
+      "Server returned invalid value for increment",
     );
   });
 

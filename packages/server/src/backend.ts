@@ -91,9 +91,9 @@ export class ServerBackend implements StorageBackend {
       { amount },
     );
     const value = response["value"];
-    if (typeof value !== "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
       throw new Error(
-        `Server returned non-number value for increment: ${typeof value}`,
+        `Server returned invalid value for increment: ${JSON.stringify(value)}`,
       );
     }
     return value;

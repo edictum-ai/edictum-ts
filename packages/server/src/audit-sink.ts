@@ -4,15 +4,12 @@ import type { AuditEvent, AuditSink } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
 
-/** Deep-copy with fallback to shallow spread for non-cloneable values. */
+/** Deep-copy with fallback to JSON roundtrip for non-cloneable values. */
 function safeClone<T>(value: T): T {
   try {
     return structuredClone(value);
   } catch {
-    if (value !== null && typeof value === "object") {
-      return { ...value } as T;
-    }
-    return value;
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 }
 

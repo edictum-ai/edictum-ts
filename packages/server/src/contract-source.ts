@@ -10,6 +10,7 @@ import { SAFE_IDENTIFIER_RE } from "./client.js";
 
 const STABLE_CONNECTION_MS = 30_000;
 const MAX_SSE_BUFFER = 1_048_576; // 1 MB
+const SSE_IDLE_TIMEOUT_MS = 120_000; // 2 minutes
 
 /**
  * Receives contract bundle updates from edictum-server via SSE.
@@ -95,10 +96,30 @@ export class ServerContractSource {
         let currentEvent = "";
         let currentData = "";
 
+        // Idle timeout: abort if no data received for 2 minutes
+        // Idle timeout: if no data for 2 minutes, abort the connection.
+        // This kills the fetch/reader and triggers the reconnect logic.
+        let idleTimer: ReturnType<typeof setTimeout> | null = null;
+        const resetIdleTimer = (): void => {
+          if (idleTimer !== null) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            // Abort the connection — reader.read() will throw, triggering reconnect
+            this._abortController?.abort();
+          }, SSE_IDLE_TIMEOUT_MS);
+        };
+        const clearIdleTimer = (): void => {
+          if (idleTimer !== null) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+          }
+        };
+
         try {
+          resetIdleTimer();
           while (!this._closed) {
             const { done, value } = await reader.read();
             if (done) break;
+            resetIdleTimer();
 
             buffer += decoder.decode(value, { stream: true });
 
@@ -122,7 +143,8 @@ export class ServerContractSource {
                 if (currentData) {
                   currentData += "\n";
                 }
-                currentData += line.slice(5).trim();
+                const rawField = line.slice(5);
+                currentData += rawField[0] === " " ? rawField.slice(1) : rawField;
               } else if (line === "") {
                 // Empty line = end of event
                 if (currentEvent && currentData) {
@@ -140,6 +162,7 @@ export class ServerContractSource {
             }
           }
         } finally {
+          clearIdleTimer();
           reader.releaseLock();
         }
 
@@ -189,7 +212,11 @@ export class ServerContractSource {
       }
       const bundleObj = bundle as Record<string, unknown>;
       if ("revision_hash" in bundleObj && typeof bundleObj["revision_hash"] === "string") {
-        this._currentRevision = bundleObj["revision_hash"].slice(0, 128);
+        const hash = bundleObj["revision_hash"].slice(0, 128);
+        // Accept any printable string (opaque to the client)
+        if (hash.length > 0 && !/[\x00-\x1f\x7f]/.test(hash)) {
+          this._currentRevision = hash;
+        }
       }
       return bundleObj;
     }
