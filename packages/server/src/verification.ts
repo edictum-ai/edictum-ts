@@ -56,6 +56,13 @@ export function verifyBundleSignature(
     );
   }
 
+  // Ed25519 public keys are exactly 32 bytes
+  if (publicKeyBytes.length !== 32) {
+    throw new BundleVerificationError(
+      `Invalid Ed25519 public key: expected 32 bytes, got ${publicKeyBytes.length}`,
+    );
+  }
+
   let signatureBytes: Buffer;
   try {
     signatureBytes = Buffer.from(signatureB64, "base64");

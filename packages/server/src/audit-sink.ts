@@ -119,7 +119,11 @@ export class ServerAuditSink implements AuditSink {
         `Failed to flush ${events.length} audit events, keeping in buffer for retry`,
       );
       this._restoreEvents(events);
-      if (!(error instanceof Error)) {
+      // Rethrow non-Error throwables and client auth errors (4xx except 429)
+      // so credential failures surface immediately instead of silently retrying
+      if (!(error instanceof Error)) throw error;
+      const status = (error as { statusCode?: number }).statusCode;
+      if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
         throw error;
       }
     }
