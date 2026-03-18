@@ -104,6 +104,10 @@ export class ServerContractSource {
               if (line.startsWith("event:")) {
                 currentEvent = line.slice(6).trim();
               } else if (line.startsWith("data:")) {
+                // SSE spec: multi-line data fields are concatenated with \n
+                if (currentData) {
+                  currentData += "\n";
+                }
                 currentData += line.slice(5).trim();
               } else if (line === "") {
                 // Empty line = end of event

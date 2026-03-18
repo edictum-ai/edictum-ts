@@ -34,7 +34,7 @@ export class ServerBackend implements StorageBackend {
    */
   async get(key: string): Promise<string | null> {
     try {
-      const response = await this._client.get(`/api/v1/sessions/${key}`);
+      const response = await this._client.get(`/api/v1/sessions/${encodeURIComponent(key)}`);
       return (response["value"] as string) ?? null;
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
@@ -46,13 +46,13 @@ export class ServerBackend implements StorageBackend {
 
   /** Set a value in the server session store. */
   async set(key: string, value: string): Promise<void> {
-    await this._client.put(`/api/v1/sessions/${key}`, { value });
+    await this._client.put(`/api/v1/sessions/${encodeURIComponent(key)}`, { value });
   }
 
   /** Delete a key from the server session store. */
   async delete(key: string): Promise<void> {
     try {
-      await this._client.delete(`/api/v1/sessions/${key}`);
+      await this._client.delete(`/api/v1/sessions/${encodeURIComponent(key)}`);
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
         return;
@@ -64,7 +64,7 @@ export class ServerBackend implements StorageBackend {
   /** Atomically increment a counter on the server. */
   async increment(key: string, amount: number = 1): Promise<number> {
     const response = await this._client.post(
-      `/api/v1/sessions/${key}/increment`,
+      `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
       { amount },
     );
     return response["value"] as number;

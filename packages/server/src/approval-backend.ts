@@ -8,6 +8,7 @@ import type {
 import { ApprovalStatus } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
+import { SAFE_IDENTIFIER_RE } from "./client.js";
 
 /**
  * Approval backend that delegates to the edictum-server approval queue.
@@ -85,6 +86,16 @@ export class ServerApprovalBackend implements ApprovalBackend {
     const timeoutEffect = request ? request.timeoutEffect : "deny";
 
     const deadline = Date.now() + effectiveTimeout * 1000;
+
+    // Clean up pending map now that we have the id — avoid unbounded growth
+    this._pending.delete(approvalId);
+
+    // Validate approvalId before interpolating into URL path
+    if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
+      throw new Error(
+        `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+      );
+    }
 
     while (true) {
       const response = await this._client.get(

@@ -37,7 +37,7 @@ describe("ServerBackend.get", () => {
 
     const result = await backend.get("session:123:count");
     expect(result).toBe("hello");
-    expect(client.get).toHaveBeenCalledWith("/api/v1/sessions/session:123:count");
+    expect(client.get).toHaveBeenCalledWith("/api/v1/sessions/session%3A123%3Acount");
   });
 
   it("returns null on 404", async () => {

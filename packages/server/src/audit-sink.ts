@@ -120,6 +120,9 @@ export class ServerAuditSink implements AuditSink {
     this._buffer = [...events, ...this._buffer];
     if (this._buffer.length > this._maxBufferSize) {
       const dropped = this._buffer.length - this._maxBufferSize;
+      console.warn(
+        `[edictum] audit buffer overflow: dropping ${dropped} oldest events (buffer capped at ${this._maxBufferSize})`,
+      );
       this._buffer = this._buffer.slice(dropped);
     }
   }

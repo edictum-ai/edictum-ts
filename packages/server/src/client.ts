@@ -6,6 +6,8 @@
  * retry logic form a single cohesive HTTP client.
  */
 
+import { EdictumConfigError } from "@edictum/core";
+
 // Safe identifier: alphanumeric, hyphens, underscores, dots. No path separators,
 // control chars, or whitespace. Matches tool_name validation in envelope.
 export const SAFE_IDENTIFIER_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
@@ -69,14 +71,14 @@ export class EdictumServerClient {
       ["env", env],
     ] as const) {
       if (!SAFE_IDENTIFIER_RE.test(value)) {
-        throw new ValueError(
+        throw new EdictumConfigError(
           `Invalid ${name}: ${JSON.stringify(value)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
         );
       }
     }
 
     if (bundleName !== null && !SAFE_IDENTIFIER_RE.test(bundleName)) {
-      throw new ValueError(
+      throw new EdictumConfigError(
         `Invalid bundleName: ${JSON.stringify(bundleName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
     }
@@ -84,23 +86,23 @@ export class EdictumServerClient {
     if (tags !== null) {
       const entries = Object.entries(tags);
       if (entries.length > 64) {
-        throw new ValueError(
+        throw new EdictumConfigError(
           `Too many tags (${entries.length} > 64); maximum is 64 entries`,
         );
       }
       for (const [k, v] of entries) {
         if (typeof k !== "string" || typeof v !== "string") {
-          throw new ValueError(
+          throw new EdictumConfigError(
             `Tag keys and values must be strings, got ${typeof k}=${typeof v}`,
           );
         }
         if (k.length > 128) {
-          throw new ValueError(
+          throw new EdictumConfigError(
             `Tag key too long (${k.length} > 128): ${JSON.stringify(k)}`,
           );
         }
         if (v.length > 256) {
-          throw new ValueError(
+          throw new EdictumConfigError(
             `Tag value too long (${v.length} > 256) for key ${JSON.stringify(k)}`,
           );
         }
@@ -119,7 +121,7 @@ export class EdictumServerClient {
         host === "[::1]";
       if (!isLoopback) {
         if (!allowInsecure) {
-          throw new ValueError(
+          throw new EdictumConfigError(
             `Refusing plaintext HTTP connection to ${host}. ` +
               `Use HTTPS or pass allowInsecure: true for non-production use.`,
           );
@@ -266,14 +268,6 @@ export class EdictumServerClient {
   /** Close this client (no-op for fetch-based client, kept for API parity). */
   async close(): Promise<void> {
     // Native fetch() doesn't require explicit connection cleanup.
-  }
-}
-
-/** ValueError for input validation errors (matches Python ValueError semantics). */
-class ValueError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ValueError";
   }
 }
 

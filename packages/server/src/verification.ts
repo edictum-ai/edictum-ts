@@ -36,6 +36,13 @@ export function verifyBundleSignature(
     throw new BundleVerificationError("Public key is empty");
   }
 
+  // Odd-length hex gets silently truncated by Buffer.from — reject early
+  if (publicKeyHex.length % 2 !== 0) {
+    throw new BundleVerificationError(
+      "Invalid public key hex encoding: odd-length hex string",
+    );
+  }
+
   let publicKeyBytes: Buffer;
   try {
     publicKeyBytes = Buffer.from(publicKeyHex, "hex");
@@ -46,13 +53,6 @@ export function verifyBundleSignature(
   } catch (error) {
     throw new BundleVerificationError(
       `Invalid public key hex encoding: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  // Validate hex encoding produced valid bytes (odd-length hex gets silently truncated)
-  if (publicKeyHex.length % 2 !== 0) {
-    throw new BundleVerificationError(
-      "Invalid public key hex encoding: odd-length hex string",
     );
   }
 
