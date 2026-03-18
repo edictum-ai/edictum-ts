@@ -148,6 +148,11 @@ export function deepFreeze<T>(obj: T): T {
   if (obj instanceof Date) {
     return obj;
   }
+  // RegExp with global/sticky flags stores mutable lastIndex in internal state.
+  // Freezing prevents String.replace() from updating lastIndex → TypeError.
+  if (obj instanceof RegExp) {
+    return obj;
+  }
   Object.freeze(obj);
   for (const value of Object.values(obj as Record<string, unknown>)) {
     if (value !== null && value !== undefined && typeof value === "object" && !Object.isFrozen(value)) {

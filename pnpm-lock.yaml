@@ -24,6 +24,9 @@ importers:
       '@edictum/core':
         specifier: workspace:*
         version: link:../core
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
       eslint:
         specifier: ^9.0.0
         version: 9.39.4(jiti@2.6.1)
@@ -76,6 +79,9 @@ importers:
       '@edictum/core':
         specifier: workspace:*
         version: link:../core
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
       eslint:
         specifier: ^9.0.0
         version: 9.39.4(jiti@2.6.1)
