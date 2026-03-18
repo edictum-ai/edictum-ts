@@ -43,10 +43,17 @@ export function verifyBundleSignature(
     );
   }
 
+  // Explicit regex check — Buffer.from(hex, "hex") silently drops non-hex chars
+  if (!/^[0-9a-fA-F]+$/.test(publicKeyHex)) {
+    throw new BundleVerificationError(
+      "Invalid public key hex encoding: contains non-hex characters",
+    );
+  }
+
   let publicKeyBytes: Buffer;
   try {
     publicKeyBytes = Buffer.from(publicKeyHex, "hex");
-    // Validate hex was fully consumed (no invalid chars)
+    // Belt-and-suspenders: verify hex was fully consumed
     if (publicKeyBytes.length !== publicKeyHex.length / 2) {
       throw new Error("Invalid hex length");
     }

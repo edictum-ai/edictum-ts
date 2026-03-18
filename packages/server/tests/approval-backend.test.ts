@@ -261,6 +261,104 @@ describe("ServerApprovalBackend pollInterval validation", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// timeout validation
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend timeout validation", () => {
+  it("rejects timeout of 0", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg", { timeout: 0 }),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects negative timeout", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg", { timeout: -10 }),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects NaN timeout", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg", { timeout: NaN }),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects Infinity timeout", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg", { timeout: Infinity }),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("accepts valid positive timeout", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    const request = await backend.requestApproval("Tool", {}, "msg", { timeout: 60 });
+    expect(request.timeout).toBe(60);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pending map cap
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend pending map cap", () => {
+  it("throws when MAX_PENDING is exceeded", async () => {
+    const client = mockClient();
+    let idCounter = 0;
+    vi.mocked(client.post).mockImplementation(async () => ({
+      id: `approval-${idCounter++}`,
+    }));
+
+    const backend = new ServerApprovalBackend(client);
+
+    // Fill up to MAX_PENDING by accessing internal map
+    // Use requestApproval to fill (this also stores into _pending)
+    // We need to fill to the cap — use a smaller cap for test efficiency
+    // Instead, directly test the boundary by filling the internal map
+    const pendingMap = (backend as unknown as { _pending: Map<string, unknown> })._pending;
+    for (let i = 0; i < ServerApprovalBackend.MAX_PENDING; i++) {
+      pendingMap.set(`fake-${i}`, {} as never);
+    }
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(EdictumConfigError);
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(/Maximum pending approvals/);
+  });
+
+  it("allows requests when under MAX_PENDING", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    // Under the cap — should succeed
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).resolves.toBeDefined();
+  });
+});
+
 describe("security", () => {
   it("rejects path traversal in waitForDecision approvalId", async () => {
     const client = mockClient();

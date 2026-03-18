@@ -1,6 +1,7 @@
 /** Server-backed audit sink with batching. */
 
 import type { AuditEvent, AuditSink } from "@edictum/core";
+import { EdictumConfigError } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
 
@@ -61,6 +62,22 @@ export class ServerAuditSink implements AuditSink {
     this._flushInterval = options?.flushInterval ?? 5_000;
     this._maxBufferSize =
       options?.maxBufferSize ?? ServerAuditSink.MAX_BUFFER_SIZE;
+
+    if (!Number.isInteger(this._batchSize) || this._batchSize < 1) {
+      throw new EdictumConfigError(
+        `batchSize must be an integer >= 1, got ${this._batchSize}`,
+      );
+    }
+    if (!Number.isFinite(this._flushInterval) || this._flushInterval <= 0) {
+      throw new EdictumConfigError(
+        `flushInterval must be a positive finite number, got ${this._flushInterval}`,
+      );
+    }
+    if (!Number.isInteger(this._maxBufferSize) || this._maxBufferSize < 1) {
+      throw new EdictumConfigError(
+        `maxBufferSize must be an integer >= 1, got ${this._maxBufferSize}`,
+      );
+    }
   }
 
   /** Convert an AuditEvent to server format and add to batch buffer. */

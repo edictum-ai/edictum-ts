@@ -18,6 +18,9 @@ import { SAFE_IDENTIFIER_RE } from "./client.js";
  * Creates approval requests via HTTP POST, then polls GET until resolved.
  */
 export class ServerApprovalBackend implements ApprovalBackend {
+  /** Maximum number of concurrent pending approval requests to prevent unbounded memory growth. */
+  static readonly MAX_PENDING = 10_000;
+
   private readonly _client: EdictumServerClient;
   private readonly _pollInterval: number;
   private readonly _pending: Map<string, ApprovalRequest> = new Map();
@@ -50,6 +53,18 @@ export class ServerApprovalBackend implements ApprovalBackend {
     },
   ): Promise<ApprovalRequest> {
     const timeout = options?.timeout ?? 300;
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      throw new EdictumConfigError(
+        `timeout must be a positive finite number, got ${timeout}`,
+      );
+    }
+
+    if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
+      throw new EdictumConfigError(
+        `Maximum pending approvals (${ServerApprovalBackend.MAX_PENDING}) exceeded — cannot track more concurrent requests`,
+      );
+    }
+
     const timeoutEffect = options?.timeoutEffect ?? "deny";
 
     const body = {
