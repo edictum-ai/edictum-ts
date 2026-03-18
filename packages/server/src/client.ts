@@ -133,7 +133,10 @@ export class EdictumServerClient {
               `Use HTTPS or pass allowInsecure: true for non-production use.`,
           );
         }
-        // Warning: credentials will be transmitted unencrypted
+        console.warn(
+          `[edictum] WARNING: allowInsecure is true — API key will be sent over plaintext HTTP to ${host}. ` +
+            `Do not use this in production.`,
+        );
       }
     }
 

@@ -225,6 +225,40 @@ describe("ServerAuditSink event mapping", () => {
     expect(mapped.payload.bundle_name).toBe("my-bundle");
   });
 
+  it("deep-copies tool_args so caller mutations do not affect stored events", async () => {
+    const client = mockClient();
+    const sink = new ServerAuditSink(client, { batchSize: 1 });
+    const toolArgs = { command: "ls" };
+    const event = makeEvent({ toolArgs });
+
+    await sink.emit(event);
+
+    // Mutate the original after emit
+    toolArgs.command = "rm -rf /";
+
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{ payload: { tool_args: Record<string, unknown> } }>;
+    };
+    expect(body.events[0]!.payload.tool_args.command).toBe("ls");
+  });
+
+  it("deep-copies principal so caller mutations do not affect stored events", async () => {
+    const client = mockClient();
+    const sink = new ServerAuditSink(client, { batchSize: 1 });
+    const principal = { role: "admin" };
+    const event = makeEvent({ principal });
+
+    await sink.emit(event);
+
+    // Mutate the original after emit
+    principal.role = "attacker";
+
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{ payload: { principal: Record<string, unknown> | null } }>;
+    };
+    expect(body.events[0]!.payload.principal!.role).toBe("admin");
+  });
+
   it("uses client env when event environment is empty", async () => {
     const client = mockClient({ env: "staging" });
     const sink = new ServerAuditSink(client, { batchSize: 1 });

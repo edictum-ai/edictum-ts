@@ -4,6 +4,18 @@ import type { AuditEvent, AuditSink } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
 
+/** Deep-copy with fallback to shallow spread for non-cloneable values. */
+function safeClone<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    if (value !== null && typeof value === "object") {
+      return { ...value } as T;
+    }
+    return value;
+  }
+}
+
 interface ServerEventPayload {
   call_id: string;
   agent_id: string;
@@ -77,10 +89,10 @@ export class ServerAuditSink implements AuditSink {
       mode: event.mode,
       timestamp: event.timestamp.toISOString(),
       payload: {
-        tool_args: event.toolArgs,
+        tool_args: safeClone(event.toolArgs),
         side_effect: event.sideEffect,
         environment: event.environment || this._client.env,
-        principal: event.principal,
+        principal: event.principal !== null ? safeClone(event.principal) : null,
         decision_source: event.decisionSource,
         decision_name: event.decisionName,
         reason: event.reason,

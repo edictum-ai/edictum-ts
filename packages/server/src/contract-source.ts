@@ -8,7 +8,7 @@
 import type { EdictumServerClient } from "./client.js";
 import { SAFE_IDENTIFIER_RE } from "./client.js";
 
-const STABLE_CONNECTION_SECS = 30_000; // 30s in ms
+const STABLE_CONNECTION_MS = 30_000;
 
 /**
  * Receives contract bundle updates from edictum-server via SSE.
@@ -150,7 +150,7 @@ export class ServerContractSource {
 
         if (connectedAt !== null) {
           const elapsed = Date.now() - connectedAt;
-          if (elapsed >= STABLE_CONNECTION_SECS) {
+          if (elapsed >= STABLE_CONNECTION_MS) {
             delay = this._reconnectDelay;
           }
           connectedAt = null;
@@ -179,7 +179,7 @@ export class ServerContractSource {
       }
       const bundleObj = bundle as Record<string, unknown>;
       if ("revision_hash" in bundleObj && typeof bundleObj["revision_hash"] === "string") {
-        this._currentRevision = bundleObj["revision_hash"];
+        this._currentRevision = bundleObj["revision_hash"].slice(0, 128);
       }
       return bundleObj;
     }

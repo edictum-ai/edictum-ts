@@ -9,9 +9,28 @@
  */
 
 import type { StorageBackend } from "@edictum/core";
+import { EdictumConfigError } from "@edictum/core";
 
 import type { EdictumServerClient} from "./client.js";
 import { EdictumServerError } from "./client.js";
+
+/**
+ * Validate a storage key: reject empty strings and control characters.
+ * Mirrors core session.ts _validateStorageKeyComponent logic.
+ */
+function validateKey(key: string): void {
+  if (!key) {
+    throw new EdictumConfigError(`Invalid storage key: ${JSON.stringify(key)}`);
+  }
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      throw new EdictumConfigError(
+        `Invalid storage key: contains control character at index ${i}`,
+      );
+    }
+  }
+}
 
 /**
  * Storage backend that delegates session state to edictum-server.
@@ -33,6 +52,7 @@ export class ServerBackend implements StorageBackend {
    * All other errors propagate so the pipeline fails closed.
    */
   async get(key: string): Promise<string | null> {
+    validateKey(key);
     try {
       const response = await this._client.get(`/api/v1/sessions/${encodeURIComponent(key)}`);
       return (response["value"] as string) ?? null;
@@ -46,11 +66,13 @@ export class ServerBackend implements StorageBackend {
 
   /** Set a value in the server session store. */
   async set(key: string, value: string): Promise<void> {
+    validateKey(key);
     await this._client.put(`/api/v1/sessions/${encodeURIComponent(key)}`, { value });
   }
 
   /** Delete a key from the server session store. */
   async delete(key: string): Promise<void> {
+    validateKey(key);
     try {
       await this._client.delete(`/api/v1/sessions/${encodeURIComponent(key)}`);
     } catch (error) {
@@ -63,6 +85,7 @@ export class ServerBackend implements StorageBackend {
 
   /** Atomically increment a counter on the server. */
   async increment(key: string, amount: number = 1): Promise<number> {
+    validateKey(key);
     const response = await this._client.post(
       `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
       { amount },
@@ -86,6 +109,9 @@ export class ServerBackend implements StorageBackend {
    * rather than silently allowing with missing data.
    */
   async batchGet(keys: readonly string[]): Promise<Record<string, string | null>> {
+    for (const key of keys) {
+      validateKey(key);
+    }
     if (keys.length === 0) {
       return {};
     }

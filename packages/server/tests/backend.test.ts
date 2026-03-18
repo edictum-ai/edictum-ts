@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { EdictumConfigError } from "@edictum/core";
 
 import { EdictumServerClient, EdictumServerError } from "../src/client.js";
 import { ServerBackend } from "../src/backend.js";
@@ -224,5 +225,49 @@ describe("ServerBackend.batchGet", () => {
     const backend = new ServerBackend(client);
 
     await expect(backend.batchGet(["a"])).rejects.toThrow(EdictumServerError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Key validation (security)
+// ---------------------------------------------------------------------------
+
+describe("ServerBackend key validation", () => {
+  let client: EdictumServerClient;
+  let backend: ServerBackend;
+
+  beforeEach(() => {
+    client = mockClient();
+    backend = new ServerBackend(client);
+  });
+
+  it("rejects keys with null bytes", async () => {
+    await expect(backend.get("key\x00evil")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects keys with control characters", async () => {
+    await expect(backend.set("key\ninjection", "v")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects empty keys", async () => {
+    await expect(backend.get("")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects control chars in delete", async () => {
+    await expect(backend.delete("key\x07bell")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects control chars in increment", async () => {
+    await expect(backend.increment("key\x1b")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects control chars in batchGet", async () => {
+    await expect(backend.batchGet(["ok", "bad\x00key"])).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("accepts valid keys with special URL characters", async () => {
+    vi.mocked(client.get).mockResolvedValue({ value: "ok" });
+    const result = await backend.get("session:user@example.com:count");
+    expect(result).toBe("ok");
   });
 });

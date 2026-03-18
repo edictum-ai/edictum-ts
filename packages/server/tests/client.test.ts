@@ -74,6 +74,35 @@ describe("TLS enforcement", () => {
         }),
     ).not.toThrow();
   });
+
+  it("emits console.warn when allowInsecure is used for non-loopback HTTP", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      new EdictumServerClient({
+        baseUrl: "http://remote.example.com",
+        apiKey: "k",
+        allowInsecure: true,
+      });
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy.mock.calls[0]![0]).toContain("allowInsecure");
+      expect(warnSpy.mock.calls[0]![0]).toContain("plaintext HTTP");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn for loopback HTTP without allowInsecure", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      new EdictumServerClient({
+        baseUrl: "http://localhost:8000",
+        apiKey: "k",
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
