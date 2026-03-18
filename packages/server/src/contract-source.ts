@@ -131,7 +131,8 @@ export class ServerContractSource {
               continue;
             }
 
-            const lines = buffer.split("\n");
+            // SSE spec: lines end with \n, \r\n, or \r
+            const lines = buffer.split(/\r\n|\r|\n/);
             // Keep the last incomplete line in buffer
             buffer = lines.pop() ?? "";
 
