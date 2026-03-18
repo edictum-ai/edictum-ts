@@ -76,9 +76,11 @@ export class ServerApprovalBackend implements ApprovalBackend {
       safePrincipal = options?.principal ? structuredClone(options.principal) : null;
       safeMeta = structuredClone(options?.metadata ?? {});
     } catch {
-      safeArgs = { ...toolArgs };
-      safePrincipal = options?.principal ? { ...options.principal } : null;
-      safeMeta = { ...(options?.metadata ?? {}) };
+      safeArgs = JSON.parse(JSON.stringify(toolArgs)) as Record<string, unknown>;
+      safePrincipal = options?.principal
+        ? (JSON.parse(JSON.stringify(options.principal)) as Record<string, unknown>)
+        : null;
+      safeMeta = JSON.parse(JSON.stringify(options?.metadata ?? {})) as Record<string, unknown>;
     }
     const request: ApprovalRequest = deepFreeze({
       approvalId,

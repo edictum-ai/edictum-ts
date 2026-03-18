@@ -9,6 +9,7 @@ import type { EdictumServerClient } from "./client.js";
 import { SAFE_IDENTIFIER_RE } from "./client.js";
 
 const STABLE_CONNECTION_MS = 30_000;
+const MAX_SSE_BUFFER = 1_048_576; // 1 MB
 
 /**
  * Receives contract bundle updates from edictum-server via SSE.
@@ -37,9 +38,9 @@ export class ServerContractSource {
     this._maxReconnectDelay = options?.maxReconnectDelay ?? 60_000;
   }
 
-  /** Mark the source as ready to receive events. */
+  /** Mark the source as ready to receive events.
+   * Note: _connected stays false until watch() establishes an HTTP connection. */
   async connect(): Promise<void> {
-    this._connected = true;
     this._closed = false;
   }
 
@@ -100,6 +101,15 @@ export class ServerContractSource {
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
+
+            // Guard against unbounded SSE buffer (e.g. server sends no newlines)
+            if (buffer.length > MAX_SSE_BUFFER) {
+              buffer = "";
+              currentEvent = "";
+              currentData = "";
+              continue;
+            }
+
             const lines = buffer.split("\n");
             // Keep the last incomplete line in buffer
             buffer = lines.pop() ?? "";

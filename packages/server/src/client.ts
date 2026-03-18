@@ -65,10 +65,15 @@ export class EdictumServerClient {
       allowInsecure = false,
     } = options;
 
-    // Validate apiKey is non-empty
+    // Validate apiKey is non-empty and free of control characters
     if (!apiKey) {
       throw new EdictumConfigError(
         "apiKey must be a non-empty string",
+      );
+    }
+    if (/[\r\n\x00-\x1f\x7f]/.test(apiKey)) {
+      throw new EdictumConfigError(
+        "apiKey contains invalid control characters",
       );
     }
 
@@ -98,9 +103,14 @@ export class EdictumServerClient {
         );
       }
       for (const [k, v] of entries) {
-        if (typeof k !== "string" || typeof v !== "string") {
+        if (k.length === 0) {
           throw new EdictumConfigError(
-            `Tag keys and values must be strings, got ${typeof k}=${typeof v}`,
+            "Tag keys must be non-empty strings",
+          );
+        }
+        if (typeof v !== "string") {
+          throw new EdictumConfigError(
+            `Tag values must be strings, got ${typeof v} for key ${JSON.stringify(k)}`,
           );
         }
         if (k.length > 128) {
@@ -138,6 +148,13 @@ export class EdictumServerClient {
             `Do not use this in production.`,
         );
       }
+    }
+
+    // Validate maxRetries is at least 1
+    if (maxRetries < 1) {
+      throw new EdictumConfigError(
+        `maxRetries must be >= 1, got ${maxRetries}`,
+      );
     }
 
     this.baseUrl = baseUrl.replace(/\/+$/, "");

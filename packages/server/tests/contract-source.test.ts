@@ -275,7 +275,8 @@ describe("ServerContractSource.close", () => {
     const source = new ServerContractSource(client);
 
     await source.connect();
-    expect(source.connected).toBe(true);
+    // connected stays false until watch() establishes HTTP connection
+    expect(source.connected).toBe(false);
 
     await source.close();
     expect(source.connected).toBe(false);
