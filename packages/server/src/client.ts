@@ -163,6 +163,11 @@ export class EdictumServerClient {
     this.env = env;
     this.bundleName = bundleName;
     this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      throw new EdictumConfigError(
+        `timeout must be a positive number, got ${timeout}`,
+      );
+    }
     this.timeout = timeout;
     this.maxRetries = maxRetries;
   }
@@ -287,15 +292,24 @@ export class EdictumServerClient {
       const searchParams = new URLSearchParams(params);
       url += `?${searchParams.toString()}`;
     }
-    // Compose caller signal with a connection timeout so rawFetch doesn't
-    // hang indefinitely if server accepts TCP but never sends headers.
-    const signals: AbortSignal[] = [AbortSignal.timeout(this.timeout)];
+    // Connection timeout: abort if server doesn't respond within timeout.
+    // Once response headers arrive, only the caller's signal controls the stream.
+    const connectAbort = new AbortController();
+    const connectTimer = setTimeout(() => connectAbort.abort(), this.timeout);
+    const signals: AbortSignal[] = [connectAbort.signal];
     if (options?.signal) signals.push(options.signal);
-    return fetch(url, {
-      method: "GET",
-      headers: this._headers(),
-      signal: AbortSignal.any(signals),
-    });
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this._headers(),
+        signal: AbortSignal.any(signals),
+      });
+      clearTimeout(connectTimer);
+      return response;
+    } catch (err) {
+      clearTimeout(connectTimer);
+      throw err;
+    }
   }
 
   /** Close this client (no-op for fetch-based client, kept for API parity). */

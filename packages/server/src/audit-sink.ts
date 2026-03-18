@@ -115,10 +115,10 @@ export class ServerAuditSink implements AuditSink {
     try {
       await this._client.post("/api/v1/events", { events });
     } catch (error) {
-      // Failed flush: restore events to buffer for retry
+      console.warn(
+        `Failed to flush ${events.length} audit events, keeping in buffer for retry`,
+      );
       this._restoreEvents(events);
-      // Swallow the error to match Python behavior (log warning, keep for retry)
-      // But rethrow if it's not a standard Error (e.g., abort)
       if (!(error instanceof Error)) {
         throw error;
       }
