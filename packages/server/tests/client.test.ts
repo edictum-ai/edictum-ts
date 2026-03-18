@@ -1,0 +1,343 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+import {
+  EdictumServerClient,
+  EdictumServerError,
+  SAFE_IDENTIFIER_RE,
+} from "../src/client.js";
+
+// ---------------------------------------------------------------------------
+// SAFE_IDENTIFIER_RE
+// ---------------------------------------------------------------------------
+
+describe("SAFE_IDENTIFIER_RE", () => {
+  it("accepts valid identifiers", () => {
+    expect(SAFE_IDENTIFIER_RE.test("default")).toBe(true);
+    expect(SAFE_IDENTIFIER_RE.test("my-agent")).toBe(true);
+    expect(SAFE_IDENTIFIER_RE.test("agent_1")).toBe(true);
+    expect(SAFE_IDENTIFIER_RE.test("v1.0.0")).toBe(true);
+    expect(SAFE_IDENTIFIER_RE.test("a")).toBe(true);
+  });
+
+  it("rejects invalid identifiers", () => {
+    expect(SAFE_IDENTIFIER_RE.test("")).toBe(false);
+    expect(SAFE_IDENTIFIER_RE.test("-leading")).toBe(false);
+    expect(SAFE_IDENTIFIER_RE.test("has space")).toBe(false);
+    expect(SAFE_IDENTIFIER_RE.test("path/sep")).toBe(false);
+    expect(SAFE_IDENTIFIER_RE.test("a".repeat(129))).toBe(false);
+    expect(SAFE_IDENTIFIER_RE.test("\x00null")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TLS enforcement
+// ---------------------------------------------------------------------------
+
+describe("TLS enforcement", () => {
+  it("allows HTTPS to any host", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://remote.example.com", apiKey: "k" }),
+    ).not.toThrow();
+  });
+
+  it("allows HTTP to localhost", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "http://localhost:8000", apiKey: "k" }),
+    ).not.toThrow();
+  });
+
+  it("allows HTTP to 127.0.0.1", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "http://127.0.0.1:8000", apiKey: "k" }),
+    ).not.toThrow();
+  });
+
+  it("allows HTTP to ::1", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "http://[::1]:8000", apiKey: "k" }),
+    ).not.toThrow();
+  });
+
+  it("rejects HTTP to non-loopback host", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "http://remote.example.com", apiKey: "k" }),
+    ).toThrow("Refusing plaintext HTTP");
+  });
+
+  it("allows HTTP to non-loopback with allowInsecure", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "http://remote.example.com",
+          apiKey: "k",
+          allowInsecure: true,
+        }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Identifier validation
+// ---------------------------------------------------------------------------
+
+describe("identifier validation", () => {
+  it("rejects invalid agentId", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", agentId: "bad agent" }),
+    ).toThrow("Invalid agentId");
+  });
+
+  it("rejects invalid env", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", env: "../escape" }),
+    ).toThrow("Invalid env");
+  });
+
+  it("rejects invalid bundleName", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          bundleName: "bad bundle!",
+        }),
+    ).toThrow("Invalid bundleName");
+  });
+
+  it("allows null bundleName", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", bundleName: null }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tag validation
+// ---------------------------------------------------------------------------
+
+describe("tag validation", () => {
+  it("rejects too many tags", () => {
+    const tags: Record<string, string> = {};
+    for (let i = 0; i < 65; i++) tags[`k${i}`] = "v";
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", tags }),
+    ).toThrow("Too many tags");
+  });
+
+  it("rejects tag key too long", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { ["k".repeat(129)]: "v" },
+        }),
+    ).toThrow("Tag key too long");
+  });
+
+  it("rejects tag value too long", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { k: "v".repeat(257) },
+        }),
+    ).toThrow("Tag value too long");
+  });
+
+  it("accepts valid tags", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { env: "prod", team: "platform" },
+        }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Headers
+// ---------------------------------------------------------------------------
+
+describe("headers", () => {
+  it("includes Authorization and agent ID in requests", async () => {
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "test-key-123",
+      agentId: "my-agent",
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    await client.get("/test");
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [, init] = fetchSpy.mock.calls[0]!;
+    const headers = init?.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer test-key-123");
+    expect(headers["X-Edictum-Agent-Id"]).toBe("my-agent");
+    expect(headers["Content-Type"]).toBe("application/json");
+
+    fetchSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retry logic
+// ---------------------------------------------------------------------------
+
+describe("retry logic", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("retries on 5xx then succeeds", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Internal Server Error", { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      maxRetries: 3,
+    });
+
+    const promise = client.get("/test");
+    // Advance past the retry delay (500ms for attempt 0)
+    await vi.advanceTimersByTimeAsync(600);
+    const result = await promise;
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws after exhausting retries on 5xx", async () => {
+    vi.useRealTimers();
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response("Error", { status: 503 }));
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      maxRetries: 1,
+    });
+
+    await expect(client.get("/test")).rejects.toThrow(EdictumServerError);
+  });
+
+  it("does not retry on 4xx errors", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("Not Found", { status: 404 }));
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      maxRetries: 3,
+    });
+
+    await expect(client.get("/test")).rejects.toThrow(EdictumServerError);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries on connection errors", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      maxRetries: 3,
+    });
+
+    const promise = client.get("/test");
+    await vi.advanceTimersByTimeAsync(600);
+    const result = await promise;
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTTP methods
+// ---------------------------------------------------------------------------
+
+describe("HTTP methods", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+  });
+
+  it("sends GET with query params", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ v: 1 }), { status: 200 }));
+
+    const client = new EdictumServerClient({ baseUrl: "https://api.example.com", apiKey: "k" });
+    await client.get("/path", { foo: "bar" });
+
+    const url = fetchSpy.mock.calls[0]![0] as string;
+    expect(url).toContain("/path?foo=bar");
+  });
+
+  it("sends POST with JSON body", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "1" }), { status: 200 }));
+
+    const client = new EdictumServerClient({ baseUrl: "https://api.example.com", apiKey: "k" });
+    await client.post("/items", { name: "test" });
+
+    const [, init] = fetchSpy.mock.calls[0]!;
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({ name: "test" }));
+  });
+
+  it("sends PUT with JSON body", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    const client = new EdictumServerClient({ baseUrl: "https://api.example.com", apiKey: "k" });
+    await client.put("/items/1", { value: "x" });
+
+    const [, init] = fetchSpy.mock.calls[0]!;
+    expect(init?.method).toBe("PUT");
+  });
+
+  it("sends DELETE", async () => {
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    const client = new EdictumServerClient({ baseUrl: "https://api.example.com", apiKey: "k" });
+    await client.delete("/items/1");
+
+    const [, init] = fetchSpy.mock.calls[0]!;
+    expect(init?.method).toBe("DELETE");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// URL normalization
+// ---------------------------------------------------------------------------
+
+describe("URL normalization", () => {
+  it("strips trailing slashes from baseUrl", () => {
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com///",
+      apiKey: "k",
+    });
+    expect(client.baseUrl).toBe("https://api.example.com");
+  });
+});
