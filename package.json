@@ -10,10 +10,12 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "prepare": "husky"
   },
   "devDependencies": {
     "eslint": "^9.39.4",
+    "husky": "^9.1.7",
     "typescript-eslint": "^8.57.0"
   }
 }

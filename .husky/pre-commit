@@ -1,0 +1,17 @@
+#!/bin/sh
+
+echo "Running pre-commit checks..."
+
+# Typecheck
+echo "→ typecheck"
+pnpm -r build && pnpm -r typecheck || exit 1
+
+# Lint
+echo "→ lint"
+pnpm -r lint || exit 1
+
+# Tests
+echo "→ test"
+pnpm -r test || exit 1
+
+echo "All pre-commit checks passed."
