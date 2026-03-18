@@ -16,9 +16,11 @@ import { randomUUID } from "node:crypto";
 import {
   type AuditAction,
   AuditAction as AA,
+  ApprovalStatus,
   createAuditEvent,
   createEnvelope,
   type Edictum,
+  EdictumDenied,
   type Finding,
   GovernancePipeline,
   type PostCallResult,
@@ -42,12 +44,16 @@ export interface PreToolUseInput {
   readonly hook_event_name: string;
   readonly tool_name: string;
   readonly tool_input: Record<string, unknown>;
+  readonly tool_use_id?: string;
 }
 
 /** Shape of input passed to a PostToolUse hook callback. */
 export interface PostToolUseInput {
   readonly hook_event_name: string;
   readonly tool_name: string;
+  readonly tool_use_id?: string;
+  readonly tool_response?: unknown;
+  /** @deprecated Use tool_response instead. Kept for backward compatibility. */
   readonly tool_result?: unknown;
 }
 
@@ -60,11 +66,12 @@ export interface PreToolUseHookOutput {
   };
 }
 
-/** PostToolUse hook output (informational only). */
+/** PostToolUse hook output (informational + optional result substitution). */
 export interface PostToolUseHookOutput {
   readonly hookSpecificOutput?: {
     readonly hookEventName: "PostToolUse";
     readonly additionalContext?: string;
+    readonly updatedMCPToolOutput?: unknown;
   };
 }
 
@@ -191,7 +198,7 @@ export class ClaudeAgentSDKAdapter {
           const hookInput = input as PreToolUseInput;
           const toolName = hookInput.tool_name;
           const toolInput = hookInput.tool_input;
-          const callId = randomUUID();
+          const callId = hookInput.tool_use_id ?? randomUUID();
 
           const result = await this._pre(toolName, toolInput, callId);
 
@@ -216,25 +223,52 @@ export class ClaudeAgentSDKAdapter {
       PostToolUse: [
         async ({ input }): Promise<PostToolUseHookOutput | Record<string, never>> => {
           const hookInput = input as PostToolUseInput;
-          const toolResult = hookInput.tool_result;
+          // Finding 2: read tool_response (preferred), fall back to tool_result
+          const toolResponse = hookInput.tool_response !== undefined
+            ? hookInput.tool_response
+            : hookInput.tool_result;
 
-          // Correlate via tool_name match (most recent pending for this tool).
-          // Falls back to FIFO only if no tool_name match found.
+          // Correlate via tool_use_id first (exact match), then tool_name, then FIFO
           let callId: string | undefined;
-          const toolName = hookInput.tool_name;
-          if (toolName) {
-            for (const [id, envelope] of this._pending) {
-              if (envelope.toolName === toolName) {
-                callId = id;
-                break;
+
+          // Finding 2: use tool_use_id for correlation if available
+          if (hookInput.tool_use_id && this._pending.has(hookInput.tool_use_id)) {
+            callId = hookInput.tool_use_id;
+          }
+
+          // Fall back to tool_name match
+          if (!callId) {
+            const toolName = hookInput.tool_name;
+            if (toolName) {
+              for (const [id, pending] of this._pending) {
+                if (pending.envelope.toolName === toolName) {
+                  callId = id;
+                  break;
+                }
               }
             }
           }
+
+          // Fall back to FIFO
           if (!callId && this._pending.size > 0) {
             callId = this._pending.keys().next().value as string;
           }
+
           if (callId) {
-            const postResult = await this._post(callId, toolResult);
+            const postResult = await this._post(callId, toolResponse);
+
+            // Finding 3: return updatedMCPToolOutput for redacted/suppressed content
+            if (postResult.outputSuppressed || postResult.result !== toolResponse) {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PostToolUse",
+                  updatedMCPToolOutput: postResult.result,
+                  additionalContext: postResult.findings.length > 0
+                    ? postResult.findings.map((f) => f.message).join("\n")
+                    : undefined,
+                },
+              };
+            }
 
             if (postResult.findings.length > 0) {
               const context = postResult.findings
@@ -287,6 +321,76 @@ export class ClaudeAgentSDKAdapter {
       envelope,
       this._session,
     );
+
+    // Finding 1: Handle pending_approval
+    if (decision.action === "pending_approval") {
+      if (this._guard._approvalBackend == null) {
+        return `DENIED: Approval required but no approval backend configured: ${decision.reason}`;
+      }
+
+      const principalDict = envelope.principal
+        ? ({ ...envelope.principal } as Record<string, unknown>)
+        : null;
+
+      const approvalRequest =
+        await this._guard._approvalBackend.requestApproval(
+          envelope.toolName,
+          envelope.args as Record<string, unknown>,
+          decision.approvalMessage ?? decision.reason ?? "",
+          {
+            timeout: decision.approvalTimeout,
+            timeoutEffect: decision.approvalTimeoutEffect,
+            principal: principalDict,
+          },
+        );
+
+      await this._emitAuditPre(
+        envelope,
+        decision,
+        AA.CALL_APPROVAL_REQUESTED,
+      );
+
+      const approvalDecision = await this._guard._approvalBackend.waitForDecision(
+        approvalRequest.approvalId,
+        decision.approvalTimeout,
+      );
+
+      let approved = false;
+      if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_TIMEOUT);
+        if (decision.approvalTimeoutEffect === "allow") {
+          approved = true;
+        }
+      } else if (!approvalDecision.approved) {
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_DENIED);
+      } else {
+        approved = true;
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_GRANTED);
+      }
+
+      if (approved) {
+        if (this._guard._onAllow) {
+          try {
+            this._guard._onAllow(envelope);
+          } catch {
+            // on_allow callback raised -- swallow
+          }
+        }
+        this._pending.set(callId, { envelope });
+        return null;
+      } else {
+        const denyReason = approvalDecision.reason ?? decision.reason ?? "";
+        if (this._guard._onDeny) {
+          try {
+            this._guard._onDeny(envelope, denyReason, decision.decisionName);
+          } catch {
+            // on_deny callback raised -- swallow
+          }
+        }
+        this._pending.delete(callId);
+        return `DENIED: ${denyReason}`;
+      }
+    }
 
     // Handle observe mode: convert deny to allow with warning
     if (this._guard.mode === "observe" && decision.action === "deny") {
@@ -358,6 +462,36 @@ export class ClaudeAgentSDKAdapter {
       }
     }
     this._pending.set(callId, { envelope });
+
+    // Finding 4: Emit observe-mode audit events for observeResults
+    for (const sr of decision.observeResults) {
+      const observeAction = sr["passed"]
+        ? AA.CALL_ALLOWED
+        : AA.CALL_WOULD_DENY;
+      await this._guard.auditSink.emit(
+        createAuditEvent({
+          action: observeAction,
+          runId: envelope.runId,
+          callId: envelope.callId,
+          callIndex: envelope.callIndex,
+          toolName: envelope.toolName,
+          toolArgs: this._guard.redaction.redactArgs(
+            envelope.args,
+          ) as Record<string, unknown>,
+          sideEffect: envelope.sideEffect,
+          environment: envelope.environment,
+          principal: envelope.principal
+            ? ({ ...envelope.principal } as Record<string, unknown>)
+            : null,
+          decisionSource: sr["source"] as string | null,
+          decisionName: sr["name"] as string | null,
+          reason: sr["message"] as string | null,
+          mode: "observe",
+          policyVersion: this._guard.policyVersion,
+        }),
+      );
+    }
+
     return null;
   }
 

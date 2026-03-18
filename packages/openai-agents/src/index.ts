@@ -16,6 +16,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  ApprovalStatus,
   AuditAction,
   createAuditEvent,
   createEnvelope,
@@ -241,6 +242,76 @@ export class OpenAIAgentsAdapter {
         this._session,
       );
 
+      // Finding 1: Handle pending_approval
+      if (decision.action === "pending_approval") {
+        if (this._guard._approvalBackend == null) {
+          return `DENIED: Approval required but no approval backend configured: ${decision.reason}`;
+        }
+
+        const principalDict = envelope.principal
+          ? ({ ...envelope.principal } as Record<string, unknown>)
+          : null;
+
+        const approvalRequest =
+          await this._guard._approvalBackend.requestApproval(
+            envelope.toolName,
+            envelope.args as Record<string, unknown>,
+            decision.approvalMessage ?? decision.reason ?? "",
+            {
+              timeout: decision.approvalTimeout,
+              timeoutEffect: decision.approvalTimeoutEffect,
+              principal: principalDict,
+            },
+          );
+
+        await this._emitAuditPre(
+          envelope,
+          decision,
+          AuditAction.CALL_APPROVAL_REQUESTED,
+        );
+
+        const approvalDecision = await this._guard._approvalBackend.waitForDecision(
+          approvalRequest.approvalId,
+          decision.approvalTimeout,
+        );
+
+        let approved = false;
+        if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT);
+          if (decision.approvalTimeoutEffect === "allow") {
+            approved = true;
+          }
+        } else if (!approvalDecision.approved) {
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED);
+        } else {
+          approved = true;
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED);
+        }
+
+        if (approved) {
+          if (this._guard._onAllow) {
+            try {
+              this._guard._onAllow(envelope);
+            } catch {
+              // on_allow callback raised — swallow
+            }
+          }
+          this._pending.set(callId, { envelope });
+          return null;
+        } else {
+          const denyReason = approvalDecision.reason ?? decision.reason ?? "";
+          if (this._guard._onDeny) {
+            try {
+              this._guard._onDeny(envelope, denyReason, decision.decisionName);
+            } catch {
+              // on_deny callback raised — swallow
+            }
+          }
+          this._pending.delete(callId);
+          return `DENIED: ${denyReason}`;
+        }
+      }
+
       // Handle observe mode: convert deny to allow with warning
       if (this._guard.mode === "observe" && decision.action === "deny") {
         await this._emitAuditPre(
@@ -311,6 +382,36 @@ export class OpenAIAgentsAdapter {
         }
       }
       this._pending.set(callId, { envelope });
+
+      // Finding 4: Emit observe-mode audit events for observeResults
+      for (const sr of decision.observeResults) {
+        const observeAction = sr["passed"]
+          ? AuditAction.CALL_ALLOWED
+          : AuditAction.CALL_WOULD_DENY;
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            action: observeAction,
+            runId: envelope.runId,
+            callId: envelope.callId,
+            callIndex: envelope.callIndex,
+            toolName: envelope.toolName,
+            toolArgs: this._guard.redaction.redactArgs(
+              envelope.args,
+            ) as Record<string, unknown>,
+            sideEffect: envelope.sideEffect,
+            environment: envelope.environment,
+            principal: envelope.principal
+              ? ({ ...envelope.principal } as Record<string, unknown>)
+              : null,
+            decisionSource: sr["source"] as string | null,
+            decisionName: sr["name"] as string | null,
+            reason: sr["message"] as string | null,
+            mode: "observe",
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      }
+
       return null;
     } catch (err) {
       if (!this._pending.has(callId)) {
