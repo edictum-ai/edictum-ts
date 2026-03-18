@@ -471,33 +471,37 @@ export class LangChainAdapter {
     }
     this._pending.set(callId, { envelope });
 
-    // Finding 4: Emit observe-mode audit events for observeResults
-    for (const sr of decision.observeResults) {
-      const observeAction = sr["passed"]
-        ? AA.CALL_ALLOWED
-        : AA.CALL_WOULD_DENY;
-      await this._guard.auditSink.emit(
-        createAuditEvent({
-          action: observeAction,
-          runId: envelope.runId,
-          callId: envelope.callId,
-          callIndex: envelope.callIndex,
-          toolName: envelope.toolName,
-          toolArgs: this._guard.redaction.redactArgs(
-            envelope.args,
-          ) as Record<string, unknown>,
-          sideEffect: envelope.sideEffect,
-          environment: envelope.environment,
-          principal: envelope.principal
-            ? ({ ...envelope.principal } as Record<string, unknown>)
-            : null,
-          decisionSource: sr["source"] as string | null,
-          decisionName: sr["name"] as string | null,
-          reason: sr["message"] as string | null,
-          mode: "observe",
-          policyVersion: this._guard.policyVersion,
-        }),
-      );
+    // Observe-mode audits — errors swallowed (must not block execution)
+    try {
+      for (const sr of decision.observeResults) {
+        const observeAction = sr["passed"]
+          ? AA.CALL_ALLOWED
+          : AA.CALL_WOULD_DENY;
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            action: observeAction,
+            runId: envelope.runId,
+            callId: envelope.callId,
+            callIndex: envelope.callIndex,
+            toolName: envelope.toolName,
+            toolArgs: this._guard.redaction.redactArgs(
+              envelope.args,
+            ) as Record<string, unknown>,
+            sideEffect: envelope.sideEffect,
+            environment: envelope.environment,
+            principal: envelope.principal
+              ? ({ ...envelope.principal } as Record<string, unknown>)
+              : null,
+            decisionSource: sr["source"] as string | null,
+            decisionName: sr["name"] as string | null,
+            reason: sr["message"] as string | null,
+            mode: "observe",
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      }
+    } catch {
+      // Observe audit errors must not block tool execution
     }
 
     return null;
