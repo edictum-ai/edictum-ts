@@ -218,9 +218,22 @@ export class ClaudeAgentSDKAdapter {
           const hookInput = input as PostToolUseInput;
           const toolResult = hookInput.tool_result;
 
-          // Correlate with pending call via FIFO (insertion-order)
-          if (this._pending.size > 0) {
-            const callId = this._pending.keys().next().value as string;
+          // Correlate via tool_name match (most recent pending for this tool).
+          // Falls back to FIFO only if no tool_name match found.
+          let callId: string | undefined;
+          const toolName = hookInput.tool_name;
+          if (toolName) {
+            for (const [id, envelope] of this._pending) {
+              if (envelope.toolName === toolName) {
+                callId = id;
+                break;
+              }
+            }
+          }
+          if (!callId && this._pending.size > 0) {
+            callId = this._pending.keys().next().value as string;
+          }
+          if (callId) {
             const postResult = await this._post(callId, toolResult);
 
             if (postResult.findings.length > 0) {

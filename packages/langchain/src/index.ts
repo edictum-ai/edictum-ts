@@ -184,9 +184,16 @@ export class LangChainAdapter {
         }
 
         // Execute the tool
-        const result = await handler(request);
+        let result: unknown;
+        let toolSuccess = true;
+        try {
+          result = await handler(request);
+        } catch (err) {
+          result = String(err);
+          toolSuccess = false;
+        }
 
-        // Post-execution governance
+        // Post-execution governance (always runs, even on tool failure)
         const postResult = await this._post(callId, result);
 
         // Fire callback on postcondition failure
@@ -199,6 +206,11 @@ export class LangChainAdapter {
           } catch {
             // on_postcondition_warn callback raised -- swallow
           }
+        }
+
+        // Re-throw tool errors after recording the execution
+        if (!toolSuccess) {
+          throw new Error(String(result));
         }
 
         return postResult.result;
@@ -250,9 +262,16 @@ export class LangChainAdapter {
         }
 
         // Execute the tool
-        const result = await toolCallable(toolInput);
+        let result: unknown;
+        let toolSuccess = true;
+        try {
+          result = await toolCallable(toolInput);
+        } catch (err) {
+          result = String(err);
+          toolSuccess = false;
+        }
 
-        // Post-execution governance
+        // Post-execution governance (always runs, even on tool failure)
         const postResult = await this._post(resolvedCallId, result);
 
         // Fire callback on postcondition failure
@@ -265,6 +284,11 @@ export class LangChainAdapter {
           } catch {
             // on_postcondition_warn callback raised -- swallow
           }
+        }
+
+        // Re-throw tool errors after recording the execution
+        if (!toolSuccess) {
+          throw new Error(String(result));
         }
 
         return postResult.result;

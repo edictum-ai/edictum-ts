@@ -161,8 +161,8 @@ export class OpenAIAgentsAdapter {
     const outputGuardrail: OutputGuardrail = {
       name: "edictum_output_guardrail",
       execute: async ({ agentOutput }) => {
-        const toolOutput =
-          agentOutput != null ? String(agentOutput) : "";
+        // Preserve structured output for postcondition/success inspection
+        const toolOutput = agentOutput ?? "";
 
         // Try FIFO correlation (insertion-order) for sequential execution
         if (this._pending.size > 0) {
