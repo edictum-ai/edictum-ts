@@ -130,6 +130,26 @@ describe("ServerBackend.increment", () => {
     );
   });
 
+  it("throws on non-number response value", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ value: "not-a-number" });
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter")).rejects.toThrow(
+      "Server returned non-number value for increment",
+    );
+  });
+
+  it("throws when value field is missing", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({});
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter")).rejects.toThrow(
+      "Server returned non-number value for increment",
+    );
+  });
+
   it("defaults amount to 1", async () => {
     const client = mockClient();
     vi.mocked(client.post).mockResolvedValue({ value: 1 });

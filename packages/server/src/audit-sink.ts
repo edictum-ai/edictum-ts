@@ -68,7 +68,7 @@ export class ServerAuditSink implements AuditSink {
   }
 
   /** Map an AuditEvent to the server EventPayload format. */
-  _mapEvent(event: AuditEvent): ServerEventPayload {
+  private _mapEvent(event: AuditEvent): ServerEventPayload {
     return {
       call_id: event.callId,
       agent_id: this._client.agentId,

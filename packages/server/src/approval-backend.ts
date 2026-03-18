@@ -5,7 +5,7 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
 } from "@edictum/core";
-import { ApprovalStatus } from "@edictum/core";
+import { ApprovalStatus, deepFreeze } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
 import { SAFE_IDENTIFIER_RE } from "./client.js";
@@ -55,19 +55,40 @@ export class ServerApprovalBackend implements ApprovalBackend {
     };
 
     const response = await this._client.post("/api/v1/approvals", body);
-    const approvalId = response["id"] as string;
+    const approvalId = response["id"];
 
-    const request: ApprovalRequest = Object.freeze({
+    // Validate server-returned approvalId immediately
+    if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      throw new Error(
+        `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+      );
+    }
+
+    // Deep-copy THEN freeze — prevents freezing caller-owned nested objects.
+    // structuredClone handles most JSON-like data; falls back to shallow spread
+    // for non-cloneable types (Buffer, typed arrays) which are already edge cases
+    // since toolArgs must be JSON-serializable for the HTTP POST.
+    let safeArgs: Record<string, unknown>;
+    let safePrincipal: Record<string, unknown> | null;
+    let safeMeta: Record<string, unknown>;
+    try {
+      safeArgs = structuredClone(toolArgs);
+      safePrincipal = options?.principal ? structuredClone(options.principal) : null;
+      safeMeta = structuredClone(options?.metadata ?? {});
+    } catch {
+      safeArgs = { ...toolArgs };
+      safePrincipal = options?.principal ? { ...options.principal } : null;
+      safeMeta = { ...(options?.metadata ?? {}) };
+    }
+    const request: ApprovalRequest = deepFreeze({
       approvalId,
       toolName,
-      toolArgs: Object.freeze({ ...toolArgs }),
+      toolArgs: safeArgs,
       message,
       timeout,
       timeoutEffect,
-      principal: options?.principal
-        ? Object.freeze({ ...options.principal })
-        : null,
-      metadata: Object.freeze({ ...(options?.metadata ?? {}) }),
+      principal: safePrincipal,
+      metadata: safeMeta,
       createdAt: new Date(),
     });
 
@@ -80,6 +101,13 @@ export class ServerApprovalBackend implements ApprovalBackend {
     approvalId: string,
     timeout?: number | null,
   ): Promise<ApprovalDecision> {
+    // Validate approvalId before interpolating into URL path
+    if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
+      throw new Error(
+        `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+      );
+    }
+
     const request = this._pending.get(approvalId);
     const effectiveTimeout =
       timeout ?? (request ? request.timeout : 300);
@@ -90,13 +118,6 @@ export class ServerApprovalBackend implements ApprovalBackend {
     // Clean up pending map now that we have the id — avoid unbounded growth
     this._pending.delete(approvalId);
 
-    // Validate approvalId before interpolating into URL path
-    if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
-      throw new Error(
-        `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
-      );
-    }
-
     while (true) {
       const response = await this._client.get(
         `/api/v1/approvals/${approvalId}`,
@@ -104,7 +125,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       const status = response["status"] as string;
 
       if (status === "approved") {
-        return Object.freeze({
+        return deepFreeze({
           approved: true,
           approver: (response["decided_by"] as string) ?? null,
           reason: (response["decision_reason"] as string) ?? null,
@@ -114,7 +135,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       }
 
       if (status === "denied") {
-        return Object.freeze({
+        return deepFreeze({
           approved: false,
           approver: (response["decided_by"] as string) ?? null,
           reason: (response["decision_reason"] as string) ?? null,
@@ -124,7 +145,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       }
 
       if (status === "timeout") {
-        return Object.freeze({
+        return deepFreeze({
           approved: timeoutEffect === "allow",
           approver: null,
           reason: null,
@@ -135,7 +156,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
 
       // Still pending — check local deadline
       if (Date.now() >= deadline) {
-        return Object.freeze({
+        return deepFreeze({
           approved: timeoutEffect === "allow",
           approver: null,
           reason: null,

@@ -44,11 +44,11 @@ export interface EdictumServerClientOptions {
  */
 export class EdictumServerClient {
   readonly baseUrl: string;
-  readonly apiKey: string;
+  private readonly _apiKey: string;
   readonly agentId: string;
   readonly env: string;
   readonly bundleName: string | null;
-  readonly tags: Record<string, string> | null;
+  readonly tags: Readonly<Record<string, string>> | null;
   readonly timeout: number;
   readonly maxRetries: number;
 
@@ -64,6 +64,13 @@ export class EdictumServerClient {
       maxRetries = 3,
       allowInsecure = false,
     } = options;
+
+    // Validate apiKey is non-empty
+    if (!apiKey) {
+      throw new EdictumConfigError(
+        "apiKey must be a non-empty string",
+      );
+    }
 
     // Validate identifiers
     for (const [name, value] of [
@@ -131,18 +138,18 @@ export class EdictumServerClient {
     }
 
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.apiKey = apiKey;
+    this._apiKey = apiKey;
     this.agentId = agentId;
     this.env = env;
     this.bundleName = bundleName;
-    this.tags = tags;
+    this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
     this.timeout = timeout;
     this.maxRetries = maxRetries;
   }
 
   private _headers(): Record<string, string> {
     return {
-      Authorization: `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${this._apiKey}`,
       "X-Edictum-Agent-Id": this.agentId,
       "Content-Type": "application/json",
     };
@@ -253,6 +260,7 @@ export class EdictumServerClient {
   async rawFetch(
     path: string,
     params?: Record<string, string>,
+    options?: { signal?: AbortSignal },
   ): Promise<Response> {
     let url = `${this.baseUrl}${path}`;
     if (params) {
@@ -262,6 +270,7 @@ export class EdictumServerClient {
     return fetch(url, {
       method: "GET",
       headers: this._headers(),
+      signal: options?.signal,
     });
   }
 

@@ -159,6 +159,40 @@ describe("tag validation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Empty apiKey validation
+// ---------------------------------------------------------------------------
+
+describe("apiKey validation", () => {
+  it("rejects empty apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "" }),
+    ).toThrow("apiKey must be a non-empty string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tags immutability
+// ---------------------------------------------------------------------------
+
+describe("tags immutability", () => {
+  it("stores a frozen copy of tags — caller mutations do not propagate", () => {
+    const tags: Record<string, string> = { env: "prod" };
+    const client = new EdictumServerClient({
+      baseUrl: "https://x.com",
+      apiKey: "k",
+      tags,
+    });
+
+    // Mutate the original — should not affect the client
+    tags["env"] = "staging";
+    tags["extra"] = "injected";
+
+    expect(client.tags).toEqual({ env: "prod" });
+    expect(Object.isFrozen(client.tags)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Headers
 // ---------------------------------------------------------------------------
 

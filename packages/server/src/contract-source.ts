@@ -23,6 +23,7 @@ export class ServerContractSource {
   private _connected: boolean = false;
   private _closed: boolean = false;
   private _currentRevision: string | null = null;
+  private _abortController: AbortController | null = null;
 
   constructor(
     client: EdictumServerClient,
@@ -67,9 +68,12 @@ export class ServerContractSource {
           params["tags"] = JSON.stringify(this._client.tags);
         }
 
+        this._abortController = new AbortController();
+
         const response = await this._client.rawFetch(
           "/api/v1/stream",
           params,
+          { signal: this._abortController.signal },
         );
 
         if (!response.ok) {
@@ -174,8 +178,8 @@ export class ServerContractSource {
         return null; // Not an object
       }
       const bundleObj = bundle as Record<string, unknown>;
-      if ("revision_hash" in bundleObj) {
-        this._currentRevision = bundleObj["revision_hash"] as string;
+      if ("revision_hash" in bundleObj && typeof bundleObj["revision_hash"] === "string") {
+        this._currentRevision = bundleObj["revision_hash"];
       }
       return bundleObj;
     }
@@ -210,6 +214,10 @@ export class ServerContractSource {
   async close(): Promise<void> {
     this._closed = true;
     this._connected = false;
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
+    }
   }
 
   get connected(): boolean {

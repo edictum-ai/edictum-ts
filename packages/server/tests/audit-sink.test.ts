@@ -170,10 +170,10 @@ describe("ServerAuditSink failed flush restore", () => {
 // Event mapping
 // ---------------------------------------------------------------------------
 
-describe("ServerAuditSink._mapEvent", () => {
-  it("maps AuditEvent to server format correctly", () => {
+describe("ServerAuditSink event mapping", () => {
+  it("maps AuditEvent to server format correctly via POST body", async () => {
     const client = mockClient({ bundleName: "my-bundle" });
-    const sink = new ServerAuditSink(client);
+    const sink = new ServerAuditSink(client, { batchSize: 1 });
     const event = makeEvent({
       callId: "c1",
       toolName: "Bash",
@@ -187,8 +187,29 @@ describe("ServerAuditSink._mapEvent", () => {
       policyVersion: "v1.0",
     });
 
-    const mapped = sink._mapEvent(event);
+    await sink.emit(event);
 
+    expect(client.post).toHaveBeenCalledOnce();
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{
+        call_id: string;
+        agent_id: string;
+        tool_name: string;
+        verdict: string;
+        mode: string;
+        timestamp: string;
+        payload: {
+          side_effect: string;
+          environment: string;
+          decision_source: string | null;
+          decision_name: string | null;
+          reason: string | null;
+          policy_version: string | null;
+          bundle_name: string | null;
+        };
+      }>;
+    };
+    const mapped = body.events[0]!;
     expect(mapped.call_id).toBe("c1");
     expect(mapped.agent_id).toBe("test-agent");
     expect(mapped.tool_name).toBe("Bash");
@@ -204,14 +225,17 @@ describe("ServerAuditSink._mapEvent", () => {
     expect(mapped.payload.bundle_name).toBe("my-bundle");
   });
 
-  it("uses client env when event environment is empty", () => {
+  it("uses client env when event environment is empty", async () => {
     const client = mockClient({ env: "staging" });
-    const sink = new ServerAuditSink(client);
+    const sink = new ServerAuditSink(client, { batchSize: 1 });
     const event = makeEvent({ environment: "" });
 
-    const mapped = sink._mapEvent(event);
+    await sink.emit(event);
 
-    expect(mapped.payload.environment).toBe("staging");
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{ payload: { environment: string } }>;
+    };
+    expect(body.events[0]!.payload.environment).toBe("staging");
   });
 });
 

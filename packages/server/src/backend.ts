@@ -67,7 +67,13 @@ export class ServerBackend implements StorageBackend {
       `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
       { amount },
     );
-    return response["value"] as number;
+    const value = response["value"];
+    if (typeof value !== "number") {
+      throw new Error(
+        `Server returned non-number value for increment: ${typeof value}`,
+      );
+    }
+    return value;
   }
 
   /**

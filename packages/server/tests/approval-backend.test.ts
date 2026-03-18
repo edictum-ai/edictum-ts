@@ -61,6 +61,26 @@ describe("ServerApprovalBackend.requestApproval", () => {
     expect(Object.isFrozen(request.metadata)).toBe(true);
   });
 
+  it("rejects invalid approvalId from server", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "../escape" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow("Server returned invalid approvalId");
+  });
+
+  it("rejects non-string approvalId from server", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: 12345 });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow("Server returned invalid approvalId");
+  });
+
   it("passes custom options", async () => {
     const client = mockClient();
     vi.mocked(client.post).mockResolvedValue({ id: "a2" });

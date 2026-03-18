@@ -221,9 +221,11 @@ describe("ServerContractSource query params", () => {
       // Should not yield anything
     }
 
-    expect(client.rawFetch).toHaveBeenCalledWith("/api/v1/stream", {
-      env: "production",
-    });
+    expect(client.rawFetch).toHaveBeenCalledWith(
+      "/api/v1/stream",
+      { env: "production" },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it("passes bundle_name when set", async () => {
