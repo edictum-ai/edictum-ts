@@ -61,7 +61,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ steps.app-token.outputs.token }}
-          claude_args: '--model claude-sonnet-4-6 --max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(cat:*),Read,Glob,Grep,Write"'
+          claude_args: '--model claude-sonnet-4-6 --max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh issue create:*),Bash(cat:*),Read,Glob,Grep,Write"'
           prompt: |
             You are an adversarial code reviewer for Edictum JS — a **security product** (runtime contract enforcement for AI agent tool calls). A single vulnerability destroys the credibility of a startup that sells trust. Think like an attacker first, reviewer second.
 
@@ -104,11 +104,30 @@ jobs:
 
             7. Do NOT post the comment yourself. The workflow handles posting after validation.
 
-            ## Rules
-            - **Exhaustive, single pass.** Find ALL issues on the first review. This
-              workflow runs on every push and the comment is a sticky overwrite. If you
-              miss something, the next run may also miss it because it sees the same diff.
-              There is no "next round" — this is your one shot.
+            ## Classification rules
+
+            Use `<!-- STATUS: fail -->` ONLY for critical issues that have a concrete
+            attack path or correctness bug that MUST be fixed before merge. These are
+            things like: secrets leaking, fail-open on error paths, data corruption,
+            injection vulnerabilities, broken core enforcement logic.
+
+            Use `<!-- STATUS: pass -->` for everything else — including warnings and
+            suggestions. These are tracked as GitHub issues instead of blocking the PR.
+
+            After writing the review comment to `/tmp/review.md`, create a GitHub issue
+            for EACH warning and suggestion using:
+
+            ```
+            gh issue create --title "review: <short description>" --body "<details with file, line, suggested fix>" --label "review"
+            ```
+
+            This ensures nothing is lost while keeping PRs unblocked by cosmetic findings.
+
+            ## Review rules
+            - **Exhaustive, single pass.** Find ALL issues — 20, 30, 50, however many.
+              Do NOT stop at 3-5 findings. Scan every file, every function, every parameter.
+              There is no "next round." If you report 5 findings and miss 15, the next run
+              will find 5 more, causing endless fix cycles. Find them ALL now.
             - A clean PR with zero findings is a good outcome.
             - Do NOT flag style/formatting (linters handle that).
             - ALWAYS include the attack path for security issues.
@@ -117,6 +136,12 @@ jobs:
             - Check EVERY collection getter for defensive copies.
             - Check EVERY fan-out/iteration pattern for shared mutable state.
             - Check EVERY when/filter predicate is actually called.
+            - Check EVERY error path for fail-closed behavior.
+            - Check EVERY parameter for NaN/Infinity/negative/zero/empty edge cases.
+            - Check EVERY string interpolated into URLs/paths/headers for injection.
+            - Do NOT report the same class of issue multiple times across files.
+              If you find "no control char validation on X", check ALL similar parameters
+              in the same pass and report them together.
 
       - name: Validate and post review comment
         env:
@@ -146,20 +171,16 @@ jobs:
             echo "Created new review comment"
           fi
 
-      - name: Fail on any findings
+      - name: Fail on critical findings only
         run: |
           # Read the local file directly — immune to comment injection race condition.
-          # /tmp/review.md was written by Claude on this runner and is inaccessible to attackers.
           if [ ! -f /tmp/review.md ]; then
             echo "::error::Review file missing."
             exit 1
           fi
           if grep -q '<!-- STATUS: fail -->' /tmp/review.md; then
-            echo "::error::Code review found critical/high issues. See PR comment for details."
+            echo "::error::Code review found critical issues. See PR comment for details."
             exit 1
           fi
-          if grep -q '<!-- STATUS: warn -->' /tmp/review.md; then
-            echo "::error::Code review found warnings. See PR comment for details."
-            exit 1
-          fi
-          echo "Code review passed — no findings."
+          # Warnings and suggestions are tracked as GitHub issues, not PR blockers.
+          echo "Code review passed (warnings/suggestions tracked as issues)."
