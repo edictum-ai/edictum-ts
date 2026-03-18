@@ -123,6 +123,17 @@ export class EdictumServerClient {
             `Tag value too long (${v.length} > 256) for key ${JSON.stringify(k)}`,
           );
         }
+        // Reject control characters in tag keys and values
+        if (/[\x00-\x1f\x7f]/.test(k)) {
+          throw new EdictumConfigError(
+            `Tag key contains control characters: ${JSON.stringify(k)}`,
+          );
+        }
+        if (/[\x00-\x1f\x7f]/.test(v)) {
+          throw new EdictumConfigError(
+            `Tag value contains control characters for key ${JSON.stringify(k)}`,
+          );
+        }
       }
     }
 

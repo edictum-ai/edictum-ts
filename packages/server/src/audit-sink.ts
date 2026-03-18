@@ -115,9 +115,6 @@ export class ServerAuditSink implements AuditSink {
     try {
       await this._client.post("/api/v1/events", { events });
     } catch (error) {
-      console.warn(
-        `Failed to flush ${events.length} audit events, keeping in buffer for retry`,
-      );
       this._restoreEvents(events);
       // Rethrow non-Error throwables and client auth errors (4xx except 429)
       // so credential failures surface immediately instead of silently retrying
@@ -126,6 +123,10 @@ export class ServerAuditSink implements AuditSink {
       if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
         throw error;
       }
+      // Only log retry message for retryable errors (network, 5xx, 429)
+      console.warn(
+        `Failed to flush ${events.length} audit events, keeping in buffer for retry`,
+      );
     }
   }
 
@@ -146,7 +147,13 @@ export class ServerAuditSink implements AuditSink {
     }
     this._flushTimer = setTimeout(() => {
       this._flushTimer = null;
-      void this.flush();
+      this.flush().catch((err: unknown) => {
+        // Auto-flush is fire-and-forget. Auth errors (4xx) will surface on
+        // the next explicit emit→flush path. Log here to aid debugging.
+        console.warn(
+          `[edictum] auto-flush failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
     }, this._flushInterval);
   }
 

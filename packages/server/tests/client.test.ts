@@ -175,6 +175,61 @@ describe("tag validation", () => {
     ).toThrow("Tag value too long");
   });
 
+  it("rejects tag key with control characters", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { "key\x00null": "v" },
+        }),
+    ).toThrow("Tag key contains control characters");
+  });
+
+  it("rejects tag key with newline", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { "key\ninjection": "v" },
+        }),
+    ).toThrow("Tag key contains control characters");
+  });
+
+  it("rejects tag value with control characters", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { env: "prod\x00injected" },
+        }),
+    ).toThrow("Tag value contains control characters");
+  });
+
+  it("rejects tag value with carriage return", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { env: "val\rinjection" },
+        }),
+    ).toThrow("Tag value contains control characters");
+  });
+
+  it("rejects tag key with DEL character", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { "key\x7f": "v" },
+        }),
+    ).toThrow("Tag key contains control characters");
+  });
+
   it("accepts valid tags", () => {
     expect(
       () =>

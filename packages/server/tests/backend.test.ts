@@ -171,6 +171,42 @@ describe("ServerBackend.increment", () => {
     );
   });
 
+  it("rejects NaN amount", async () => {
+    const client = mockClient();
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter", NaN)).rejects.toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects Infinity amount", async () => {
+    const client = mockClient();
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter", Infinity)).rejects.toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects -Infinity amount", async () => {
+    const client = mockClient();
+    const backend = new ServerBackend(client);
+
+    await expect(backend.increment("counter", -Infinity)).rejects.toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("accepts negative finite amount", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ value: -1 });
+    const backend = new ServerBackend(client);
+
+    const result = await backend.increment("counter", -1);
+    expect(result).toBe(-1);
+  });
+
   it("defaults amount to 1", async () => {
     const client = mockClient();
     vi.mocked(client.post).mockResolvedValue({ value: 1 });

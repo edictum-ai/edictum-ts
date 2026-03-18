@@ -274,6 +274,84 @@ describe("ServerAuditSink event mapping", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Auth error handling in flush
+// ---------------------------------------------------------------------------
+
+describe("ServerAuditSink auth error handling", () => {
+  it("rethrows auth errors (4xx except 429) without logging retry message", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const authError = Object.assign(new Error("HTTP 403: Forbidden"), { statusCode: 403 });
+    const client = mockClient();
+    vi.mocked(client.post).mockRejectedValue(authError);
+
+    const sink = new ServerAuditSink(client, { batchSize: 100 });
+    await sink.emit(makeEvent());
+
+    await expect(sink.flush()).rejects.toThrow("HTTP 403: Forbidden");
+    // The "keeping in buffer for retry" message should NOT have been logged
+    const retryMessages = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("keeping in buffer"),
+    );
+    expect(retryMessages).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("logs retry message only for retryable errors", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = mockClient();
+    vi.mocked(client.post).mockRejectedValue(new Error("network error"));
+
+    const sink = new ServerAuditSink(client, { batchSize: 100 });
+    await sink.emit(makeEvent());
+    await sink.flush();
+
+    const retryMessages = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("keeping in buffer"),
+    );
+    expect(retryMessages).toHaveLength(1);
+    warnSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-flush error handling
+// ---------------------------------------------------------------------------
+
+describe("ServerAuditSink auto-flush error handling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("auto-flush catches auth errors instead of causing unhandled rejection", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const authError = Object.assign(new Error("HTTP 401: Unauthorized"), { statusCode: 401 });
+    const client = mockClient();
+    vi.mocked(client.post).mockRejectedValue(authError);
+
+    const sink = new ServerAuditSink(client, {
+      batchSize: 100,
+      flushInterval: 1000,
+    });
+
+    await sink.emit(makeEvent());
+
+    // Advance past the auto-flush interval — should not throw unhandled rejection
+    await vi.advanceTimersByTimeAsync(1100);
+
+    // Should log the auto-flush failure
+    const autoFlushMessages = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("auto-flush failed"),
+    );
+    expect(autoFlushMessages).toHaveLength(1);
+    warnSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // close()
 // ---------------------------------------------------------------------------
 

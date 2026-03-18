@@ -7,6 +7,8 @@ import type {
 } from "@edictum/core";
 import { ApprovalStatus, deepFreeze } from "@edictum/core";
 
+import { EdictumConfigError } from "@edictum/core";
+
 import type { EdictumServerClient } from "./client.js";
 import { SAFE_IDENTIFIER_RE } from "./client.js";
 
@@ -28,6 +30,11 @@ export class ServerApprovalBackend implements ApprovalBackend {
   ) {
     this._client = client;
     this._pollInterval = options?.pollInterval ?? 2_000;
+    if (!Number.isFinite(this._pollInterval) || this._pollInterval <= 0) {
+      throw new EdictumConfigError(
+        `pollInterval must be a positive finite number, got ${this._pollInterval}`,
+      );
+    }
   }
 
   /** Create an approval request on the server. */

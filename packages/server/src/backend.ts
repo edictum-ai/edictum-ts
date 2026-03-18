@@ -86,6 +86,11 @@ export class ServerBackend implements StorageBackend {
   /** Atomically increment a counter on the server. */
   async increment(key: string, amount: number = 1): Promise<number> {
     validateKey(key);
+    if (!Number.isFinite(amount)) {
+      throw new EdictumConfigError(
+        `Invalid increment amount: ${JSON.stringify(amount)}. Must be a finite number.`,
+      );
+    }
     const response = await this._client.post(
       `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
       { amount },

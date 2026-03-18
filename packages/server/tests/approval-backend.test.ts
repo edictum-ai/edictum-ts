@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { ApprovalStatus } from "@edictum/core";
+import { ApprovalStatus, EdictumConfigError } from "@edictum/core";
 
 import { EdictumServerClient } from "../src/client.js";
 import { ServerApprovalBackend } from "../src/approval-backend.js";
@@ -219,6 +219,45 @@ describe("ServerApprovalBackend.waitForDecision", () => {
     const decision = await backend.waitForDecision("a1");
 
     expect(Object.isFrozen(decision)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pollInterval validation
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend pollInterval validation", () => {
+  it("rejects pollInterval of 0", () => {
+    const client = mockClient();
+    expect(() => new ServerApprovalBackend(client, { pollInterval: 0 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects negative pollInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerApprovalBackend(client, { pollInterval: -1000 })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects NaN pollInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerApprovalBackend(client, { pollInterval: NaN })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("rejects Infinity pollInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerApprovalBackend(client, { pollInterval: Infinity })).toThrow(
+      EdictumConfigError,
+    );
+  });
+
+  it("accepts valid positive pollInterval", () => {
+    const client = mockClient();
+    expect(() => new ServerApprovalBackend(client, { pollInterval: 500 })).not.toThrow();
   });
 });
 
