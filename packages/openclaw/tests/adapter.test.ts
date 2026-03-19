@@ -3,10 +3,12 @@ import {
   Edictum,
   CollectingAuditSink,
   AuditAction,
+  ApprovalStatus,
   createPrincipal,
+  createCompiledState,
   EdictumConfigError,
 } from "@edictum/core";
-import type { Precondition, Postcondition, Verdict } from "@edictum/core";
+import type { ApprovalBackend, Precondition, Postcondition, Verdict } from "@edictum/core";
 
 import { EdictumOpenClawAdapter } from "../src/adapter.js";
 import { createEdictumPlugin, defaultPrincipalFromContext } from "../src/plugin.js";
@@ -383,6 +385,27 @@ describe("EdictumOpenClawAdapter", () => {
       expect(result).toBe("Principal resolution failed");
     });
 
+    it("#59 — principalResolver throwing emits CALL_DENIED audit event", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        principalResolver: () => {
+          throw new Error("resolver exploded");
+        },
+      });
+      const ctx = makeCtx();
+
+      await adapter.pre("exec", { command: "ls" }, "tc-sec-pr-audit", ctx);
+
+      const denied = sink.events.find(
+        (e) =>
+          e.action === AuditAction.CALL_DENIED &&
+          e.reason === "Principal resolution failed",
+      );
+      expect(denied).toBeDefined();
+      expect(denied!.toolName).toBe("exec");
+      expect(denied!.callId).toBe("tc-sec-pr-audit");
+    });
+
     it("already-consumed callId (replay) returns passthrough from post()", async () => {
       const guard = new Edictum({ auditSink: sink });
       const adapter = new EdictumOpenClawAdapter(guard);
@@ -472,12 +495,12 @@ describe("EdictumOpenClawAdapter", () => {
       expect(result).toBeNull();
     });
 
-    it("#52 — sessionId exceeding 1000 chars is rejected", () => {
+    it("#52/#58 — sessionId exceeding 1000 chars is rejected with correct message", () => {
       const guard = new Edictum({ auditSink: sink });
 
       expect(
         () => new EdictumOpenClawAdapter(guard, { sessionId: "s".repeat(1001) }),
-      ).toThrow(EdictumConfigError);
+      ).toThrow("sessionId exceeds maximum length");
     });
 
     it("#53 — callId denial emits CALL_DENIED audit event", async () => {
@@ -667,7 +690,78 @@ describe("EdictumOpenClawAdapter", () => {
   // #46 — approval flow tests
   // -------------------------------------------------------------------------
 
-  // TODO: approval flow tests require mock ApprovalBackend (tracked in #46)
+  describe("approval flow", () => {
+    it("#60 — pending_approval with mock backend grants and emits correct audit", async () => {
+      // A precondition with effect: "approve" triggers pending_approval in the pipeline.
+      // We inject it as an InternalPrecondition via _replaceState, then wire a mock
+      // ApprovalBackend that auto-approves.
+      const mockBackend: ApprovalBackend = {
+        requestApproval: vi.fn(async (_toolName, _toolArgs, _message, _opts) => ({
+          approvalId: "mock-approval-1",
+          toolName: _toolName,
+          toolArgs: Object.freeze({ ..._toolArgs }),
+          message: _message,
+          timeout: _opts?.timeout ?? 300,
+          timeoutEffect: _opts?.timeoutEffect ?? "deny",
+          principal: _opts?.principal ?? null,
+          metadata: Object.freeze({}),
+          createdAt: new Date(),
+        })),
+        waitForDecision: vi.fn(async () => ({
+          approved: true,
+          approver: "test-approver",
+          reason: null,
+          status: ApprovalStatus.APPROVED,
+          timestamp: new Date(),
+        })),
+      };
+
+      const guard = new Edictum({
+        auditSink: sink,
+        approvalBackend: mockBackend,
+      });
+
+      // Inject an InternalPrecondition with effect: "approve" so the pipeline
+      // returns pending_approval for tool "exec".
+      guard._replaceState(
+        createCompiledState({
+          preconditions: [
+            {
+              type: "precondition",
+              name: "require-approval",
+              tool: "exec",
+              effect: "approve",
+              check: () => ({ passed: false, message: "Needs approval", metadata: Object.freeze({}) }),
+            },
+          ],
+        }),
+      );
+
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const result = await adapter.pre("exec", { command: "ls" }, "tc-approval-1", ctx);
+
+      // Approved -> null (allow)
+      expect(result).toBeNull();
+
+      // Verify the mock backend was called
+      expect(mockBackend.requestApproval).toHaveBeenCalledOnce();
+      expect(mockBackend.waitForDecision).toHaveBeenCalledWith("mock-approval-1", 300);
+
+      // Verify audit trail: CALL_APPROVAL_REQUESTED then CALL_APPROVAL_GRANTED
+      const requested = sink.events.find(
+        (e) => e.action === AuditAction.CALL_APPROVAL_REQUESTED,
+      );
+      expect(requested).toBeDefined();
+      expect(requested!.toolName).toBe("exec");
+
+      const granted = sink.events.find(
+        (e) => e.action === AuditAction.CALL_APPROVAL_GRANTED,
+      );
+      expect(granted).toBeDefined();
+    });
+  });
 
   // -------------------------------------------------------------------------
   // #51 — handleAfterToolCall fallback to _findPendingByToolName

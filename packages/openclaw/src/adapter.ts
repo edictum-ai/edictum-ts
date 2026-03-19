@@ -152,7 +152,10 @@ export class EdictumOpenClawAdapter {
 
     const sessionId = options.sessionId ?? guard.sessionId;
     // Length cap (#52) + control character check. Same precautionary cap as callId.
-    if (sessionId.length > 1000 || CONTROL_CHAR_RE.test(sessionId)) {
+    if (sessionId.length > 1000) {
+      throw new EdictumConfigError("sessionId exceeds maximum length");
+    }
+    if (CONTROL_CHAR_RE.test(sessionId)) {
       throw new EdictumConfigError("sessionId contains control characters");
     }
     this._sessionId = sessionId;
@@ -225,10 +228,25 @@ export class EdictumOpenClawAdapter {
     const principalResult = this._resolvePrincipal(toolName, toolInput, ctx);
     if (principalResult.error) {
       // No envelope exists yet because principal resolution failed before
-      // createEnvelope(). We cannot call _safeDeny (requires an envelope) and
-      // skip the full audit event — the denial reason is returned to OpenClaw
-      // which logs it. A minimal audit is not emitted here because the
-      // principal is unknown, making the event ambiguous for audit consumers.
+      // createEnvelope(). We cannot call _safeDeny (requires an envelope),
+      // but we emit a minimal CALL_DENIED audit so the denial is observable
+      // in audit logs (#59).
+      try {
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            timestamp: new Date(),
+            runId: ctx.runId ?? this._sessionId,
+            callId,
+            toolName,
+            action: AuditAction.CALL_DENIED,
+            reason: "Principal resolution failed",
+            mode: this._guard.mode,
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      } catch {
+        // Audit errors must never block tool execution
+      }
       return "Principal resolution failed";
     }
     const principal = principalResult.value;
@@ -252,6 +270,7 @@ export class EdictumOpenClawAdapter {
 
     // --- Pending approval (same pattern as vercel-ai adapter) ---
     if (decision.action === "pending_approval") {
+      // Matches vercel-ai/claude-sdk pattern — _approvalBackend is internal but stable
       const approvalBackend = this._guard._approvalBackend;
 
       if (!approvalBackend) {
