@@ -92,7 +92,7 @@ export class EdictumOpenClawAdapter {
   private readonly _pending = new Map<string, PendingCall>();
 
   // Callbacks
-  private readonly _principal: Principal | null;
+  private _principal: Principal | null;
   private readonly _principalResolver:
     | ((
         toolName: string,
@@ -141,7 +141,7 @@ export class EdictumOpenClawAdapter {
 
   /** Update the static principal. */
   setPrincipal(principal: Principal): void {
-    (this as unknown as { _principal: Principal | null })._principal = principal;
+    this._principal = principal;
   }
 
   // -------------------------------------------------------------------------
