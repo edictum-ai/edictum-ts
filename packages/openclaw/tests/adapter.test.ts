@@ -446,6 +446,99 @@ describe("EdictumOpenClawAdapter", () => {
   });
 
   // -------------------------------------------------------------------------
+  // #52/#53/#54/#57 — Review round fixes
+  // -------------------------------------------------------------------------
+
+  describe("review round fixes", () => {
+    it("#52 — callId exceeding 1000 chars is rejected", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const longCallId = "x".repeat(1001);
+      const result = await adapter.pre("exec", { command: "ls" }, longCallId, ctx);
+
+      expect(result).toBe("Invalid callId");
+    });
+
+    it("#52 — callId at exactly 1000 chars is accepted", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const callId1000 = "a".repeat(1000);
+      const result = await adapter.pre("exec", { command: "ls" }, callId1000, ctx);
+
+      expect(result).toBeNull();
+    });
+
+    it("#52 — sessionId exceeding 1000 chars is rejected", () => {
+      const guard = new Edictum({ auditSink: sink });
+
+      expect(
+        () => new EdictumOpenClawAdapter(guard, { sessionId: "s".repeat(1001) }),
+      ).toThrow(EdictumConfigError);
+    });
+
+    it("#53 — callId denial emits CALL_DENIED audit event", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      await adapter.pre("exec", { command: "ls" }, "tc-\x00bad", ctx);
+
+      const denied = sink.events.find(
+        (e) => e.action === AuditAction.CALL_DENIED && e.reason === "Invalid callId",
+      );
+      expect(denied).toBeDefined();
+      expect(denied!.toolName).toBe("exec");
+    });
+
+    it("#57 — toolName with control characters is rejected by core's createEnvelope", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      // toolName with control chars is rejected by @edictum/core's envelope
+      // validation (not the adapter). This is correct — core validates all
+      // envelope inputs, and the adapter does not need to duplicate that check.
+      await expect(
+        adapter.pre("exec\x00tool", { command: "ls" }, "tc-ctrl-tool", ctx),
+      ).rejects.toThrow(EdictumConfigError);
+    });
+
+    it("#54/#57 — MAX_PENDING eviction: 10,001st call still works", async () => {
+      // Use a separate sink with higher capacity and raise limits to allow 10,001 attempts
+      const bigSink = new CollectingAuditSink(20_000);
+      const guard = new Edictum({
+        auditSink: bigSink,
+        limits: { maxAttempts: 20_000, maxToolCalls: 20_000, maxCallsPerTool: {} },
+      });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      // Suppress console.warn for the eviction log
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      // Fill up to MAX_PENDING (10,000) + 1
+      for (let i = 0; i < 10_001; i++) {
+        const result = await adapter.pre("exec", { command: "ls" }, `tc-evict-${i}`, ctx);
+        // Every call should be allowed (no contracts deny "ls")
+        expect(result).toBeNull();
+      }
+
+      // Verify eviction warning was logged (first eviction at the 10,001st call)
+      expect(warnSpy).toHaveBeenCalled();
+      const evictionCall = warnSpy.mock.calls.find(
+        (args) => typeof args[0] === "string" && args[0].includes("MAX_PENDING"),
+      );
+      expect(evictionCall).toBeDefined();
+
+      warnSpy.mockRestore();
+    }, 30_000);
+  });
+
+  // -------------------------------------------------------------------------
   // #32 — Behavior tests
   // -------------------------------------------------------------------------
 

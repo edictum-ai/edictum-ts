@@ -2,6 +2,9 @@
 // Translates between OpenClaw plugin hooks and Edictum's GovernancePipeline.
 // NOTE: 500+ lines — approved due to adapter pattern requiring single-class cohesion (matches vercel-ai/claude-sdk)
 
+// Node global — project omits @types/node; only used for eviction warning.
+declare const console: { warn(...args: unknown[]): void };
+
 import type { Principal, ToolEnvelope, AuditAction as AuditActionType } from "@edictum/core";
 import {
   ApprovalStatus,
@@ -148,7 +151,8 @@ export class EdictumOpenClawAdapter {
     this._pipeline = new GovernancePipeline(guard);
 
     const sessionId = options.sessionId ?? guard.sessionId;
-    if (CONTROL_CHAR_RE.test(sessionId)) {
+    // Length cap (#52) + control character check. Same precautionary cap as callId.
+    if (sessionId.length > 1000 || CONTROL_CHAR_RE.test(sessionId)) {
       throw new EdictumConfigError("sessionId contains control characters");
     }
     this._sessionId = sessionId;
@@ -194,13 +198,37 @@ export class EdictumOpenClawAdapter {
     callId: string,
     ctx: ToolHookContext,
   ): Promise<string | null> {
-    // Validate callId — same control character check as sessionId (#43)
-    if (CONTROL_CHAR_RE.test(callId)) {
+    // Validate callId — length cap (#52) + control character check (#43).
+    // The regex is O(n) character class with no backtracking risk, but we cap
+    // input length as a precautionary measure per project security policy.
+    if (callId.length > 1000 || CONTROL_CHAR_RE.test(callId)) {
+      // No envelope exists yet — emit a minimal audit event for the denial (#53).
+      try {
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            timestamp: new Date(),
+            runId: ctx.runId ?? this._sessionId,
+            callId,
+            toolName,
+            action: AuditAction.CALL_DENIED,
+            reason: "Invalid callId",
+            mode: this._guard.mode,
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      } catch {
+        // Audit errors must never block tool execution
+      }
       return "Invalid callId";
     }
 
     const principalResult = this._resolvePrincipal(toolName, toolInput, ctx);
     if (principalResult.error) {
+      // No envelope exists yet because principal resolution failed before
+      // createEnvelope(). We cannot call _safeDeny (requires an envelope) and
+      // skip the full audit event — the denial reason is returned to OpenClaw
+      // which logs it. A minimal audit is not emitted here because the
+      // principal is unknown, making the event ambiguous for audit consumers.
       return "Principal resolution failed";
     }
     const principal = principalResult.value;
@@ -212,6 +240,7 @@ export class EdictumOpenClawAdapter {
       environment: this._guard.environment,
       metadata: {
         openclawAgentId: ctx.agentId ?? null,
+        // sessionKey is an identifier, not a credential — safe to include in audit metadata
         openclawSessionKey: ctx.sessionKey ?? null,
         openclawSessionId: ctx.sessionId ?? null,
       },
@@ -456,6 +485,14 @@ export class EdictumOpenClawAdapter {
   /**
    * Handler for the after_tool_call hook.
    * Fire-and-forget — OpenClaw does not await this.
+   *
+   * **Postcondition output suppression limitation (#56):** The `PostCallResult`
+   * from `post()` (including `outputSuppressed` and `redactedResponse`) is
+   * computed and logged via the audit sink, but **cannot** modify the tool
+   * result in OpenClaw's pipeline. OpenClaw's `after_tool_call` hook is
+   * fire-and-forget with a `void` return — there is no mechanism to feed
+   * data back into the response stream. A future OpenClaw `tool_result_persist`
+   * hook (or equivalent) would be needed to support response mutation.
    */
   async handleAfterToolCall(
     event: AfterToolCallEvent,
@@ -536,12 +573,22 @@ export class EdictumOpenClawAdapter {
    * Track a pending call, evicting the oldest entry if at capacity (#42).
    * Map iteration order in JS is insertion order, so `keys().next()` yields
    * the oldest entry.
+   *
+   * Eviction note (#54): The evicted entry was an ALLOWED call whose
+   * after_tool_call never arrived. We log a warning but do NOT emit a full
+   * audit event because the original call was already audited as CALL_ALLOWED.
+   * When the after_tool_call eventually arrives, post() will not find a
+   * pending entry and will return a passthrough — which is already the
+   * expected behavior for orphaned post calls.
    */
   private _trackPending(callId: string, pending: PendingCall): void {
     if (this._pending.size >= MAX_PENDING) {
       const oldest = this._pending.keys().next().value;
       if (oldest !== undefined) {
         this._pending.delete(oldest);
+        console.warn(
+          `[edictum/openclaw] MAX_PENDING (${MAX_PENDING}) reached — evicted oldest pending call: ${oldest}`,
+        );
       }
     }
     this._pending.set(callId, pending);
