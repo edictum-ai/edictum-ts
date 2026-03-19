@@ -42,7 +42,7 @@ export class RedactionPolicy {
       String.raw`(export\s+\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*=)\S+`,
       "$1[REDACTED]",
     ],
-    [String.raw`(-p\s*|--password[= ])\S+`, "$1[REDACTED]"],
+    [String.raw`((?:^|\s)-p\s+|--password[= ])\S+`, "$1[REDACTED]"],
     [String.raw`(://\w+:)\S+(@)`, "$1[REDACTED]$2"],
   ];
 
@@ -116,17 +116,28 @@ export class RedactionPolicy {
         return "[REDACTED]";
       }
       // Apply bash redaction patterns to catch credentials in shell commands.
-      // Applied to ALL strings — patterns are specific enough that false positives
-      // are rare, and missing a real bash command is a security leak.
-      let redacted = args;
-      for (const [pattern, replacement] of this._compiledPatterns) {
-        pattern.lastIndex = 0;
-        redacted = redacted.replace(pattern, replacement);
+      // Gated on _detectValues so detectSecretValues=false suppresses all
+      // value-level scanning (bash patterns + secret patterns).
+      if (this._detectValues) {
+        // Cap before running patterns — consistent with redactBashCommand / redactResult.
+        const capped =
+          args.length > RedactionPolicy.MAX_REGEX_INPUT
+            ? args.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+            : args;
+        let redacted = capped;
+        for (const [pattern, replacement] of this._compiledPatterns) {
+          pattern.lastIndex = 0;
+          redacted = redacted.replace(pattern, replacement);
+        }
+        if (redacted.length > 1000) {
+          return redacted.slice(0, 997) + "...";
+        }
+        return redacted;
       }
-      if (redacted.length > 1000) {
-        return redacted.slice(0, 997) + "...";
+      if (args.length > 1000) {
+        return args.slice(0, 997) + "...";
       }
-      return redacted;
+      return args;
     }
     return args;
   }

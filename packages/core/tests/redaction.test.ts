@@ -268,6 +268,31 @@ describe("security", () => {
     expect(result[1]).toBe("safe value");
   });
 
+  test("redactArgs caps string input at MAX_REGEX_INPUT", () => {
+    const policy = new RedactionPolicy();
+    const longStr = "x".repeat(20_000);
+    const result = policy.redactArgs(longStr) as string;
+    // After cap + 1000-char truncation, output must be ≤ 1000 chars.
+    expect(result.length).toBeLessThanOrEqual(1000);
+  });
+
+  test("detectSecretValues=false bypasses bash patterns in redactArgs", () => {
+    const policy = new RedactionPolicy(null, null, false);
+    const result = policy.redactArgs({
+      command: "export MY_KEY=somevalue",
+    }) as Record<string, unknown>;
+    expect(result["command"]).toBe("export MY_KEY=somevalue");
+  });
+
+  test("-port and -path are not false-positive redacted", () => {
+    const policy = new RedactionPolicy();
+    const result = policy.redactArgs({
+      cmd: "mysql -port 3306 -path /tmp/data",
+    }) as Record<string, unknown>;
+    expect(result["cmd"]).toContain("-port 3306");
+    expect(result["cmd"]).toContain("-path /tmp/data");
+  });
+
   test("camelCase does not false positive on non-sensitive", () => {
     const policy = new RedactionPolicy();
     const args = {
