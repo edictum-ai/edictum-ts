@@ -115,10 +115,18 @@ export class RedactionPolicy {
       if (this._detectValues && this._looksLikeSecret(args)) {
         return "[REDACTED]";
       }
-      if (args.length > 1000) {
-        return args.slice(0, 997) + "...";
+      // Apply bash redaction patterns to catch credentials in shell commands.
+      // Applied to ALL strings — patterns are specific enough that false positives
+      // are rare, and missing a real bash command is a security leak.
+      let redacted = args;
+      for (const [pattern, replacement] of this._compiledPatterns) {
+        pattern.lastIndex = 0;
+        redacted = redacted.replace(pattern, replacement);
       }
-      return args;
+      if (redacted.length > 1000) {
+        return redacted.slice(0, 997) + "...";
+      }
+      return redacted;
     }
     return args;
   }

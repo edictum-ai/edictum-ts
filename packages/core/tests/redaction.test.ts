@@ -226,6 +226,48 @@ describe("security", () => {
     expect(result["normalField"]).toBe("safe");
   });
 
+  test("string values get bash redaction patterns applied", () => {
+    const policy = new RedactionPolicy();
+
+    // Password flag in shell command
+    const r1 = policy.redactArgs({
+      command: "mysql --password hunter2",
+    }) as Record<string, unknown>;
+    expect(r1["command"]).toContain("[REDACTED]");
+    expect(r1["command"]).not.toContain("hunter2");
+
+    // URL credentials
+    const r2 = policy.redactArgs({
+      url: "https://admin:secret123@db.example.com",
+    }) as Record<string, unknown>;
+    expect(r2["url"]).not.toContain("secret123");
+
+    // Export with secret env var
+    const r3 = policy.redactArgs({
+      script: "export API_KEY=sk-abc123",
+    }) as Record<string, unknown>;
+    expect(r3["script"]).toContain("[REDACTED]");
+    expect(r3["script"]).not.toContain("sk-abc123");
+  });
+
+  test("bare string args get bash redaction patterns applied", () => {
+    const policy = new RedactionPolicy();
+    const result = policy.redactArgs("mysql -p secretpass -u root") as string;
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("secretpass");
+  });
+
+  test("string values in arrays get bash redaction patterns applied", () => {
+    const policy = new RedactionPolicy();
+    const result = policy.redactArgs([
+      "export MY_SECRET_KEY=abc123",
+      "safe value",
+    ]) as string[];
+    expect(result[0]).toContain("[REDACTED]");
+    expect(result[0]).not.toContain("abc123");
+    expect(result[1]).toBe("safe value");
+  });
+
   test("camelCase does not false positive on non-sensitive", () => {
     const policy = new RedactionPolicy();
     const args = {
