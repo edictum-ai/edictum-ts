@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      issues: write
+      issues: read
 
     steps:
       - name: Checkout repository
@@ -61,7 +61,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ steps.app-token.outputs.token }}
-          claude_args: '--model claude-sonnet-4-6 --max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh issue create:*),Bash(cat:*),Read,Glob,Grep,Write"'
+          # Issue creation removed — warnings stay in the PR comment, not as noise issues.
+          claude_args: '--model claude-sonnet-4-6 --max-turns 30 --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(cat:*),Read,Glob,Grep,Write"'
           prompt: |
             You are an adversarial code reviewer for Edictum JS — a **security product** (runtime contract enforcement for AI agent tool calls). A single vulnerability destroys the credibility of a startup that sells trust. Think like an attacker first, reviewer second.
 
@@ -114,14 +115,9 @@ jobs:
             Use `<!-- STATUS: pass -->` for everything else — including warnings and
             suggestions. These are tracked as GitHub issues instead of blocking the PR.
 
-            After writing the review comment to `/tmp/review.md`, create a GitHub issue
-            for EACH warning and suggestion using:
-
-            ```
-            gh issue create --title "review: <short description>" --body "<details with file, line, suggested fix>" --label "review"
-            ```
-
-            This ensures nothing is lost while keeping PRs unblocked by cosmetic findings.
+            Warnings and suggestions are included in the PR review comment only —
+            do NOT create GitHub issues for them. The PR author reads the comment and
+            decides whether to address warnings before merging.
 
             ## Review rules
             - **Exhaustive, single pass.** Find ALL issues — 20, 30, 50, however many.
