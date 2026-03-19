@@ -83,7 +83,7 @@ export interface OpenClawPluginApi {
 export interface Finding {
   readonly contractId: string | null;
   readonly message: string;
-  readonly tags: string[];
+  readonly tags: readonly string[];
   readonly severity: string;
 }
 

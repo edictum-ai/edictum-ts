@@ -535,6 +535,102 @@ describe("EdictumOpenClawAdapter", () => {
   });
 
   // -------------------------------------------------------------------------
+  // #43 — callId validation
+  // -------------------------------------------------------------------------
+
+  describe("callId validation", () => {
+    it("rejects callId with null bytes", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const result = await adapter.pre("exec", { command: "ls" }, "tc-\x00bad", ctx);
+
+      expect(result).toBe("Invalid callId");
+    });
+
+    it("rejects callId with control characters", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const result = await adapter.pre("exec", { command: "ls" }, "tc-\x0abad", ctx);
+
+      expect(result).toBe("Invalid callId");
+    });
+
+    it("accepts clean callId", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const result = await adapter.pre("exec", { command: "ls" }, "tc-clean-123", ctx);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #46 — approval flow tests
+  // -------------------------------------------------------------------------
+
+  // TODO: approval flow tests require mock ApprovalBackend (tracked in #46)
+
+  // -------------------------------------------------------------------------
+  // #51 — handleAfterToolCall fallback to _findPendingByToolName
+  // -------------------------------------------------------------------------
+
+  describe("handleAfterToolCall fallback", () => {
+    it("falls back to _findPendingByToolName when toolCallId is undefined", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+
+      // Pre-execute with a known callId via handleBeforeToolCall
+      const beforeEvent = makeEvent({ toolCallId: "tc-fallback-1" });
+      const beforeCtx = makeCtx({ toolCallId: "tc-fallback-1" });
+      await adapter.handleBeforeToolCall(beforeEvent, beforeCtx);
+
+      // After-execute with no toolCallId on event or ctx — forces fallback
+      const afterEvent = makeAfterEvent({
+        toolCallId: undefined,
+        toolName: "exec",
+        result: "output",
+      });
+      const afterCtx = makeCtx({ toolCallId: undefined });
+
+      await adapter.handleAfterToolCall(afterEvent, afterCtx);
+
+      // The fallback should have resolved the pending entry and emitted CALL_EXECUTED
+      const executed = sink.events.find(
+        (e) => e.action === AuditAction.CALL_EXECUTED,
+      );
+      expect(executed).toBeDefined();
+      expect(executed!.toolName).toBe("exec");
+    });
+
+    it("silently returns when no pending entry matches toolName", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+
+      const eventCountBefore = sink.events.length;
+
+      // After-execute with no toolCallId and no matching pending entry
+      const afterEvent = makeAfterEvent({
+        toolCallId: undefined,
+        toolName: "nonexistent_tool",
+        result: "output",
+      });
+      const afterCtx = makeCtx({ toolCallId: undefined, toolName: "nonexistent_tool" });
+
+      // Should not throw
+      await adapter.handleAfterToolCall(afterEvent, afterCtx);
+
+      // No new audit events should have been emitted
+      expect(sink.events.length).toBe(eventCountBefore);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // #41 — plugin behavior tests
   // -------------------------------------------------------------------------
 

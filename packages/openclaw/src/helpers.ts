@@ -12,7 +12,11 @@ export function buildFindings(postDecision: {
   contractsEvaluated: Record<string, unknown>[];
   policyError: boolean;
 }): Finding[] {
-  if (postDecision.postconditionsPassed && !postDecision.policyError) {
+  if (
+    postDecision.postconditionsPassed &&
+    !postDecision.policyError &&
+    postDecision.warnings.length === 0
+  ) {
     return [];
   }
   const findings: Finding[] = [];

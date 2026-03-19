@@ -25,6 +25,20 @@ import type {
 import { buildFindings, summarizeResult } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum number of pending (in-flight) calls tracked simultaneously.
+ * When exceeded, the oldest entry is evicted to prevent unbounded memory growth.
+ * Matches the cap used in @edictum/server's ApprovalBackend.
+ */
+const MAX_PENDING = 10_000;
+
+/** Control character regex — reused for both sessionId and callId validation. */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
+
+// ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
 
@@ -134,7 +148,7 @@ export class EdictumOpenClawAdapter {
     this._pipeline = new GovernancePipeline(guard);
 
     const sessionId = options.sessionId ?? guard.sessionId;
-    if (/[\x00-\x1f\x7f]/.test(sessionId)) {
+    if (CONTROL_CHAR_RE.test(sessionId)) {
       throw new EdictumConfigError("sessionId contains control characters");
     }
     this._sessionId = sessionId;
@@ -180,6 +194,11 @@ export class EdictumOpenClawAdapter {
     callId: string,
     ctx: ToolHookContext,
   ): Promise<string | null> {
+    // Validate callId — same control character check as sessionId (#43)
+    if (CONTROL_CHAR_RE.test(callId)) {
+      return "Invalid callId";
+    }
+
     const principalResult = this._resolvePrincipal(toolName, toolInput, ctx);
     if (principalResult.error) {
       return "Principal resolution failed";
@@ -256,7 +275,7 @@ export class EdictumOpenClawAdapter {
 
         if (approved) {
           this._safeAllow(envelope);
-          this._pending.set(callId, { envelope, startMs: Date.now() });
+          this._trackPending(callId, { envelope, startMs: Date.now() });
           return null;
         }
 
@@ -289,7 +308,7 @@ export class EdictumOpenClawAdapter {
           AuditAction.CALL_WOULD_DENY,
         );
         this._safeAllow(envelope);
-        this._pending.set(callId, { envelope, startMs: Date.now() });
+        this._trackPending(callId, { envelope, startMs: Date.now() });
         return null;
       }
 
@@ -302,7 +321,7 @@ export class EdictumOpenClawAdapter {
     // --- Allow ---
     await this._emitAuditPre(envelope, decision, AuditAction.CALL_ALLOWED);
     this._safeAllow(envelope);
-    this._pending.set(callId, { envelope, startMs: Date.now() });
+    this._trackPending(callId, { envelope, startMs: Date.now() });
     return null;
   }
 
@@ -511,6 +530,21 @@ export class EdictumOpenClawAdapter {
       }
     }
     return null;
+  }
+
+  /**
+   * Track a pending call, evicting the oldest entry if at capacity (#42).
+   * Map iteration order in JS is insertion order, so `keys().next()` yields
+   * the oldest entry.
+   */
+  private _trackPending(callId: string, pending: PendingCall): void {
+    if (this._pending.size >= MAX_PENDING) {
+      const oldest = this._pending.keys().next().value;
+      if (oldest !== undefined) {
+        this._pending.delete(oldest);
+      }
+    }
+    this._pending.set(callId, pending);
   }
 
   private _safeDeny(
