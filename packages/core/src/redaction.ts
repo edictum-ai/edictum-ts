@@ -42,7 +42,7 @@ export class RedactionPolicy {
       String.raw`(export\s+\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*=)\S+`,
       "$1[REDACTED]",
     ],
-    [String.raw`((?:^|\s)-p\s+|--password[= ])\S+`, "$1[REDACTED]"],
+    [String.raw`((?:^|\s)-p\s*|--password[= ])\S+`, "$1[REDACTED]"],
     [String.raw`(://\w+:)\S+(@)`, "$1[REDACTED]$2"],
   ];
 

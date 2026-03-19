@@ -284,13 +284,16 @@ describe("security", () => {
     expect(result["command"]).toBe("export MY_KEY=somevalue");
   });
 
-  test("-port and -path are not false-positive redacted", () => {
+  test("-psecret attached form is redacted (not leaked)", () => {
+    // mysql -psecret is widely used — the -p pattern must catch it even
+    // though it also false-positives on -port. For a security product,
+    // leaking a password is worse than garbling -port in logged output.
     const policy = new RedactionPolicy();
     const result = policy.redactArgs({
-      cmd: "mysql -port 3306 -path /tmp/data",
+      cmd: "mysql -pSupers3cret123 db_name",
     }) as Record<string, unknown>;
-    expect(result["cmd"]).toContain("-port 3306");
-    expect(result["cmd"]).toContain("-path /tmp/data");
+    expect(result["cmd"]).not.toContain("Supers3cret123");
+    expect(result["cmd"]).toContain("[REDACTED]");
   });
 
   test("camelCase does not false positive on non-sensitive", () => {
