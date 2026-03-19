@@ -4,12 +4,14 @@ import {
   CollectingAuditSink,
   AuditAction,
   createPrincipal,
+  EdictumConfigError,
 } from "@edictum/core";
 import type { Precondition, Postcondition, Verdict } from "@edictum/core";
 
 import { EdictumOpenClawAdapter } from "../src/adapter.js";
+import { createEdictumPlugin, defaultPrincipalFromContext } from "../src/plugin.js";
 import { summarizeResult } from "../src/helpers.js";
-import type { ToolHookContext, BeforeToolCallEvent, AfterToolCallEvent } from "../src/types.js";
+import type { ToolHookContext, BeforeToolCallEvent, AfterToolCallEvent, OpenClawPluginApi } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -501,6 +503,104 @@ describe("EdictumOpenClawAdapter", () => {
       expect(onPostconditionWarn).toHaveBeenCalledOnce();
       const [, findings] = onPostconditionWarn.mock.calls[0];
       expect(findings.length).toBeGreaterThan(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #40 — sessionId validation
+  // -------------------------------------------------------------------------
+
+  describe("sessionId validation", () => {
+    it("rejects sessionId with null bytes", () => {
+      const guard = new Edictum({ auditSink: sink });
+      expect(
+        () => new EdictumOpenClawAdapter(guard, { sessionId: "abc\x00def" }),
+      ).toThrow(EdictumConfigError);
+    });
+
+    it("rejects sessionId with control characters", () => {
+      const guard = new Edictum({ auditSink: sink });
+      expect(
+        () => new EdictumOpenClawAdapter(guard, { sessionId: "abc\x0adef" }),
+      ).toThrow("sessionId contains control characters");
+    });
+
+    it("accepts clean sessionId", () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        sessionId: "clean-session-123",
+      });
+      expect(adapter.sessionId).toBe("clean-session-123");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #41 — plugin behavior tests
+  // -------------------------------------------------------------------------
+
+  describe("plugin", () => {
+    it("defaultPrincipalFromContext returns principal with agentId as serviceId", () => {
+      const ctx = makeCtx({ agentId: "my-agent-42" });
+      const principal = defaultPrincipalFromContext(ctx);
+
+      expect(principal).toBeDefined();
+      expect((principal as Record<string, unknown>).serviceId).toBe("my-agent-42");
+    });
+
+    it("principalFromContext option maps context correctly", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const plugin = createEdictumPlugin(guard, {
+        principalFromContext: (ctx) =>
+          createPrincipal({ userId: `mapped-${ctx.agentId}`, role: "custom" }),
+      });
+
+      // Register the plugin using a mock API that captures handlers
+      const handlers: Record<string, { handler: (...args: unknown[]) => unknown; opts?: { priority?: number } }> = {};
+      const mockApi: OpenClawPluginApi = {
+        id: "edictum",
+        name: "Edictum",
+        config: {},
+        on: vi.fn((hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => {
+          handlers[hookName] = { handler, opts };
+        }),
+      };
+      plugin.register(mockApi);
+
+      // Invoke the before_tool_call handler to trigger a real call
+      const event = makeEvent({ params: { command: "ls" } });
+      const ctx = makeCtx({ agentId: "agent-ctx-test" });
+      await handlers["before_tool_call"].handler(event, ctx);
+
+      // The principal should appear in the audit event
+      const allowed = sink.events.find(
+        (e) => e.action === AuditAction.CALL_ALLOWED,
+      );
+      expect(allowed).toBeDefined();
+      expect((allowed!.principal as Record<string, unknown>).userId).toBe(
+        "mapped-agent-ctx-test",
+      );
+    });
+
+    it("priority option passes through to api.on", () => {
+      const guard = new Edictum({ auditSink: sink });
+      const plugin = createEdictumPlugin(guard, { priority: 42 });
+
+      const onSpy = vi.fn();
+      const mockApi: OpenClawPluginApi = {
+        id: "edictum",
+        name: "Edictum",
+        config: {},
+        on: onSpy,
+      };
+      plugin.register(mockApi);
+
+      // api.on should be called twice (before_tool_call + after_tool_call)
+      expect(onSpy).toHaveBeenCalledTimes(2);
+
+      // Both calls should pass { priority: 42 }
+      for (const call of onSpy.mock.calls) {
+        expect(call[2]).toEqual({ priority: 42 });
+      }
     });
   });
 });

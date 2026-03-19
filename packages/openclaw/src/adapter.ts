@@ -8,6 +8,7 @@ import {
   AuditAction,
   createAuditEvent,
   createEnvelope,
+  EdictumConfigError,
   GovernancePipeline,
   Session,
 } from "@edictum/core";
@@ -131,7 +132,12 @@ export class EdictumOpenClawAdapter {
   constructor(guard: Edictum, options: OpenClawAdapterOptions = {}) {
     this._guard = guard;
     this._pipeline = new GovernancePipeline(guard);
-    this._sessionId = options.sessionId ?? guard.sessionId;
+
+    const sessionId = options.sessionId ?? guard.sessionId;
+    if (/[\x00-\x1f\x7f]/.test(sessionId)) {
+      throw new EdictumConfigError("sessionId contains control characters");
+    }
+    this._sessionId = sessionId;
     this._session = new Session(this._sessionId, guard.backend);
 
     this._principal = options.principal ?? null;
@@ -258,13 +264,13 @@ export class EdictumOpenClawAdapter {
         this._safeDeny(envelope, denyReason, decision.decisionSource);
         return denyReason;
       } catch {
-        // Approval backend failure -> deny with TIMEOUT action (not DENIED)
+        // Approval backend failure -> deny (not timeout — distinguish infra errors from real timeouts)
         const errorReason = "Approval backend error";
         this._safeDeny(envelope, errorReason, decision.decisionSource);
         await this._emitAuditPre(
           envelope,
           decision,
-          AuditAction.CALL_APPROVAL_TIMEOUT,
+          AuditAction.CALL_DENIED,
         );
         return errorReason;
       }

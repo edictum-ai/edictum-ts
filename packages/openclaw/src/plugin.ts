@@ -122,7 +122,6 @@ export function createEdictumPlugin(
  * Maps:
  * - ctx.agentId → principal.serviceId
  * - ctx.sessionKey → principal.claims.sessionKey
- * - Heuristic: if toolName is owner-only, role = "owner"
  */
 export function defaultPrincipalFromContext(ctx: ToolHookContext): Principal {
   return createPrincipal({
