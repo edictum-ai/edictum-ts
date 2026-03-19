@@ -357,6 +357,7 @@ export class EdictumOpenClawAdapter {
         );
         this._safeAllow(envelope);
         this._trackPending(callId, { envelope, startMs: Date.now() });
+        await this._emitObserveResults(envelope, decision);
         return null;
       }
 
@@ -370,6 +371,10 @@ export class EdictumOpenClawAdapter {
     await this._emitAuditPre(envelope, decision, AuditAction.CALL_ALLOWED);
     this._safeAllow(envelope);
     this._trackPending(callId, { envelope, startMs: Date.now() });
+
+    // Observe-mode audits — emit individual events for observe_alongside contracts
+    await this._emitObserveResults(envelope, decision);
+
     return null;
   }
 
@@ -600,6 +605,48 @@ export class EdictumOpenClawAdapter {
    * pending entry and will return a passthrough — which is already the
    * expected behavior for orphaned post calls.
    */
+  /**
+   * Emit individual audit events for observe_alongside contracts.
+   * Matches vercel-ai pattern (lines 382-413). Errors swallowed per-result.
+   */
+  private async _emitObserveResults(
+    envelope: Readonly<ToolEnvelope>,
+    decision: { observeResults?: Record<string, unknown>[] },
+  ): Promise<void> {
+    const results = decision.observeResults;
+    if (!results || results.length === 0) return;
+
+    for (const sr of results) {
+      try {
+        const observeAction = sr["passed"]
+          ? AuditAction.CALL_ALLOWED
+          : AuditAction.CALL_WOULD_DENY;
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            action: observeAction,
+            runId: envelope.runId,
+            callId: envelope.callId,
+            callIndex: envelope.callIndex,
+            toolName: envelope.toolName,
+            toolArgs: { ...envelope.args },
+            sideEffect: envelope.sideEffect,
+            environment: envelope.environment,
+            principal: envelope.principal
+              ? ({ ...envelope.principal } as Record<string, unknown>)
+              : null,
+            decisionSource: (sr["source"] as string) ?? null,
+            decisionName: (sr["name"] as string) ?? null,
+            reason: (sr["message"] as string) ?? null,
+            mode: "observe",
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      } catch {
+        // Observe audit errors must not block tool execution — continue
+      }
+    }
+  }
+
   private _trackPending(callId: string, pending: PendingCall): void {
     if (this._pending.size >= MAX_PENDING) {
       const oldest = this._pending.keys().next().value;
