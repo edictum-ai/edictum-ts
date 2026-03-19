@@ -47,10 +47,15 @@ export class EdictumServerClient {
   private readonly _apiKey: string;
   readonly agentId: string;
   readonly env: string;
-  readonly bundleName: string | null;
+  private _bundleName: string | null;
   readonly tags: Readonly<Record<string, string>> | null;
   readonly timeout: number;
   readonly maxRetries: number;
+
+  /** Current bundle name. Read-only externally; use updateBundleName() to change. */
+  get bundleName(): string | null {
+    return this._bundleName;
+  }
 
   constructor(options: EdictumServerClientOptions) {
     const {
@@ -172,7 +177,7 @@ export class EdictumServerClient {
     this._apiKey = apiKey;
     this.agentId = agentId;
     this.env = env;
-    this.bundleName = bundleName;
+    this._bundleName = bundleName;
     this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(
@@ -335,7 +340,7 @@ export class EdictumServerClient {
         `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
     }
-    (this as { bundleName: string | null }).bundleName = name;
+    this._bundleName = name;
   }
 
   /** Close this client (no-op for fetch-based client, kept for API parity). */

@@ -24,7 +24,7 @@ import type {
   ToolEnvelope,
 } from "@edictum/core";
 
-import { EdictumServerClient } from "./client.js";
+import { EdictumServerClient, SAFE_IDENTIFIER_RE } from "./client.js";
 import type { EdictumServerClientOptions } from "./client.js";
 import { ServerAuditSink } from "./audit-sink.js";
 import { ServerApprovalBackend } from "./approval-backend.js";
@@ -453,7 +453,14 @@ async function _startSseWatcher(
 
         if (bundle["_assignment_changed"] === true) {
           // Assignment changed — fetch the new bundle
-          const newBundleName = bundle["bundle_name"] as string;
+          // Inline validation: _processEvent already validates, but we
+          // guard here to avoid implicit cross-file safety dependency.
+          const rawName = bundle["bundle_name"];
+          if (typeof rawName !== "string" || !SAFE_IDENTIFIER_RE.test(rawName)) {
+            onWatchError?.({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
+            continue;
+          }
+          const newBundleName = rawName;
           const response = await client.get(
             `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
             { env: client.env },
@@ -525,8 +532,13 @@ async function _startSseWatcher(
         onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
       }
     }
-  } catch {
-    // SSE stream ended — source.watch() handles reconnection internally
+  } catch (err) {
+    if (!signal.aborted) {
+      onWatchError?.({
+        type: "fetch_error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

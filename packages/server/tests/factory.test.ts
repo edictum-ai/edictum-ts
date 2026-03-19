@@ -438,12 +438,12 @@ describe("parameter behavior", () => {
       onWatchError,
     });
 
-    // Give SSE watcher time to process the event
-    await new Promise((r) => setTimeout(r, 200));
-
-    expect(onWatchError).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "signature_rejected" }),
-    );
+    // Wait for SSE watcher to process the event (no fixed sleep)
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "signature_rejected" }),
+      );
+    }, { timeout: 2000 });
     await sg.close();
   });
 });
@@ -532,14 +532,91 @@ describe("security", () => {
 
     const initialVersion = sg.guard.policyVersion;
 
-    // Wait for SSE watcher to process
-    await new Promise((r) => setTimeout(r, 200));
+    // Wait for SSE watcher to process (no fixed sleep)
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "signature_rejected" }),
+      );
+    }, { timeout: 2000 });
 
     // Contracts should NOT have changed (unsigned bundle rejected)
     expect(sg.guard.policyVersion).toBe(initialVersion);
-    expect(onWatchError).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "signature_rejected" }),
-    );
+    await sg.close();
+  });
+
+  it("assignment_changed SSE event triggers new bundle fetch and reload", async () => {
+    const assignmentEvent = JSON.stringify({ bundle_name: "new-bundle" });
+    const newYaml = TEST_YAML.replace("no-rm", "no-rm-v2");
+    const newYamlB64 = Buffer.from(newYaml).toString("base64");
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      // Initial bundle fetch
+      if (url.includes("/api/v1/bundles/test-bundle/current")) {
+        return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      }
+      // New bundle fetch after assignment change
+      if (url.includes("/api/v1/bundles/new-bundle/current")) {
+        return mockJson({ yaml_bytes: newYamlB64 });
+      }
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
+    const initialVersion = sg.guard.policyVersion;
+
+    // Wait for SSE watcher to process the assignment change
+    await vi.waitFor(() => {
+      expect(sg.guard.policyVersion).not.toBe(initialVersion);
+    }, { timeout: 2000 });
+
+    // Client should have updated bundle name
+    expect(sg.client.bundleName).toBe("new-bundle");
+    await sg.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Additional behavior tests
+// ---------------------------------------------------------------------------
+
+describe("parameter behavior (additional)", () => {
+  it("successCheck override affects tool result evaluation", async () => {
+    // Custom success check that always returns false — causes EdictumToolError
+    const successCheck = vi.fn(() => false);
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, successCheck,
+    });
+
+    // Run a tool — successCheck returns false → throw
+    await expect(
+      sg.guard.run("SafeTool", { x: 1 }, async () => "result"),
+    ).rejects.toThrow();
+    expect(successCheck).toHaveBeenCalledTimes(1);
+    expect(successCheck).toHaveBeenCalledWith("SafeTool", "result");
+    await sg.close();
+  });
+
+  it("principalResolver override is used during tool calls", async () => {
+    const principalResolver = vi.fn((_tool: string, _args: Record<string, unknown>) => ({
+      userId: "resolved-user",
+      role: "operator",
+    }));
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, principalResolver,
+    });
+
+    await sg.guard.run("SafeTool", { x: 1 }, async () => "ok");
+
+    expect(principalResolver).toHaveBeenCalledTimes(1);
+    const events = sg.guard.localSink.events;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0].principal).toMatchObject({ userId: "resolved-user", role: "operator" });
     await sg.close();
   });
 });
