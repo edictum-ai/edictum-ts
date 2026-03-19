@@ -1,8 +1,10 @@
 // @edictum/openclaw — OpenClaw adapter for edictum
 // Translates between OpenClaw plugin hooks and Edictum's GovernancePipeline.
+// NOTE: 500+ lines — approved due to adapter pattern requiring single-class cohesion (matches vercel-ai/claude-sdk)
 
 import type { Principal, ToolEnvelope, AuditAction as AuditActionType } from "@edictum/core";
 import {
+  ApprovalStatus,
   AuditAction,
   createAuditEvent,
   createEnvelope,
@@ -19,6 +21,7 @@ import type {
   PostCallResult,
   ToolHookContext,
 } from "./types.js";
+import { buildFindings, summarizeResult } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -92,6 +95,11 @@ export class EdictumOpenClawAdapter {
   private readonly _pending = new Map<string, PendingCall>();
 
   // Callbacks
+  /**
+   * Mutable principal field. Initially set from options.principal (or null).
+   * Can be updated at runtime via `setPrincipal()`. When a `principalResolver`
+   * is configured, it takes priority and this field is ignored.
+   */
   private _principal: Principal | null;
   private readonly _principalResolver:
     | ((
@@ -139,7 +147,15 @@ export class EdictumOpenClawAdapter {
     return this._sessionId;
   }
 
-  /** Update the static principal. */
+  /**
+   * Update the static principal at runtime. This replaces the value set via
+   * `options.principal` in the constructor. Has no effect when a
+   * `principalResolver` is configured (the resolver always wins).
+   *
+   * Thread-safety note: the field is not guarded by a lock. In concurrent
+   * environments, callers must ensure `setPrincipal` is not invoked while a
+   * `pre()` call is in-flight, or accept the race.
+   */
   setPrincipal(principal: Principal): void {
     this._principal = principal;
   }
@@ -158,7 +174,11 @@ export class EdictumOpenClawAdapter {
     callId: string,
     ctx: ToolHookContext,
   ): Promise<string | null> {
-    const principal = this._resolvePrincipal(toolName, toolInput, ctx);
+    const principalResult = this._resolvePrincipal(toolName, toolInput, ctx);
+    if (principalResult.error) {
+      return "Principal resolution failed";
+    }
+    const principal = principalResult.value;
     const envelope = createEnvelope(toolName, toolInput, {
       callId,
       runId: ctx.runId ?? this._sessionId,
@@ -176,12 +196,9 @@ export class EdictumOpenClawAdapter {
     await this._session.incrementAttempts();
     const decision = await this._pipeline.preExecute(envelope, this._session);
 
-    // --- Pending approval ---
+    // --- Pending approval (same pattern as vercel-ai adapter) ---
     if (decision.action === "pending_approval") {
-      // Access internal approval backend (same pattern as vercel-ai adapter)
-      const approvalBackend = (
-        this._guard as unknown as { _approvalBackend: { requestApproval: (req: unknown) => Promise<boolean> } | null }
-      )._approvalBackend;
+      const approvalBackend = this._guard._approvalBackend;
 
       if (!approvalBackend) {
         const reason =
@@ -190,40 +207,67 @@ export class EdictumOpenClawAdapter {
         await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED);
         return reason;
       }
-      // Request approval
-      await this._emitAuditPre(
-        envelope,
-        decision,
-        AuditAction.CALL_APPROVAL_REQUESTED,
-      );
+
       try {
-        const approved = await approvalBackend.requestApproval({
+        const principalDict = envelope.principal
+          ? ({ ...envelope.principal } as Record<string, unknown>)
+          : null;
+
+        const approvalRequest = await approvalBackend.requestApproval(
+          envelope.toolName,
+          envelope.args as Record<string, unknown>,
+          decision.approvalMessage ?? decision.reason ?? "Approval required.",
+          {
+            timeout: decision.approvalTimeout,
+            timeoutEffect: decision.approvalTimeoutEffect,
+            principal: principalDict,
+          },
+        );
+
+        await this._emitAuditPre(
           envelope,
-          reason: decision.approvalMessage ?? decision.reason ?? "Approval required.",
-          timeout: decision.approvalTimeout,
-          timeoutEffect: decision.approvalTimeoutEffect,
-        });
+          decision,
+          AuditAction.CALL_APPROVAL_REQUESTED,
+        );
+
+        const approvalDecision = await approvalBackend.waitForDecision(
+          approvalRequest.approvalId,
+          decision.approvalTimeout,
+        );
+
+        let approved = false;
+        if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT);
+          if (decision.approvalTimeoutEffect === "allow") {
+            approved = true;
+          }
+        } else if (!approvalDecision.approved) {
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED);
+        } else {
+          approved = true;
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED);
+        }
+
         if (approved) {
-          await this._emitAuditPre(
-            envelope,
-            decision,
-            AuditAction.CALL_APPROVAL_GRANTED,
-          );
           this._safeAllow(envelope);
           this._pending.set(callId, { envelope, startMs: Date.now() });
           return null;
         }
+
+        const denyReason = approvalDecision.reason ?? decision.reason ?? "Approval denied.";
+        this._safeDeny(envelope, denyReason, decision.decisionSource);
+        return denyReason;
       } catch {
-        // Approval backend failure → deny
+        // Approval backend failure -> deny with TIMEOUT action (not DENIED)
+        const errorReason = "Approval backend error";
+        this._safeDeny(envelope, errorReason, decision.decisionSource);
+        await this._emitAuditPre(
+          envelope,
+          decision,
+          AuditAction.CALL_APPROVAL_TIMEOUT,
+        );
+        return errorReason;
       }
-      const reason = decision.reason ?? "Approval denied or timed out.";
-      this._safeDeny(envelope, reason, decision.decisionSource);
-      await this._emitAuditPre(
-        envelope,
-        decision,
-        AuditAction.CALL_APPROVAL_DENIED,
-      );
-      return reason;
     }
 
     // --- Deny ---
@@ -404,28 +448,56 @@ export class EdictumOpenClawAdapter {
   // Private helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * Resolve the principal for a call. If the resolver throws, returns an
+   * error result so the caller can deny rather than propagating the error.
+   */
   private _resolvePrincipal(
     toolName: string,
     toolInput: Record<string, unknown>,
     ctx: ToolHookContext,
-  ): Principal | null {
+  ): { value: Principal | null; error: false } | { value: null; error: true } {
     if (this._principalResolver) {
-      return this._principalResolver(toolName, toolInput, ctx);
+      try {
+        return { value: this._principalResolver(toolName, toolInput, ctx), error: false };
+      } catch {
+        // A throwing resolver must never crash the adapter — signal error
+        // so the caller can deny with "Principal resolution failed".
+        return { value: null, error: true };
+      }
     }
-    return this._principal;
+    return { value: this._principal, error: false };
   }
 
+  /**
+   * Determine if the tool call succeeded. If the successCheck throws,
+   * default to failure (false) rather than crashing post().
+   */
   private _checkToolSuccess(
     toolName: string,
     result: unknown,
     error?: string,
   ): boolean {
     if (this._successCheck) {
-      return this._successCheck(toolName, result);
+      try {
+        return this._successCheck(toolName, result);
+      } catch {
+        // A throwing successCheck must never crash post() — treat as failure
+        return false;
+      }
     }
     return !error;
   }
 
+  /**
+   * Fallback lookup: find the first pending call whose toolName matches.
+   *
+   * **Limitation:** When multiple concurrent calls use the same tool, this
+   * returns the first match (insertion order). The correct pending entry may
+   * differ. Callers should always prefer an explicit callId when available;
+   * this fallback exists only for OpenClaw runtimes that omit toolCallId
+   * from the after_tool_call event.
+   */
   private _findPendingByToolName(toolName: string): string | null {
     for (const [callId, pending] of this._pending) {
       if (pending.envelope.toolName === toolName) {
@@ -520,45 +592,4 @@ export class EdictumOpenClawAdapter {
       // Audit errors must never block tool execution
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function buildFindings(postDecision: {
-  postconditionsPassed: boolean;
-  warnings: string[];
-  contractsEvaluated: Record<string, unknown>[];
-  policyError: boolean;
-}): Finding[] {
-  if (postDecision.postconditionsPassed && !postDecision.policyError) {
-    return [];
-  }
-  const findings: Finding[] = [];
-  for (const w of postDecision.warnings) {
-    findings.push({
-      contractId: null,
-      message: w,
-      tags: [],
-      severity: "warn",
-    });
-  }
-  for (const c of postDecision.contractsEvaluated) {
-    if (c.passed === false || c.policyError === true) {
-      findings.push({
-        contractId: (c.contractId as string) ?? null,
-        message: (c.message as string) ?? "Postcondition failed.",
-        tags: (c.tags as string[]) ?? [],
-        severity: (c.policyError as boolean) ? "error" : "warn",
-      });
-    }
-  }
-  return findings;
-}
-
-function summarizeResult(result: unknown): string | null {
-  if (result === null || result === undefined) return null;
-  const str = typeof result === "string" ? result : JSON.stringify(result);
-  return str.length > 200 ? str.slice(0, 197) + "..." : str;
 }

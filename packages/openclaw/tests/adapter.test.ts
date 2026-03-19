@@ -8,6 +8,7 @@ import {
 import type { Precondition, Postcondition, Verdict } from "@edictum/core";
 
 import { EdictumOpenClawAdapter } from "../src/adapter.js";
+import { summarizeResult } from "../src/helpers.js";
 import type { ToolHookContext, BeforeToolCallEvent, AfterToolCallEvent } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -357,6 +358,149 @@ describe("EdictumOpenClawAdapter", () => {
       const event = sink.events[0];
       expect(event).toBeDefined();
       expect(event.toolName).toBe("exec");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #31 — Security bypass tests
+  // -------------------------------------------------------------------------
+
+  describe("security", () => {
+    it("principalResolver throwing denies instead of propagating", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        principalResolver: () => {
+          throw new Error("resolver exploded");
+        },
+      });
+      const ctx = makeCtx();
+
+      // Must not throw — should return a denial reason
+      const result = await adapter.pre("exec", { command: "ls" }, "tc-sec-1", ctx);
+
+      expect(result).toBe("Principal resolution failed");
+    });
+
+    it("already-consumed callId (replay) returns passthrough from post()", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      // Pre-execute to register pending
+      await adapter.pre("exec", { command: "ls" }, "tc-replay", ctx);
+
+      // First post — consumes the callId
+      const first = await adapter.post(
+        "tc-replay",
+        "first result",
+        makeAfterEvent({ toolCallId: "tc-replay", result: "first result" }),
+      );
+      expect(first.postconditionsPassed).toBe(true);
+
+      // Second post with same callId — replay attempt
+      const replay = await adapter.post(
+        "tc-replay",
+        "replayed result",
+        makeAfterEvent({ toolCallId: "tc-replay", result: "replayed result" }),
+      );
+
+      // Must return passthrough (no pending entry)
+      expect(replay.result).toBe("replayed result");
+      expect(replay.postconditionsPassed).toBe(true);
+      expect(replay.findings).toEqual([]);
+      expect(replay.outputSuppressed).toBe(false);
+    });
+
+    it("successCheck throwing does not crash post()", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        successCheck: () => {
+          throw new Error("successCheck exploded");
+        },
+      });
+      const ctx = makeCtx();
+
+      // Pre-execute to register pending
+      await adapter.pre("exec", { command: "ls" }, "tc-sec-sc", ctx);
+
+      // Post should not throw despite successCheck failure
+      await expect(
+        adapter.post(
+          "tc-sec-sc",
+          "some result",
+          makeAfterEvent({ toolCallId: "tc-sec-sc", result: "some result" }),
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it("summarizeResult with circular reference does not throw", () => {
+      const circular: Record<string, unknown> = { a: 1 };
+      circular.self = circular;
+
+      // Must not throw — should return a safe fallback
+      const result = summarizeResult(circular);
+      expect(result).toBe("[unserializable result]");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #32 — Behavior tests
+  // -------------------------------------------------------------------------
+
+  describe("behavior", () => {
+    it("successCheck option changes toolSuccess in post result", async () => {
+      // successCheck always returns false — even for successful responses
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        successCheck: () => false,
+      });
+      const ctx = makeCtx();
+
+      await adapter.pre("exec", { command: "ls" }, "tc-beh-sc", ctx);
+      await adapter.post(
+        "tc-beh-sc",
+        "file.txt",
+        makeAfterEvent({ toolCallId: "tc-beh-sc", result: "file.txt" }),
+      );
+
+      // With successCheck returning false, the audit should record CALL_FAILED
+      const failed = sink.events.find(
+        (e) => e.action === AuditAction.CALL_FAILED,
+      );
+      expect(failed).toBeDefined();
+    });
+
+    it("sessionId option overrides default", () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        sessionId: "custom-session-id",
+      });
+
+      expect(adapter.sessionId).toBe("custom-session-id");
+    });
+
+    it("onPostconditionWarn callback is called when postcondition fails", async () => {
+      const onPostconditionWarn = vi.fn();
+      const guard = new Edictum({
+        contracts: [detectSecrets],
+        auditSink: sink,
+      });
+      const adapter = new EdictumOpenClawAdapter(guard, { onPostconditionWarn });
+      const ctx = makeCtx();
+
+      // Pre-execute to register pending
+      await adapter.pre("exec", { command: "cat config" }, "tc-beh-pw", ctx);
+
+      // Post-execute with secret in output to trigger postcondition failure
+      await adapter.post(
+        "tc-beh-pw",
+        "config: sk-secret-key-12345",
+        makeAfterEvent({ toolCallId: "tc-beh-pw", result: "config: sk-secret-key-12345" }),
+      );
+
+      expect(onPostconditionWarn).toHaveBeenCalledOnce();
+      const [, findings] = onPostconditionWarn.mock.calls[0];
+      expect(findings.length).toBeGreaterThan(0);
     });
   });
 });

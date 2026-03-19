@@ -64,26 +64,25 @@ export function createEdictumPlugin(
 ) {
   const priority = options.priority ?? 999;
 
-  // Default principal resolver: map OpenClaw context to Edictum Principal
+  // Default principal resolver: map OpenClaw context to Edictum Principal.
+  // Capture principalFromContext in a const so the closure cannot observe
+  // a later mutation of `options`.
+  const capturedPrincipalFromContext = options.principalFromContext;
   const principalResolver =
     options.principalResolver ??
-    (options.principalFromContext
+    (capturedPrincipalFromContext
       ? (
           _toolName: string,
           _toolInput: Record<string, unknown>,
           ctx: ToolHookContext,
-        ) => {
-          const resolver = options.principalFromContext;
-          if (!resolver) throw new Error("principalFromContext not set");
-          return resolver(ctx);
-        }
+        ) => capturedPrincipalFromContext(ctx)
       : undefined);
 
   return {
     id: "edictum",
     name: "Edictum Contract Enforcement",
     description:
-      "Runtime contract enforcement for AI agent tool calls. Blocks exfiltration, credential theft, destructive commands, and prompt injection.",
+      "Runtime contract enforcement for AI agent tool calls. Denies exfiltration, credential theft, destructive commands, and prompt injection.",
     register(api: OpenClawPluginApi) {
       const adapter = new EdictumOpenClawAdapter(guard, {
         ...options,
