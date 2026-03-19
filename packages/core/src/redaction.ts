@@ -116,8 +116,9 @@ export class RedactionPolicy {
         return "[REDACTED]";
       }
       // Apply bash redaction patterns to catch credentials in shell commands.
-      // Gated on _detectValues so detectSecretValues=false suppresses all
-      // value-level scanning (bash patterns + secret patterns).
+      // Gated on _detectValues so detectSecretValues=false suppresses bash
+      // patterns in redactArgs. Note: redactBashCommand and redactResult always
+      // apply bash patterns regardless of this flag.
       if (this._detectValues) {
         // Cap before running patterns — consistent with redactBashCommand / redactResult.
         const capped =

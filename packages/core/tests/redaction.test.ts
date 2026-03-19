@@ -284,6 +284,14 @@ describe("security", () => {
     expect(result["command"]).toBe("export MY_KEY=somevalue");
   });
 
+  test("detectSecretValues=false does NOT bypass bash patterns in redactBashCommand", () => {
+    // redactBashCommand always applies patterns regardless of detectSecretValues
+    const policy = new RedactionPolicy(null, null, false);
+    const result = policy.redactBashCommand("mysql --password hunter2");
+    expect(result).not.toContain("hunter2");
+    expect(result).toContain("[REDACTED]");
+  });
+
   test("-psecret attached form is redacted (not leaked)", () => {
     // mysql -psecret is widely used — the -p pattern must catch it even
     // though it also false-positives on -port. For a security product,
