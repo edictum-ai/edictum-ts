@@ -9,7 +9,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { Edictum, EdictumConfigError } from "@edictum/core";
 import { createServerGuard } from "../src/factory.js";
-import type { ServerGuard } from "../src/factory.js";
+import type { ServerGuard, WatchErrorHandler } from "../src/factory.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -34,7 +34,27 @@ contracts:
       message: "Cannot run rm -rf"
 `;
 
+const TEST_YAML_OBSERVE = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: observe-bundle
+defaults:
+  mode: observe
+contracts:
+  - id: log-all
+    type: pre
+    tool: "*"
+    when:
+      args.x:
+        exists: true
+    then:
+      effect: deny
+      message: "logged"
+`;
+
 const TEST_YAML_B64 = Buffer.from(TEST_YAML).toString("base64");
+const TEST_YAML_OBSERVE_B64 = Buffer.from(TEST_YAML_OBSERVE).toString("base64");
 
 const BASE_OPTS = {
   url: "http://localhost:8000",
@@ -62,7 +82,6 @@ function mockSse(events: Array<{ event: string; data: string }>): Response {
   return new Response(lines, { status: 200, headers: { "Content-Type": "text/event-stream" } });
 }
 
-/** URL extractor for mock fetch input. */
 function extractUrl(input: string | URL | Request): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }
@@ -117,6 +136,24 @@ describe("validation", () => {
       createServerGuard({ ...BASE_OPTS, url: "http://remote.example.com", bundleName: "b", autoWatch: false }),
     ).rejects.toThrow(/plaintext HTTP/);
   });
+
+  it("rejects NaN assignmentTimeout", async () => {
+    await expect(
+      createServerGuard({ ...BASE_OPTS, bundleName: "b", assignmentTimeout: NaN }),
+    ).rejects.toThrow(/assignmentTimeout/);
+  });
+
+  it("rejects negative assignmentTimeout", async () => {
+    await expect(
+      createServerGuard({ ...BASE_OPTS, bundleName: "b", assignmentTimeout: -1 }),
+    ).rejects.toThrow(/assignmentTimeout/);
+  });
+
+  it("rejects zero assignmentTimeout", async () => {
+    await expect(
+      createServerGuard({ ...BASE_OPTS, bundleName: "b", assignmentTimeout: 0 }),
+    ).rejects.toThrow(/assignmentTimeout/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -165,6 +202,18 @@ describe("basic connection", () => {
     expect(sg.guard).toBeInstanceOf(Edictum);
     const sseCalls = mockFetch.mock.calls.filter((c) => extractUrl(c[0]).includes("/api/v1/stream"));
     expect(sseCalls).toHaveLength(0);
+  });
+
+  it("uses bundle defaults.mode when mode is omitted", async () => {
+    setupFullMock({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false });
+    expect(sg.guard.mode).toBe("observe");
+  });
+
+  it("explicit mode overrides bundle defaults.mode", async () => {
+    setupFullMock({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, mode: "enforce" });
+    expect(sg.guard.mode).toBe("enforce");
   });
 });
 
@@ -263,11 +312,65 @@ describe("close()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Custom overrides
+// Behavior tests for individual parameters
 // ---------------------------------------------------------------------------
 
-describe("custom overrides", () => {
-  it("uses provided audit sink instead of ServerAuditSink", async () => {
+describe("parameter behavior", () => {
+  it("tags are forwarded to the client", async () => {
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      tags: { team: "security" },
+    });
+    expect(sg.client.tags).toEqual({ team: "security" });
+    await sg.close();
+  });
+
+  it("timeout propagates to the client", async () => {
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      timeout: 5_000,
+    });
+    expect(sg.client.timeout).toBe(5_000);
+    await sg.close();
+  });
+
+  it("maxRetries propagates to the client", async () => {
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      maxRetries: 5,
+    });
+    expect(sg.client.maxRetries).toBe(5);
+    await sg.close();
+  });
+
+  it("onDeny callback fires on denied tool call", async () => {
+    const onDeny = vi.fn();
+    setupFullMock();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onDeny });
+
+    await expect(
+      sg.guard.run("Bash", { command: "rm -rf /" }, async () => "nope"),
+    ).rejects.toThrow();
+
+    expect(onDeny).toHaveBeenCalledTimes(1);
+    await sg.close();
+  });
+
+  it("onAllow callback fires on allowed tool call", async () => {
+    const onAllow = vi.fn();
+    setupFullMock();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onAllow });
+
+    await sg.guard.run("Bash", { command: "ls" }, async () => "ok");
+
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    await sg.close();
+  });
+
+  it("custom audit sink receives events", async () => {
     const customSink = { emit: vi.fn(async () => {}) };
     setupFullMock();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", auditSink: customSink });
@@ -276,10 +379,167 @@ describe("custom overrides", () => {
     await sg.close();
   });
 
-  it("uses provided mode", async () => {
+  it("mode override applies", async () => {
     setupFullMock();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", mode: "observe" });
     expect(sg.guard.mode).toBe("observe");
+    await sg.close();
+  });
+
+  it("allowInsecure permits HTTP to non-loopback", async () => {
+    setupFullMock();
+    // Should not throw despite non-loopback HTTP
+    const sg = await createServerGuard({
+      ...BASE_OPTS, url: "http://remote.example.com",
+      bundleName: "test-bundle", autoWatch: false, allowInsecure: true,
+    });
+    expect(sg.guard).toBeInstanceOf(Edictum);
+    await sg.close();
+  });
+
+  it("principal is forwarded to the guard", async () => {
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      principal: { userId: "u1", role: "admin" },
+    });
+    // The guard should have the principal set — run a tool and check audit
+    await sg.guard.run("SafeTool", {}, async () => "ok");
+    const events = sg.guard.localSink.events;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0].principal).toMatchObject({ userId: "u1", role: "admin" });
+    await sg.close();
+  });
+
+  it("onWatchError callback receives signature rejection", async () => {
+    const onWatchError = vi.fn<WatchErrorHandler>();
+    const badBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64, signature: "badsig" });
+
+    const keypair = generateKeyPairSync("ed25519");
+    const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
+    const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
+    const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey).toString("base64");
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      // Initial fetch needs valid signature
+      if (url.includes("/api/v1/bundles/")) return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig });
+      // SSE delivers bundle with bad signature
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "contract_update", data: badBundle }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle",
+      verifySignatures: true,
+      signingPublicKey: pubHex,
+      onWatchError,
+    });
+
+    // Give SSE watcher time to process the event
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(onWatchError).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "signature_rejected" }),
+    );
+    await sg.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security — adversarial bypass tests
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  it("rejects oversized yaml_bytes (memory exhaustion attack)", async () => {
+    // Create base64 string exceeding the limit (~682K chars)
+    const oversizedB64 = "A".repeat(700_000);
+    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: oversizedB64 }));
+    await expect(
+      createServerGuard({ ...BASE_OPTS, bundleName: "b", autoWatch: false }),
+    ).rejects.toThrow(/exceeds maximum size/);
+  });
+
+  it("rejects tampered YAML with signature for different content", async () => {
+    const keypair = generateKeyPairSync("ed25519");
+    const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
+    const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
+
+    // Sign the legitimate YAML
+    const legitimateSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey);
+
+    // Serve tampered YAML with the legitimate signature
+    const tamperedYaml = TEST_YAML.replace("rm -rf", "ls");
+    const tamperedB64 = Buffer.from(tamperedYaml).toString("base64");
+    mockFetch.mockImplementation(async () =>
+      mockJson({ yaml_bytes: tamperedB64, signature: legitimateSig.toString("base64") }),
+    );
+
+    await expect(
+      createServerGuard({
+        ...BASE_OPTS, bundleName: "b", autoWatch: false,
+        verifySignatures: true, signingPublicKey: pubHex,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("SSE watcher keeps existing contracts when unsigned bundle arrives", async () => {
+    const onWatchError = vi.fn<WatchErrorHandler>();
+    // Serve an unsigned update via SSE
+    const unsignedBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64 });
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/")) {
+        // Initial fetch with valid signature
+        const kp = generateKeyPairSync("ed25519");
+        const s = sign(null, Buffer.from(TEST_YAML), kp.privateKey);
+        const pubDer = kp.publicKey.export({ type: "spki", format: "der" });
+        // We need the matching pubkey to be used consistently — simplify:
+        // use autoWatch=false for initial fetch, then manually test the watcher behavior
+        return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      }
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "contract_update", data: unsignedBundle }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const keypair = generateKeyPairSync("ed25519");
+    const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
+    const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
+    const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey);
+
+    // Override for initial fetch to include valid signature
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/")) {
+        return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig.toString("base64") });
+      }
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "contract_update", data: unsignedBundle }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle",
+      verifySignatures: true, signingPublicKey: pubHex,
+      onWatchError,
+    });
+
+    const initialVersion = sg.guard.policyVersion;
+
+    // Wait for SSE watcher to process
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Contracts should NOT have changed (unsigned bundle rejected)
+    expect(sg.guard.policyVersion).toBe(initialVersion);
+    expect(onWatchError).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "signature_rejected" }),
+    );
     await sg.close();
   });
 });

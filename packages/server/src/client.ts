@@ -323,6 +323,21 @@ export class EdictumServerClient {
     }
   }
 
+  /**
+   * Update the effective bundle name for subsequent requests.
+   *
+   * Used by the SSE watcher when a server assignment changes.
+   * Re-validates the name against SAFE_IDENTIFIER_RE.
+   */
+  updateBundleName(name: string): void {
+    if (!SAFE_IDENTIFIER_RE.test(name)) {
+      throw new EdictumConfigError(
+        `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+      );
+    }
+    (this as { bundleName: string | null }).bundleName = name;
+  }
+
   /** Close this client (no-op for fetch-based client, kept for API parity). */
   async close(): Promise<void> {
     // Native fetch() doesn't require explicit connection cleanup.

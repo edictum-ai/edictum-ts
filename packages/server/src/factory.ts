@@ -36,6 +36,13 @@ import { verifyBundleSignature } from "./verification.js";
 // Types
 // ---------------------------------------------------------------------------
 
+/** Callback for SSE watcher errors (signature rejections, parse failures). */
+export type WatchErrorHandler = (error: {
+  readonly type: "signature_rejected" | "parse_error" | "fetch_error";
+  readonly message: string;
+  readonly bundleName?: string;
+}) => void;
+
 /** Options for createServerGuard(). */
 export interface CreateServerGuardOptions {
   /** Base URL of the edictum-console server. */
@@ -56,7 +63,7 @@ export interface CreateServerGuardOptions {
   readonly approvalBackend?: ApprovalBackend;
   /** Override storage backend (default: ServerBackend). */
   readonly storageBackend?: StorageBackend;
-  /** Guard mode (default: "enforce"). */
+  /** Guard mode. If omitted, uses bundle's defaults.mode (default: "enforce"). */
   readonly mode?: "enforce" | "observe";
   /** Callback on tool denial. */
   readonly onDeny?: (
@@ -89,6 +96,8 @@ export interface CreateServerGuardOptions {
   readonly maxRetries?: number;
   /** Timeout for waiting for server assignment in ms (default: 30_000). */
   readonly assignmentTimeout?: number;
+  /** Callback for SSE watcher errors (signature rejections, parse failures). */
+  readonly onWatchError?: WatchErrorHandler;
 }
 
 /** A server-connected guard with lifecycle management. */
@@ -106,6 +115,14 @@ export interface ServerGuard {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ASSIGNMENT_TIMEOUT_MS = 30_000;
+
+/**
+ * Max base64-encoded bundle size (682 KB ≈ 512 KB decoded).
+ * Guards against unbounded memory allocation from a malicious server.
+ * loadBundleString() applies its own MAX_BUNDLE_SIZE check on the decoded
+ * YAML, but we reject oversized base64 before allocating the decode buffer.
+ */
+const MAX_BUNDLE_B64_LENGTH = Math.ceil(512 * 1024 * 4 / 3);
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -144,12 +161,16 @@ export async function createServerGuard(
     environment = "production",
     bundleName = null,
     tags = null,
-    mode = "enforce",
     autoWatch = true,
     verifySignatures = false,
     signingPublicKey = null,
     assignmentTimeout = DEFAULT_ASSIGNMENT_TIMEOUT_MS,
+    onWatchError,
   } = options;
+
+  // Do NOT destructure `mode` with a default — undefined means
+  // "use the bundle's defaults.mode". See review issue #1.
+  const explicitMode = options.mode;
 
   // -----------------------------------------------------------------------
   // Validation
@@ -165,6 +186,12 @@ export async function createServerGuard(
   if (verifySignatures && !signingPublicKey) {
     throw new EdictumConfigError(
       "signingPublicKey is required when verifySignatures is true",
+    );
+  }
+
+  if (!Number.isFinite(assignmentTimeout) || assignmentTimeout <= 0) {
+    throw new EdictumConfigError(
+      `assignmentTimeout must be a positive finite number, got ${assignmentTimeout}`,
     );
   }
 
@@ -216,7 +243,7 @@ export async function createServerGuard(
         client,
         bundleName,
         environment,
-        mode,
+        explicitMode,
         verifySignatures,
         signingPublicKey,
         auditSink,
@@ -228,7 +255,7 @@ export async function createServerGuard(
       // Path B: Server-assigned — create empty guard, wait for assignment
       guard = new Edictum({
         environment,
-        mode,
+        mode: explicitMode ?? "enforce",
         contracts: [],
         auditSink,
         approvalBackend,
@@ -254,6 +281,7 @@ export async function createServerGuard(
         verifySignatures,
         signingPublicKey,
         watchAbort.signal,
+        onWatchError ?? null,
       );
     }
 
@@ -262,8 +290,6 @@ export async function createServerGuard(
     // -------------------------------------------------------------------
 
     if (bundleName == null) {
-      // The SSE watcher will reload contracts when assignment arrives.
-      // Wait for the first reload with a timeout.
       const assigned = await _waitForAssignment(
         guard,
         assignmentTimeout,
@@ -276,7 +302,6 @@ export async function createServerGuard(
       }
     }
   } catch (err) {
-    // Cleanup on failure
     await _cleanupResources(
       watchAbort,
       watchPromise,
@@ -307,6 +332,19 @@ export async function createServerGuard(
 }
 
 // ---------------------------------------------------------------------------
+// Internal: decode and validate base64 YAML bundle
+// ---------------------------------------------------------------------------
+
+function _decodeYamlB64(yamlB64: string): Uint8Array {
+  if (yamlB64.length > MAX_BUNDLE_B64_LENGTH) {
+    throw new EdictumConfigError(
+      `Bundle yaml_bytes exceeds maximum size (base64 length ${yamlB64.length} > ${MAX_BUNDLE_B64_LENGTH})`,
+    );
+  }
+  return Buffer.from(yamlB64, "base64");
+}
+
+// ---------------------------------------------------------------------------
 // Internal: fetch bundle and build guard
 // ---------------------------------------------------------------------------
 
@@ -314,7 +352,7 @@ async function _fetchAndBuildGuard(
   client: EdictumServerClient,
   bundleName: string,
   environment: string,
-  mode: string,
+  explicitMode: "enforce" | "observe" | undefined,
   verifySignatures: boolean,
   signingPublicKey: string | null,
   auditSink: AuditSink,
@@ -335,8 +373,7 @@ async function _fetchAndBuildGuard(
     );
   }
 
-  // Decode base64 YAML
-  const yamlBytes = Buffer.from(yamlB64, "base64");
+  const yamlBytes = _decodeYamlB64(yamlB64);
 
   // Verify signature if required
   if (verifySignatures) {
@@ -354,7 +391,8 @@ async function _fetchAndBuildGuard(
   const [bundleData, bundleHash] = loadBundleString(yamlContent);
   const compiled = compileContracts(bundleData);
 
-  const effectiveMode = mode ?? compiled.defaultMode;
+  // Prefer explicit mode, fall back to bundle's defaults.mode
+  const effectiveMode = explicitMode ?? compiled.defaultMode ?? "enforce";
 
   const allContracts = [
     ...compiled.preconditions,
@@ -375,6 +413,9 @@ async function _fetchAndBuildGuard(
     mode: effectiveMode as "enforce" | "observe",
     limits: compiled.limits,
     tools: Object.keys(tools).length > 0 ? tools : undefined,
+    // Cast note: compiled contracts are internal types from the YAML engine
+    // that satisfy the Edictum constructor's union type. The same cast is
+    // used in core/factory.ts — no public union type exists yet.
     contracts: allContracts as never[],
     auditSink,
     approvalBackend,
@@ -399,6 +440,7 @@ async function _startSseWatcher(
   verifySignatures: boolean,
   signingPublicKey: string | null,
   signal: AbortSignal,
+  onWatchError: WatchErrorHandler | null,
 ): Promise<void> {
   await source.connect();
 
@@ -412,51 +454,65 @@ async function _startSseWatcher(
         if (bundle["_assignment_changed"] === true) {
           // Assignment changed — fetch the new bundle
           const newBundleName = bundle["bundle_name"] as string;
-          const params: Record<string, string> = { env: client.env };
           const response = await client.get(
             `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
-            params,
+            { env: client.env },
           );
 
           const yamlB64 = response["yaml_bytes"];
           if (typeof yamlB64 !== "string") continue;
 
-          const yamlBytes = Buffer.from(yamlB64, "base64");
+          let yamlBytes: Uint8Array;
+          try {
+            yamlBytes = _decodeYamlB64(yamlB64);
+          } catch {
+            onWatchError?.({ type: "parse_error", message: "Bundle exceeds maximum size", bundleName: newBundleName });
+            continue;
+          }
 
           if (verifySignatures) {
             const signature = response["signature"];
             if (typeof signature !== "string" || signature.length === 0) {
-              continue; // Skip unsigned bundles when verification required
+              onWatchError?.({ type: "signature_rejected", message: "Bundle signature missing", bundleName: newBundleName });
+              continue;
             }
             try {
               verifyBundleSignature(yamlBytes, signature, signingPublicKey as string);
-            } catch {
-              continue; // Skip bundles with invalid signatures
+            } catch (err) {
+              onWatchError?.({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+              continue;
             }
           }
 
           yamlContent = new TextDecoder().decode(yamlBytes);
 
-          // Update the client's effective bundle name.
-          // bundleName is readonly on the client, so we use the internal
-          // reference stored on the guard. The SSE source tracks it via
-          // query params on reconnect.
-          (client as { bundleName: string | null }).bundleName = newBundleName;
+          // Update the client's effective bundle name for SSE reconnection.
+          // EdictumServerClient.bundleName is readonly by design. We use
+          // updateBundleName() which re-validates the identifier.
+          client.updateBundleName(newBundleName);
         } else {
           // Contract update — extract YAML from SSE payload
           const yamlB64 = bundle["yaml_bytes"];
           if (typeof yamlB64 !== "string") continue;
 
-          const yamlBytes = Buffer.from(yamlB64, "base64");
+          let yamlBytes: Uint8Array;
+          try {
+            yamlBytes = _decodeYamlB64(yamlB64);
+          } catch {
+            onWatchError?.({ type: "parse_error", message: "Bundle exceeds maximum size" });
+            continue;
+          }
 
           if (verifySignatures) {
             const signature = bundle["signature"];
             if (typeof signature !== "string" || signature.length === 0) {
+              onWatchError?.({ type: "signature_rejected", message: "Bundle signature missing" });
               continue;
             }
             try {
               verifyBundleSignature(yamlBytes, signature, signingPublicKey as string);
-            } catch {
+            } catch (err) {
+              onWatchError?.({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err) });
               continue;
             }
           }
@@ -464,18 +520,13 @@ async function _startSseWatcher(
           yamlContent = new TextDecoder().decode(yamlBytes);
         }
 
-        // Atomically reload contracts
         guard.reload(yamlContent);
-      } catch {
-        // Log but don't crash — keep existing contracts
-        // In production, this should use a logger
+      } catch (err) {
+        onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
       }
     }
   } catch {
-    if (!signal.aborted) {
-      // Unexpected error — SSE watcher died
-      // In production, this should use a logger
-    }
+    // SSE stream ended — source.watch() handles reconnection internally
   }
 }
 
@@ -483,10 +534,6 @@ async function _startSseWatcher(
 // Internal: wait for server assignment
 // ---------------------------------------------------------------------------
 
-/**
- * Wait for the guard to receive its first contracts via SSE.
- * Returns true if contracts were loaded, false on timeout.
- */
 async function _waitForAssignment(
   guard: Edictum,
   timeoutMs: number,
@@ -495,7 +542,6 @@ async function _waitForAssignment(
   const pollInterval = 100;
 
   while (Date.now() - start < timeoutMs) {
-    // Check if the guard has received contracts (policyVersion is set on reload)
     if (guard.policyVersion != null) {
       return true;
     }
@@ -516,13 +562,11 @@ async function _cleanupResources(
   auditSink: AuditSink,
   client: EdictumServerClient,
 ): Promise<void> {
-  // Stop SSE watcher
   if (watchAbort) {
     watchAbort.abort();
   }
   await contractSource.close();
 
-  // Wait for watcher to finish (it should exit quickly after abort)
   if (watchPromise) {
     try {
       await watchPromise;
@@ -531,7 +575,6 @@ async function _cleanupResources(
     }
   }
 
-  // Flush audit events
   if ("close" in auditSink && typeof auditSink.close === "function") {
     try {
       await (auditSink as { close(): Promise<void> }).close();
@@ -540,6 +583,5 @@ async function _cleanupResources(
     }
   }
 
-  // Close client
   await client.close();
 }
