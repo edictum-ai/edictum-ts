@@ -333,6 +333,8 @@ export class EdictumServerClient {
    *
    * Used by the SSE watcher when a server assignment changes.
    * Re-validates the name against SAFE_IDENTIFIER_RE.
+   *
+   * @internal
    */
   updateBundleName(name: string): void {
     if (!SAFE_IDENTIFIER_RE.test(name)) {

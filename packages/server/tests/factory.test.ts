@@ -619,4 +619,45 @@ describe("parameter behavior (additional)", () => {
     expect(events[0].principal).toMatchObject({ userId: "resolved-user", role: "operator" });
     await sg.close();
   });
+
+  it("custom storageBackend is used for session state", async () => {
+    const customBackend = {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      increment: vi.fn(async () => 1),
+    };
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      storageBackend: customBackend,
+    });
+    await sg.guard.run("SafeTool", {}, async () => "ok");
+    // Session tracking uses increment for attempt counts
+    expect(customBackend.increment).toHaveBeenCalled();
+    await sg.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server-assignment path (bundleName=null)
+// ---------------------------------------------------------------------------
+
+describe("server-assignment path (bundleName=null)", () => {
+  it("throws EdictumConfigError when assignment times out", async () => {
+    // SSE mock never sends assignment_changed — empty stream
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/stream")) return mockSse([]);
+      return mockJson({ error: "not found" }, 404);
+    });
+    await expect(
+      createServerGuard({
+        ...BASE_OPTS,
+        bundleName: null,
+        autoWatch: true,
+        assignmentTimeout: 200,
+      }),
+    ).rejects.toThrow(EdictumConfigError);
+  });
 });

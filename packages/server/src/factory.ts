@@ -169,7 +169,7 @@ export async function createServerGuard(
   } = options;
 
   // Do NOT destructure `mode` with a default — undefined means
-  // "use the bundle's defaults.mode". See review issue #1.
+  // "use the bundle's defaults.mode", falling back to "enforce".
   const explicitMode = options.mode;
 
   // -----------------------------------------------------------------------
@@ -467,7 +467,10 @@ async function _startSseWatcher(
           );
 
           const yamlB64 = response["yaml_bytes"];
-          if (typeof yamlB64 !== "string") continue;
+          if (typeof yamlB64 !== "string") {
+            onWatchError?.({ type: "parse_error", message: "Bundle response missing 'yaml_bytes' field", bundleName: newBundleName });
+            continue;
+          }
 
           let yamlBytes: Uint8Array;
           try {
@@ -500,7 +503,10 @@ async function _startSseWatcher(
         } else {
           // Contract update — extract YAML from SSE payload
           const yamlB64 = bundle["yaml_bytes"];
-          if (typeof yamlB64 !== "string") continue;
+          if (typeof yamlB64 !== "string") {
+            onWatchError?.({ type: "parse_error", message: "SSE bundle payload missing 'yaml_bytes' field" });
+            continue;
+          }
 
           let yamlBytes: Uint8Array;
           try {
@@ -560,7 +566,8 @@ async function _waitForAssignment(
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  return false;
+  // Final check: assignment may have arrived during the last sleep
+  return guard.policyVersion != null;
 }
 
 // ---------------------------------------------------------------------------
