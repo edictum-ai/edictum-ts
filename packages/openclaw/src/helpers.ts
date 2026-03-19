@@ -48,7 +48,12 @@ export function buildFindings(postDecision: {
 export function summarizeResult(result: unknown): string | null {
   if (result === null || result === undefined) return null;
   try {
-    const str = typeof result === "string" ? result : JSON.stringify(result);
+    // For strings, truncate directly — avoid serializing large objects just
+    // to take 200 chars (#71).
+    if (typeof result === "string") {
+      return result.length > 200 ? result.slice(0, 197) + "..." : result;
+    }
+    const str = JSON.stringify(result);
     return str.length > 200 ? str.slice(0, 197) + "..." : str;
   } catch {
     // Circular references or other serialization errors must not propagate

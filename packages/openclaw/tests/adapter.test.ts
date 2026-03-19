@@ -328,6 +328,25 @@ describe("EdictumOpenClawAdapter", () => {
       const event = sink.events[0];
       expect((event.principal as Record<string, unknown>).userId).toBe("bob");
     });
+
+    it("setPrincipal updates principal for subsequent calls", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard, {
+        principal: createPrincipal({ userId: "alice" }),
+      });
+      const ctx = makeCtx();
+
+      await adapter.pre("exec", { command: "ls" }, "tc-sp-1", ctx);
+      const firstEvent = sink.events.find((e) => e.action === AuditAction.CALL_ALLOWED && e.callId === "tc-sp-1");
+      expect(firstEvent).toBeDefined();
+      expect((firstEvent!.principal as Record<string, unknown>).userId).toBe("alice");
+
+      adapter.setPrincipal(createPrincipal({ userId: "bob" }));
+      await adapter.pre("exec", { command: "ls" }, "tc-sp-2", ctx);
+      const secondEvent = sink.events.find((e) => e.action === AuditAction.CALL_ALLOWED && e.callId === "tc-sp-2");
+      expect(secondEvent).toBeDefined();
+      expect((secondEvent!.principal as Record<string, unknown>).userId).toBe("bob");
+    });
   });
 
   describe("session tracking", () => {
