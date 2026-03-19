@@ -241,6 +241,7 @@ describe("security", () => {
       url: "https://admin:secret123@db.example.com",
     }) as Record<string, unknown>;
     expect(r2["url"]).not.toContain("secret123");
+    expect(r2["url"]).toContain("db.example.com"); // structure survives partial redaction
 
     // Export with secret env var
     const r3 = policy.redactArgs({

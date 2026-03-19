@@ -95,10 +95,9 @@ jobs:
                c. Then run the standards compliance pass
                d. Only apply checks relevant to the file type
 
-            5. For each potential issue, verify ALL of these before reporting:
-               - The issue was INTRODUCED by this PR (not pre-existing)
-               - You can describe a concrete attack path or concrete bug
-               - Include a concrete fix with code, not just "consider doing X"
+            5. For each potential issue:
+               a. If INTRODUCED by this PR: verify you can describe a concrete attack path or concrete bug, and include a concrete fix with code.
+               b. If pre-existing (not introduced by this PR): label as "ℹ️ Pre-existing:" per the Rules section — no severity classification, no fix required.
 
             6. Fill in the template from `/tmp/governance/review-template.md` per `/tmp/governance/review-instructions.md`. Write to `/tmp/review.md`.
 
