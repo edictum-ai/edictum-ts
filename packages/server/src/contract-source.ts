@@ -237,6 +237,7 @@ export class ServerContractSource {
       const newBundle = obj["bundle_name"];
       if (
         typeof newBundle !== "string" ||
+        newBundle.length > 10_000 ||
         !SAFE_IDENTIFIER_RE.test(newBundle)
       ) {
         return null;
