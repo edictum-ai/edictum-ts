@@ -214,8 +214,9 @@ export class EdictumServerClient {
   async get(
     path: string,
     params?: Record<string, string>,
+    options?: { signal?: AbortSignal },
   ): Promise<Record<string, unknown>> {
-    return this._request("GET", path, { params });
+    return this._request("GET", path, { params, signal: options?.signal });
   }
 
   /** Send a POST request with retry logic. */
@@ -246,6 +247,7 @@ export class EdictumServerClient {
     options?: {
       params?: Record<string, string>;
       body?: Record<string, unknown>;
+      signal?: AbortSignal;
     },
   ): Promise<Record<string, unknown>> {
     let lastError: Error | null = null;
@@ -258,10 +260,12 @@ export class EdictumServerClient {
           url += `?${searchParams.toString()}`;
         }
 
+        const signals: AbortSignal[] = [AbortSignal.timeout(this.timeout)];
+        if (options?.signal) signals.push(options.signal);
         const fetchOptions: RequestInit = {
           method,
           headers: this._headers(),
-          signal: AbortSignal.timeout(this.timeout),
+          signal: AbortSignal.any(signals),
         };
 
         if (options?.body !== undefined) {

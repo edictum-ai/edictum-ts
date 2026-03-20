@@ -510,20 +510,21 @@ async function _startSseWatcher(
           }
           newBundleName = rawName;
 
-          // Fetch new bundle — network errors are fetch_error, not parse_error
+          // Early exit if close() was called during validation
+          if (signal.aborted) return;
+
+          // Fetch new bundle — pass abort signal so close() cancels in-flight requests
           let response: Record<string, unknown>;
           try {
             response = await client.get(
               `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
               { env: client.env },
+              { signal },
             );
           } catch (err) {
-            try {
-              safeNotify({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
-            } catch { /* user callback must not kill the watcher */ }
+            safeNotify({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
             continue;
           }
-          // Bail out fast if close() was called while fetching
           if (signal.aborted) return;
 
           const yamlB64 = response["yaml_bytes"];
@@ -588,6 +589,7 @@ async function _startSseWatcher(
           yamlContent = new TextDecoder().decode(yamlBytes);
         }
 
+        // reload() is synchronous (returns void) — atomic state swap
         guard.reload(yamlContent);
       } catch (err) {
         safeNotify({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
