@@ -57,19 +57,8 @@ export class EdictumServerClient {
     return this._bundleName;
   }
 
-  /**
-   * Set the bundle name with validation. Defence-in-depth: validates
-   * even though _setClientBundleName also validates before calling.
-   * @internal
-   */
-  _setBundleName(name: string): void {
-    if (name.length > 10_000 || !SAFE_IDENTIFIER_RE.test(name)) {
-      throw new EdictumConfigError(
-        `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
-      );
-    }
-    this._bundleName = name;
-  }
+  // No public setter — bundleName is mutated only via the package-internal
+  // _setClientBundleName() function which validates before calling this.
 
   constructor(options: EdictumServerClientOptions) {
     const {
@@ -373,7 +362,9 @@ export function _setClientBundleName(
       `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
     );
   }
-  client._setBundleName(name);
+  // Access private field — safe because this is a package-internal function
+  // co-located with the class definition. Validation is the single owner above.
+  (client as unknown as { _bundleName: string | null })._bundleName = name;
 }
 
 function sleep(ms: number): Promise<void> {

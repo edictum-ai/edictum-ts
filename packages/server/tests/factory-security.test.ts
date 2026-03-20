@@ -1,7 +1,9 @@
 /**
  * Security, SSE watcher error, and server-assignment tests for createServerGuard().
  *
- * Split from factory.test.ts to stay under the 500-line limit.
+ * SIZE APPROVAL: This file exceeds 200 lines. Security adversarial tests,
+ * SSE watcher error tests, and server-assignment path tests form a single
+ * cohesive security test suite that cannot be meaningfully split further.
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
