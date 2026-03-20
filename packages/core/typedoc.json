@@ -2,5 +2,12 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": ["src/index.ts"],
   "out": "docs/api",
-  "tsconfig": "tsconfig.json"
+  "tsconfig": "tsconfig.json",
+  "intentionallyNotExported": [
+    "ObserveContract",
+    "CompositionOverride",
+    "AnyFunction",
+    "EvaluateOptions"
+  ],
+  "treatWarningsAsErrors": true
 }
