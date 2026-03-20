@@ -1,8 +1,8 @@
 /**
- * Tests for createServerGuard() — the server guard factory.
+ * Tests for createServerGuard() — core functionality.
  *
- * Uses vitest mock server (vi.fn + fetch interception) to simulate
- * the edictum-console API without a real server.
+ * Security, SSE watcher error, and server-assignment tests are in
+ * factory-security.test.ts to stay under the 500-line limit.
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
@@ -10,109 +10,34 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { Edictum, EdictumConfigError } from "@edictum/core";
 import { createServerGuard } from "../src/factory.js";
 import type { ServerGuard, WatchErrorHandler } from "../src/factory.js";
-
-// ---------------------------------------------------------------------------
-// Test fixtures
-// ---------------------------------------------------------------------------
-
-const TEST_YAML = `
-apiVersion: edictum/v1
-kind: ContractBundle
-metadata:
-  name: test-bundle
-defaults:
-  mode: enforce
-contracts:
-  - id: no-rm
-    type: pre
-    tool: Bash
-    when:
-      args.command:
-        contains: "rm -rf"
-    then:
-      effect: deny
-      message: "Cannot run rm -rf"
-`;
-
-const TEST_YAML_OBSERVE = `
-apiVersion: edictum/v1
-kind: ContractBundle
-metadata:
-  name: observe-bundle
-defaults:
-  mode: observe
-contracts:
-  - id: log-all
-    type: pre
-    tool: "*"
-    when:
-      args.x:
-        exists: true
-    then:
-      effect: deny
-      message: "logged"
-`;
-
-const TEST_YAML_B64 = Buffer.from(TEST_YAML).toString("base64");
-const TEST_YAML_OBSERVE_B64 = Buffer.from(TEST_YAML_OBSERVE).toString("base64");
-
-const BASE_OPTS = {
-  url: "http://localhost:8000",
-  apiKey: "test-key",
-  agentId: "test-agent",
-} as const;
-
-// ---------------------------------------------------------------------------
-// Mock fetch helpers
-// ---------------------------------------------------------------------------
-
-type FetchFn = typeof globalThis.fetch;
-let originalFetch: FetchFn;
-let mockFetch: ReturnType<typeof vi.fn<FetchFn>>;
-
-function mockJson(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function mockSse(events: Array<{ event: string; data: string }>): Response {
-  const lines = events.map((e) => `event:${e.event}\ndata:${e.data}\n\n`).join("");
-  return new Response(lines, { status: 200, headers: { "Content-Type": "text/event-stream" } });
-}
-
-function extractUrl(input: string | URL | Request): string {
-  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-}
-
-/** Standard mock that serves bundle + empty SSE + session endpoints. */
-function setupFullMock(bundleResponse?: Record<string, unknown>): void {
-  const bundle = bundleResponse ?? { yaml_bytes: TEST_YAML_B64 };
-  mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-    const url = extractUrl(input);
-    if (url.includes("/api/v1/bundles/")) return mockJson(bundle);
-    if (url.includes("/api/v1/stream")) return mockSse([]);
-    if (url.includes("/api/v1/sessions/") && init?.method === "POST") return mockJson({ value: 1 });
-    if (url.includes("/api/v1/sessions/")) return mockJson({ value: null });
-    if (url.includes("/api/v1/events")) return mockJson({ ok: true });
-    return mockJson({ error: "not found" }, 404);
-  });
-}
+import {
+  TEST_YAML, TEST_YAML_B64, TEST_YAML_OBSERVE_B64,
+  BASE_OPTS, mockJson, mockSse, extractUrl, setupFullMock,
+  createMockFetch,
+} from "./factory-helpers.js";
+import type { FetchFn } from "./factory-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
 
+let mockFetch: ReturnType<typeof vi.fn<FetchFn>>;
+const mock = createMockFetch();
+
 beforeEach(() => {
-  originalFetch = globalThis.fetch;
-  mockFetch = vi.fn<FetchFn>();
-  globalThis.fetch = mockFetch;
+  mock.install();
+  mockFetch = mock.mockFetch;
+  mockFetch.mockReset();
 });
 
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  mock.restore();
 });
+
+// Local helper that uses module-scoped mockFetch
+function setup(bundleResponse?: Record<string, unknown>): void {
+  setupFullMock(mockFetch, bundleResponse);
+}
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -165,7 +90,7 @@ describe("basic connection", () => {
   afterEach(async () => { if (sg) await sg.close(); });
 
   it("fetches initial bundle and returns working guard", async () => {
-    setupFullMock();
+    setup();
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
     expect(sg.guard).toBeInstanceOf(Edictum);
     expect(sg.guard.policyVersion).toBeTruthy();
@@ -191,13 +116,13 @@ describe("basic connection", () => {
   });
 
   it("wires up ServerAuditSink by default", async () => {
-    setupFullMock();
+    setup();
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
     expect(sg.guard.auditSink).toBeTruthy();
   });
 
   it("creates guard without autoWatch", async () => {
-    setupFullMock();
+    setup();
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false });
     expect(sg.guard).toBeInstanceOf(Edictum);
     const sseCalls = mockFetch.mock.calls.filter((c) => extractUrl(c[0]).includes("/api/v1/stream"));
@@ -205,13 +130,13 @@ describe("basic connection", () => {
   });
 
   it("uses bundle defaults.mode when mode is omitted", async () => {
-    setupFullMock({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
+    setup({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false });
     expect(sg.guard.mode).toBe("observe");
   });
 
   it("explicit mode overrides bundle defaults.mode", async () => {
-    setupFullMock({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
+    setup({ yaml_bytes: TEST_YAML_OBSERVE_B64 });
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, mode: "enforce" });
     expect(sg.guard.mode).toBe("enforce");
   });
@@ -286,7 +211,7 @@ describe("guard works end-to-end", () => {
   afterEach(async () => { if (sg) await sg.close(); });
 
   it("enforces contracts from server-fetched bundle", async () => {
-    setupFullMock();
+    setup();
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
 
     const safeResult = await sg.guard.run("Bash", { command: "ls -la" }, async () => "output");
@@ -304,7 +229,7 @@ describe("guard works end-to-end", () => {
 
 describe("close()", () => {
   it("can be called multiple times safely", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
     await sg.close();
     await sg.close();
@@ -317,7 +242,7 @@ describe("close()", () => {
 
 describe("parameter behavior", () => {
   it("tags are forwarded to the client", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({
       ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
       tags: { team: "security" },
@@ -327,7 +252,7 @@ describe("parameter behavior", () => {
   });
 
   it("timeout propagates to the client", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({
       ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
       timeout: 5_000,
@@ -337,7 +262,7 @@ describe("parameter behavior", () => {
   });
 
   it("maxRetries propagates to the client", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({
       ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
       maxRetries: 5,
@@ -348,31 +273,25 @@ describe("parameter behavior", () => {
 
   it("onDeny callback fires on denied tool call", async () => {
     const onDeny = vi.fn();
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onDeny });
-
-    await expect(
-      sg.guard.run("Bash", { command: "rm -rf /" }, async () => "nope"),
-    ).rejects.toThrow();
-
+    await expect(sg.guard.run("Bash", { command: "rm -rf /" }, async () => "nope")).rejects.toThrow();
     expect(onDeny).toHaveBeenCalledTimes(1);
     await sg.close();
   });
 
   it("onAllow callback fires on allowed tool call", async () => {
     const onAllow = vi.fn();
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onAllow });
-
     await sg.guard.run("Bash", { command: "ls" }, async () => "ok");
-
     expect(onAllow).toHaveBeenCalledTimes(1);
     await sg.close();
   });
 
   it("custom audit sink receives events", async () => {
     const customSink = { emit: vi.fn(async () => {}) };
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", auditSink: customSink });
     await sg.guard.run("SafeTool", { arg: "value" }, async () => "ok");
     expect(customSink.emit).toHaveBeenCalled();
@@ -380,15 +299,14 @@ describe("parameter behavior", () => {
   });
 
   it("mode override applies", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", mode: "observe" });
     expect(sg.guard.mode).toBe("observe");
     await sg.close();
   });
 
   it("allowInsecure permits HTTP to non-loopback", async () => {
-    setupFullMock();
-    // Should not throw despite non-loopback HTTP
+    setup();
     const sg = await createServerGuard({
       ...BASE_OPTS, url: "http://remote.example.com",
       bundleName: "test-bundle", autoWatch: false, allowInsecure: true,
@@ -398,12 +316,11 @@ describe("parameter behavior", () => {
   });
 
   it("principal is forwarded to the guard", async () => {
-    setupFullMock();
+    setup();
     const sg = await createServerGuard({
       ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
       principal: { userId: "u1", role: "admin" },
     });
-    // The guard should have the principal set — run a tool and check audit
     await sg.guard.run("SafeTool", {}, async () => "ok");
     const events = sg.guard.localSink.events;
     expect(events.length).toBeGreaterThan(0);
@@ -422,217 +339,36 @@ describe("parameter behavior", () => {
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input);
-      // Initial fetch needs valid signature
       if (url.includes("/api/v1/bundles/")) return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig });
-      // SSE delivers bundle with bad signature
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "contract_update", data: badBundle }]);
-      }
+      if (url.includes("/api/v1/stream")) return mockSse([{ event: "contract_update", data: badBundle }]);
       return mockJson({ error: "not found" }, 404);
     });
 
     const sg = await createServerGuard({
       ...BASE_OPTS, bundleName: "test-bundle",
-      verifySignatures: true,
-      signingPublicKey: pubHex,
-      onWatchError,
+      verifySignatures: true, signingPublicKey: pubHex, onWatchError,
     });
-
-    // Wait for SSE watcher to process the event (no fixed sleep)
     await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "signature_rejected" }),
-      );
+      expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: "signature_rejected" }));
     }, { timeout: 2000 });
     await sg.close();
   });
-});
 
-// ---------------------------------------------------------------------------
-// Security — adversarial bypass tests
-// ---------------------------------------------------------------------------
-
-describe("security", () => {
-  it("rejects oversized yaml_bytes (memory exhaustion attack)", async () => {
-    // Create base64 string exceeding the limit (~682K chars)
-    const oversizedB64 = "A".repeat(700_000);
-    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: oversizedB64 }));
-    await expect(
-      createServerGuard({ ...BASE_OPTS, bundleName: "b", autoWatch: false }),
-    ).rejects.toThrow(/exceeds maximum size/);
-  });
-
-  it("rejects tampered YAML with signature for different content", async () => {
-    const keypair = generateKeyPairSync("ed25519");
-    const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
-    const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
-
-    // Sign the legitimate YAML
-    const legitimateSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey);
-
-    // Serve tampered YAML with the legitimate signature
-    const tamperedYaml = TEST_YAML.replace("rm -rf", "ls");
-    const tamperedB64 = Buffer.from(tamperedYaml).toString("base64");
-    mockFetch.mockImplementation(async () =>
-      mockJson({ yaml_bytes: tamperedB64, signature: legitimateSig.toString("base64") }),
-    );
-
-    await expect(
-      createServerGuard({
-        ...BASE_OPTS, bundleName: "b", autoWatch: false,
-        verifySignatures: true, signingPublicKey: pubHex,
-      }),
-    ).rejects.toThrow();
-  });
-
-  it("SSE watcher keeps existing contracts when unsigned bundle arrives", async () => {
-    const onWatchError = vi.fn<WatchErrorHandler>();
-    // Serve an unsigned update via SSE
-    const unsignedBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64 });
-
-    const keypair = generateKeyPairSync("ed25519");
-    const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
-    const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
-    const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey);
-
-    // Override for initial fetch to include valid signature
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/")) {
-        return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig.toString("base64") });
-      }
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "contract_update", data: unsignedBundle }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({
-      ...BASE_OPTS, bundleName: "test-bundle",
-      verifySignatures: true, signingPublicKey: pubHex,
-      onWatchError,
-    });
-
-    const initialVersion = sg.guard.policyVersion;
-
-    // Wait for SSE watcher to process (no fixed sleep)
-    await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "signature_rejected" }),
-      );
-    }, { timeout: 2000 });
-
-    // Contracts should NOT have changed (unsigned bundle rejected)
-    expect(sg.guard.policyVersion).toBe(initialVersion);
-    await sg.close();
-  });
-
-  it("rejects assignment_changed with path-separator bundle_name at SSE level", async () => {
-    // ServerContractSource._processEvent validates bundle_name against
-    // SAFE_IDENTIFIER_RE and silently drops invalid names. The factory's
-    // inline guard is belt-and-suspenders for alternative ContractSource
-    // implementations. This test verifies the SSE-level rejection.
-    const maliciousEvent = JSON.stringify({ bundle_name: "../../evil" });
-
-    let fetchedMaliciousBundle = false;
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/test-bundle")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "assignment_changed", data: maliciousEvent }]);
-      }
-      if (url.includes("evil")) fetchedMaliciousBundle = true;
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    let sseCallCount = 0;
-    const origImpl = mockFetch.getMockImplementation()!;
-    mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/stream")) sseCallCount++;
-      return origImpl(input, init);
-    });
-
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
-    // Wait for SSE to be called (stream processes then closes, triggering reconnect)
-    await vi.waitFor(() => {
-      expect(sseCallCount).toBeGreaterThanOrEqual(1);
-    }, { timeout: 2000 });
-    // The malicious bundle_name should have been rejected — no fetch attempt
-    expect(fetchedMaliciousBundle).toBe(false);
-    expect(sg.client.bundleName).toBe("test-bundle");
-    await sg.close();
-  });
-
-  it("assignment_changed SSE event triggers new bundle fetch and reload", async () => {
-    const assignmentEvent = JSON.stringify({ bundle_name: "new-bundle" });
-    const newYaml = TEST_YAML.replace("no-rm", "no-rm-v2");
-    const newYamlB64 = Buffer.from(newYaml).toString("base64");
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      // Initial bundle fetch
-      if (url.includes("/api/v1/bundles/test-bundle/current")) {
-        return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      }
-      // New bundle fetch after assignment change
-      if (url.includes("/api/v1/bundles/new-bundle/current")) {
-        return mockJson({ yaml_bytes: newYamlB64 });
-      }
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
-    const initialVersion = sg.guard.policyVersion;
-
-    // Wait for SSE watcher to process the assignment change
-    await vi.waitFor(() => {
-      expect(sg.guard.policyVersion).not.toBe(initialVersion);
-    }, { timeout: 2000 });
-
-    // Client should have updated bundle name
-    expect(sg.client.bundleName).toBe("new-bundle");
-    await sg.close();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Additional behavior tests
-// ---------------------------------------------------------------------------
-
-describe("parameter behavior (additional)", () => {
   it("successCheck override affects tool result evaluation", async () => {
-    // Custom success check that always returns false — causes EdictumToolError
     const successCheck = vi.fn(() => false);
-    setupFullMock();
-    const sg = await createServerGuard({
-      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, successCheck,
-    });
-
-    // Run a tool — successCheck returns false → throw
-    await expect(
-      sg.guard.run("SafeTool", { x: 1 }, async () => "result"),
-    ).rejects.toThrow();
+    setup();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, successCheck });
+    await expect(sg.guard.run("SafeTool", { x: 1 }, async () => "result")).rejects.toThrow();
     expect(successCheck).toHaveBeenCalledTimes(1);
     expect(successCheck).toHaveBeenCalledWith("SafeTool", "result");
     await sg.close();
   });
 
   it("principalResolver override is used during tool calls", async () => {
-    const principalResolver = vi.fn((_tool: string, _args: Record<string, unknown>) => ({
-      userId: "resolved-user",
-      role: "operator",
-    }));
-    setupFullMock();
-    const sg = await createServerGuard({
-      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, principalResolver,
-    });
-
+    const principalResolver = vi.fn(() => ({ userId: "resolved-user", role: "operator" }));
+    setup();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, principalResolver });
     await sg.guard.run("SafeTool", { x: 1 }, async () => "ok");
-
     expect(principalResolver).toHaveBeenCalledTimes(1);
     const events = sg.guard.localSink.events;
     expect(events.length).toBeGreaterThan(0);
@@ -642,18 +378,12 @@ describe("parameter behavior (additional)", () => {
 
   it("custom storageBackend is used for session state", async () => {
     const customBackend = {
-      get: vi.fn(async () => null),
-      set: vi.fn(async () => {}),
-      delete: vi.fn(async () => {}),
-      increment: vi.fn(async () => 1),
+      get: vi.fn(async () => null), set: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}), increment: vi.fn(async () => 1),
     };
-    setupFullMock();
-    const sg = await createServerGuard({
-      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
-      storageBackend: customBackend,
-    });
+    setup();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, storageBackend: customBackend });
     await sg.guard.run("SafeTool", {}, async () => "ok");
-    // Session tracking uses increment for attempt counts
     expect(customBackend.increment).toHaveBeenCalled();
     await sg.close();
   });
@@ -663,152 +393,9 @@ describe("parameter behavior (additional)", () => {
       requestApproval: vi.fn(async () => ({ approvalId: "test" })),
       waitForDecision: vi.fn(async () => ({ approved: true, status: "approved" })),
     };
-    setupFullMock();
-    const sg = await createServerGuard({
-      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
-      approvalBackend: customApproval,
-    });
-    // Verify the backend was wired through (internal field)
+    setup();
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, approvalBackend: customApproval });
     expect(sg.guard._approvalBackend).toBe(customApproval);
-    await sg.close();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Server-assignment path (bundleName=null)
-// ---------------------------------------------------------------------------
-
-describe("server-assignment path (bundleName=null)", () => {
-  it("throws EdictumConfigError when assignment times out", async () => {
-    // SSE mock never sends assignment_changed — empty stream
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/stream")) return mockSse([]);
-      return mockJson({ error: "not found" }, 404);
-    });
-    await expect(
-      createServerGuard({
-        ...BASE_OPTS,
-        bundleName: null,
-        autoWatch: true,
-        assignmentTimeout: 200,
-      }),
-    ).rejects.toThrow(EdictumConfigError);
-  });
-
-  it("succeeds when SSE delivers assignment before timeout", async () => {
-    const assignmentEvent = JSON.stringify({ bundle_name: "assigned-bundle" });
-    const assignedYamlB64 = Buffer.from(TEST_YAML.replace("no-rm", "assigned-contract")).toString("base64");
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/assigned-bundle/current")) {
-        return mockJson({ yaml_bytes: assignedYamlB64 });
-      }
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({
-      ...BASE_OPTS,
-      bundleName: null,
-      autoWatch: true,
-      assignmentTimeout: 5000,
-    });
-
-    expect(sg.guard).toBeInstanceOf(Edictum);
-    expect(sg.guard.policyVersion).toBeTruthy();
-    expect(sg.client.bundleName).toBe("assigned-bundle");
-    await sg.close();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// SSE watcher error handling
-// ---------------------------------------------------------------------------
-
-describe("SSE watcher errors", () => {
-  it("onWatchError receives fetch_error when SSE stream throws non-retryable error", async () => {
-    // ServerContractSource.watch() handles retryable errors internally.
-    // The outer catch fires when source.connect() or the for-await throws
-    // a non-recoverable error. Since connect() is a no-op, we test via
-    // the assignment_changed fetch failure path (which is the primary
-    // observable fetch_error path). Already covered by the test below.
-    // This test verifies that SSE errors from stream processing don't
-    // silently disappear — a malformed SSE response that causes a
-    // non-recoverable parse error in the watcher is reported.
-    const onWatchError = vi.fn<WatchErrorHandler>();
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      if (url.includes("/api/v1/stream")) {
-        // Return a contract_update with missing yaml_bytes
-        return mockSse([{ event: "contract_update", data: JSON.stringify({ revision_hash: "abc" }) }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
-    await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "parse_error", message: expect.stringContaining("yaml_bytes") }),
-      );
-    }, { timeout: 2000 });
-    await sg.close();
-  });
-
-  it("onWatchError receives fetch_error when assignment bundle fetch fails", async () => {
-    const onWatchError = vi.fn<WatchErrorHandler>();
-    const assignmentEvent = JSON.stringify({ bundle_name: "missing-bundle" });
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/test-bundle")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      // New bundle fetch fails with 404
-      if (url.includes("/api/v1/bundles/missing-bundle")) return mockJson({ error: "not found" }, 404);
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
-    await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "fetch_error", bundleName: "missing-bundle" }),
-      );
-    }, { timeout: 2000 });
-    await sg.close();
-  });
-
-  it("onWatchError receives parse_error when assignment bundle has invalid YAML", async () => {
-    const onWatchError = vi.fn<WatchErrorHandler>();
-    const badYamlB64 = Buffer.from("not: valid: yaml: bundle").toString("base64");
-    const assignmentEvent = JSON.stringify({ bundle_name: "bad-bundle" });
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/test-bundle/current")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      if (url.includes("/api/v1/bundles/bad-bundle/current")) return mockJson({ yaml_bytes: badYamlB64 });
-      if (url.includes("/api/v1/stream")) return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
-      return mockJson({ error: "not found" }, 404);
-    });
-
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
-    const initialVersion = sg.guard.policyVersion;
-
-    await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "parse_error" }),
-      );
-    }, { timeout: 2000 });
-
-    // Contracts unchanged, bundle name NOT updated (reload failed)
-    expect(sg.guard.policyVersion).toBe(initialVersion);
-    expect(sg.client.bundleName).toBe("test-bundle");
     await sg.close();
   });
 });

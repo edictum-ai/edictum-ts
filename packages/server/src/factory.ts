@@ -218,9 +218,9 @@ export async function createServerGuard(
     bundleName,
     tags,
     allowInsecure: options.allowInsecure,
+    ...(options.timeout !== undefined && { timeout: options.timeout }),
+    ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
   };
-  if (options.timeout !== undefined) clientOpts.timeout = options.timeout;
-  if (options.maxRetries !== undefined) clientOpts.maxRetries = options.maxRetries;
 
   const client = new EdictumServerClient(clientOpts);
 
@@ -305,6 +305,7 @@ export async function createServerGuard(
       const assigned = await _waitForAssignment(
         guard,
         assignmentTimeout,
+        watchPromise,
       );
       if (!assigned) {
         throw new EdictumConfigError(
@@ -509,9 +510,13 @@ async function _startSseWatcher(
               { env: client.env },
             );
           } catch (err) {
-            onWatchError?.({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+            try {
+              onWatchError?.({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+            } catch { /* user callback must not kill the watcher */ }
             continue;
           }
+          // Bail out fast if close() was called while fetching
+          if (signal.aborted) return;
 
           const yamlB64 = response["yaml_bytes"];
           if (typeof yamlB64 !== "string") {
@@ -607,13 +612,23 @@ async function _startSseWatcher(
 async function _waitForAssignment(
   guard: Edictum,
   timeoutMs: number,
+  watchPromise: Promise<void> | null,
 ): Promise<boolean> {
   const start = Date.now();
   const pollInterval = 100;
+  let watcherDied = false;
+
+  // Detect early watcher exit so we fail fast instead of waiting full timeout
+  if (watchPromise) {
+    watchPromise.then(() => { watcherDied = true; }, () => { watcherDied = true; });
+  }
 
   while (Date.now() - start < timeoutMs) {
     if (guard.policyVersion != null) {
       return true;
+    }
+    if (watcherDied) {
+      return false; // Watcher exited — no point waiting further
     }
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }

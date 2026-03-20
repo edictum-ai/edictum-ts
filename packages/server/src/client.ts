@@ -26,15 +26,15 @@ export class EdictumServerError extends Error {
 }
 
 export interface EdictumServerClientOptions {
-  baseUrl: string;
-  apiKey: string;
-  agentId?: string;
-  env?: string;
-  bundleName?: string | null;
-  tags?: Record<string, string> | null;
-  timeout?: number;
-  maxRetries?: number;
-  allowInsecure?: boolean;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly agentId?: string;
+  readonly env?: string;
+  readonly bundleName?: string | null;
+  readonly tags?: Record<string, string> | null;
+  readonly timeout?: number;
+  readonly maxRetries?: number;
+  readonly allowInsecure?: boolean;
 }
 
 /**
@@ -52,9 +52,17 @@ export class EdictumServerClient {
   readonly timeout: number;
   readonly maxRetries: number;
 
-  /** Current bundle name. Read-only externally; use updateBundleName() to change. */
+  /** Current bundle name. Read-only externally. */
   get bundleName(): string | null {
     return this._bundleName;
+  }
+
+  /**
+   * Set the bundle name. Called only by _setClientBundleName().
+   * @internal
+   */
+  _setBundleName(name: string): void {
+    this._bundleName = name;
   }
 
   constructor(options: EdictumServerClientOptions) {
@@ -87,14 +95,14 @@ export class EdictumServerClient {
       ["agentId", agentId],
       ["env", env],
     ] as const) {
-      if (!SAFE_IDENTIFIER_RE.test(value)) {
+      if (value.length > 10_000 || !SAFE_IDENTIFIER_RE.test(value)) {
         throw new EdictumConfigError(
           `Invalid ${name}: ${JSON.stringify(value)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
         );
       }
     }
 
-    if (bundleName !== null && !SAFE_IDENTIFIER_RE.test(bundleName)) {
+    if (bundleName !== null && (bundleName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(bundleName))) {
       throw new EdictumConfigError(
         `Invalid bundleName: ${JSON.stringify(bundleName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
@@ -178,6 +186,13 @@ export class EdictumServerClient {
     this.agentId = agentId;
     this.env = env;
     this._bundleName = bundleName;
+    // Expose bundleName as own enumerable property so Object.keys(),
+    // JSON.stringify(), and spread include it (getters are on prototype).
+    Object.defineProperty(this, "bundleName", {
+      get: () => this._bundleName,
+      enumerable: true,
+      configurable: false,
+    });
     this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(
@@ -350,14 +365,12 @@ export function _setClientBundleName(
   client: EdictumServerClient,
   name: string,
 ): void {
-  if (!SAFE_IDENTIFIER_RE.test(name)) {
+  if (name.length > 10_000 || !SAFE_IDENTIFIER_RE.test(name)) {
     throw new EdictumConfigError(
       `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
     );
   }
-  // Access private field — safe because this is a package-internal function
-  // co-located with the class definition.
-  (client as unknown as { _bundleName: string | null })._bundleName = name;
+  client._setBundleName(name);
 }
 
 function sleep(ms: number): Promise<void> {
