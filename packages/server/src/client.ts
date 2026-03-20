@@ -337,7 +337,10 @@ export class EdictumServerClient {
 /**
  * Update a client's effective bundle name. Internal to the server package —
  * only used by the factory's SSE watcher after a successful contract reload.
- * Not exported from index.ts.
+ * Not exported from index.ts. Accessible via subpath import but validated —
+ * callers who bypass the public API do so at their own risk.
+ *
+ * @internal
  */
 export function _setClientBundleName(
   client: EdictumServerClient,

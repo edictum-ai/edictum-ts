@@ -419,7 +419,13 @@ async function _fetchAndBuildGuard(
   const compiled = compileContracts(bundleData);
 
   // Prefer explicit mode, fall back to bundle's defaults.mode
-  const effectiveMode = explicitMode ?? compiled.defaultMode ?? "enforce";
+  const rawMode = explicitMode ?? compiled.defaultMode ?? "enforce";
+  if (rawMode !== "enforce" && rawMode !== "observe") {
+    throw new EdictumConfigError(
+      `Invalid mode "${rawMode}" from bundle defaults. Expected "enforce" or "observe".`,
+    );
+  }
+  const effectiveMode = rawMode;
 
   const allContracts = [
     ...compiled.preconditions,
@@ -469,6 +475,11 @@ async function _startSseWatcher(
   signal: AbortSignal,
   onWatchError: WatchErrorHandler | null,
 ): Promise<void> {
+  // Fail-fast: validate preconditions within this function, not just the caller
+  if (verifySignatures && signingPublicKey === null) {
+    throw new EdictumConfigError("signingPublicKey is required when verifySignatures is true");
+  }
+
   try {
     await source.connect();
     for await (const bundle of source.watch()) {
@@ -510,8 +521,8 @@ async function _startSseWatcher(
           let yamlBytes: Uint8Array;
           try {
             yamlBytes = _decodeYamlB64(yamlB64);
-          } catch {
-            onWatchError?.({ type: "parse_error", message: "Bundle exceeds maximum size", bundleName: newBundleName });
+          } catch (err) {
+            onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed", bundleName: newBundleName });
             continue;
           }
 
@@ -541,8 +552,8 @@ async function _startSseWatcher(
           let yamlBytes: Uint8Array;
           try {
             yamlBytes = _decodeYamlB64(yamlB64);
-          } catch {
-            onWatchError?.({ type: "parse_error", message: "Bundle exceeds maximum size" });
+          } catch (err) {
+            onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed" });
             continue;
           }
 
