@@ -490,9 +490,10 @@ async function _startSseWatcher(
         let yamlContent: string;
 
         if (bundle["_assignment_changed"] === true) {
-          // Assignment changed — fetch the new bundle
-          // Inline validation: _processEvent already validates, but we
-          // guard here to avoid implicit cross-file safety dependency.
+          // Assignment changed — fetch the new bundle.
+          // Belt-and-suspenders: ServerContractSource._processEvent is the
+          // authoritative validation. This guard protects against alternative
+          // ContractSource implementations that skip validation.
           const rawName = bundle["bundle_name"];
           if (typeof rawName !== "string" || rawName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(rawName)) {
             onWatchError?.({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
@@ -576,7 +577,9 @@ async function _startSseWatcher(
 
         guard.reload(yamlContent);
       } catch (err) {
-        onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
+        try {
+          onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
+        } catch { /* user callback must not kill the watcher */ }
         continue;
       }
 
@@ -587,10 +590,12 @@ async function _startSseWatcher(
     }
   } catch (err) {
     if (!signal.aborted) {
-      onWatchError?.({
-        type: "fetch_error",
-        message: err instanceof Error ? err.message : String(err),
-      });
+      try {
+        onWatchError?.({
+          type: "fetch_error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } catch { /* user callback must not kill the watcher */ }
     }
   }
 }

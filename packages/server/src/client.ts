@@ -340,6 +340,10 @@ export class EdictumServerClient {
  * Not exported from index.ts. Accessible via subpath import but validated —
  * callers who bypass the public API do so at their own risk.
  *
+ * Only accepts non-null strings — once a bundle is assigned, it can only
+ * transition to another named bundle. Resetting to null (assignment revocation)
+ * is not supported; the watcher would need to be restarted for that case.
+ *
  * @internal
  */
 export function _setClientBundleName(

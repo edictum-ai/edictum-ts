@@ -489,10 +489,76 @@ describe("maxRetries validation", () => {
     ).toThrow(/maxRetries/);
   });
 
+  it("rejects negative integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: -1 }),
+    ).toThrow(/maxRetries/);
+  });
+
   it("accepts valid positive integer", () => {
     expect(
       () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 5 }),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// timeout validation
+// ---------------------------------------------------------------------------
+
+describe("timeout validation", () => {
+  it("rejects NaN", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: NaN }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects Infinity", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: Infinity }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects zero", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: 0 }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects negative", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: -1 }),
+    ).toThrow(/timeout/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apiKey validation
+// ---------------------------------------------------------------------------
+
+describe("apiKey validation", () => {
+  it("rejects empty string", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "" }),
+    ).toThrow(/apiKey/);
+  });
+
+  it("rejects null byte in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\x00evil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects newline in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\nevil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects carriage return in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\revil" }),
+    ).toThrow(/control characters/);
   });
 });
 
