@@ -226,7 +226,7 @@ export async function createServerGuard(
   // SSE watcher state
   // -----------------------------------------------------------------------
 
-  const contractSource = new ServerContractSource(client);
+  let contractSource: ServerContractSource | null = null;
   let watchAbort: AbortController | null = null;
   let watchPromise: Promise<void> | null = null;
 
@@ -273,6 +273,7 @@ export async function createServerGuard(
     // -------------------------------------------------------------------
 
     if (autoWatch) {
+      contractSource = new ServerContractSource(client);
       watchAbort = new AbortController();
       watchPromise = _startSseWatcher(
         guard,
@@ -461,10 +462,18 @@ async function _startSseWatcher(
             continue;
           }
           const newBundleName = rawName;
-          const response = await client.get(
-            `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
-            { env: client.env },
-          );
+
+          // Fetch new bundle — network errors are fetch_error, not parse_error
+          let response: Record<string, unknown>;
+          try {
+            response = await client.get(
+              `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
+              { env: client.env },
+            );
+          } catch (err) {
+            onWatchError?.({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+            continue;
+          }
 
           const yamlB64 = response["yaml_bytes"];
           if (typeof yamlB64 !== "string") {
@@ -577,14 +586,16 @@ async function _waitForAssignment(
 async function _cleanupResources(
   watchAbort: AbortController | null,
   watchPromise: Promise<void> | null,
-  contractSource: ServerContractSource,
+  contractSource: ServerContractSource | null,
   auditSink: AuditSink,
   client: EdictumServerClient,
 ): Promise<void> {
   if (watchAbort) {
     watchAbort.abort();
   }
-  await contractSource.close();
+  if (contractSource) {
+    await contractSource.close();
+  }
 
   if (watchPromise) {
     try {

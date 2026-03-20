@@ -337,7 +337,7 @@ export class EdictumServerClient {
    * @internal
    */
   updateBundleName(name: string): void {
-    if (!SAFE_IDENTIFIER_RE.test(name)) {
+    if (name.length > 128 || !SAFE_IDENTIFIER_RE.test(name)) {
       throw new EdictumConfigError(
         `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );

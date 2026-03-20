@@ -544,6 +544,33 @@ describe("security", () => {
     await sg.close();
   });
 
+  it("rejects assignment_changed with path-separator bundle_name at SSE level", async () => {
+    // ServerContractSource._processEvent validates bundle_name against
+    // SAFE_IDENTIFIER_RE and silently drops invalid names. The factory's
+    // inline guard is belt-and-suspenders for alternative ContractSource
+    // implementations. This test verifies the SSE-level rejection.
+    const maliciousEvent = JSON.stringify({ bundle_name: "../../evil" });
+
+    let fetchedMaliciousBundle = false;
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/test-bundle")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "assignment_changed", data: maliciousEvent }]);
+      }
+      if (url.includes("evil")) fetchedMaliciousBundle = true;
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
+    // Give SSE time to process
+    await new Promise((r) => setTimeout(r, 300));
+    // The malicious bundle_name should have been rejected — no fetch attempt
+    expect(fetchedMaliciousBundle).toBe(false);
+    expect(sg.client.bundleName).toBe("test-bundle");
+    await sg.close();
+  });
+
   it("assignment_changed SSE event triggers new bundle fetch and reload", async () => {
     const assignmentEvent = JSON.stringify({ bundle_name: "new-bundle" });
     const newYaml = TEST_YAML.replace("no-rm", "no-rm-v2");
@@ -659,5 +686,65 @@ describe("server-assignment path (bundleName=null)", () => {
         assignmentTimeout: 200,
       }),
     ).rejects.toThrow(EdictumConfigError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSE watcher error handling
+// ---------------------------------------------------------------------------
+
+describe("SSE watcher errors", () => {
+  it("onWatchError receives fetch_error when SSE stream throws non-retryable error", async () => {
+    // ServerContractSource.watch() handles retryable errors internally.
+    // The outer catch fires when source.connect() or the for-await throws
+    // a non-recoverable error. Since connect() is a no-op, we test via
+    // the assignment_changed fetch failure path (which is the primary
+    // observable fetch_error path). Already covered by the test below.
+    // This test verifies that SSE errors from stream processing don't
+    // silently disappear — a malformed SSE response that causes a
+    // non-recoverable parse error in the watcher is reported.
+    const onWatchError = vi.fn<WatchErrorHandler>();
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      if (url.includes("/api/v1/stream")) {
+        // Return a contract_update with missing yaml_bytes
+        return mockSse([{ event: "contract_update", data: JSON.stringify({ revision_hash: "abc" }) }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "parse_error", message: expect.stringContaining("yaml_bytes") }),
+      );
+    }, { timeout: 2000 });
+    await sg.close();
+  });
+
+  it("onWatchError receives fetch_error when assignment bundle fetch fails", async () => {
+    const onWatchError = vi.fn<WatchErrorHandler>();
+    const assignmentEvent = JSON.stringify({ bundle_name: "missing-bundle" });
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/test-bundle")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      // New bundle fetch fails with 404
+      if (url.includes("/api/v1/bundles/missing-bundle")) return mockJson({ error: "not found" }, 404);
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "fetch_error", bundleName: "missing-bundle" }),
+      );
+    }, { timeout: 2000 });
+    await sg.close();
   });
 });

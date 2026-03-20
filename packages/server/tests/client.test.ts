@@ -459,3 +459,36 @@ describe("URL normalization", () => {
     expect(client.baseUrl).toBe("https://api.example.com");
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateBundleName
+// ---------------------------------------------------------------------------
+
+describe("updateBundleName", () => {
+  it("updates bundleName for valid name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(client.bundleName).toBeNull();
+    client.updateBundleName("new-bundle");
+    expect(client.bundleName).toBe("new-bundle");
+  });
+
+  it("rejects empty name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => client.updateBundleName("")).toThrow();
+  });
+
+  it("rejects name with spaces", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => client.updateBundleName("invalid name")).toThrow();
+  });
+
+  it("rejects name exceeding 128 chars", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => client.updateBundleName("a".repeat(129))).toThrow();
+  });
+
+  it("rejects name with path separators", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => client.updateBundleName("../../evil")).toThrow();
+  });
+});
