@@ -409,9 +409,14 @@ async function _fetchAndBuildGuard(
   // Verify signature if required
   if (verifySignatures) {
     const signature = response["signature"];
-    if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
+    if (typeof signature !== "string" || signature.length === 0) {
       throw new EdictumConfigError(
         "Bundle signature missing but verifySignatures is enabled",
+      );
+    }
+    if (signature.length > MAX_SIGNATURE_LENGTH) {
+      throw new EdictumConfigError(
+        `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
       );
     }
     verifyBundleSignature(yamlBytes, signature, signingPublicKey as string);
@@ -504,7 +509,7 @@ async function _startSseWatcher(
           // authoritative validation. This guard protects against alternative
           // ContractSource implementations that skip validation.
           const rawName = bundle["bundle_name"];
-          if (typeof rawName !== "string" || rawName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(rawName)) {
+          if (typeof rawName !== "string" || rawName.length > 256 || !SAFE_IDENTIFIER_RE.test(rawName)) {
             safeNotify({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
             continue;
           }
@@ -543,8 +548,12 @@ async function _startSseWatcher(
 
           if (verifySignatures) {
             const signature = response["signature"];
-            if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
-              safeNotify({ type: "signature_rejected", message: "Bundle signature missing", bundleName: newBundleName });
+            if (typeof signature !== "string" || signature.length === 0) {
+              safeNotify({ type: "signature_rejected", message: "Bundle signature missing but verifySignatures is enabled", bundleName: newBundleName });
+              continue;
+            }
+            if (signature.length > MAX_SIGNATURE_LENGTH) {
+              safeNotify({ type: "signature_rejected", message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`, bundleName: newBundleName });
               continue;
             }
             try {
@@ -574,8 +583,12 @@ async function _startSseWatcher(
 
           if (verifySignatures) {
             const signature = bundle["signature"];
-            if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
-              safeNotify({ type: "signature_rejected", message: "Bundle signature missing" });
+            if (typeof signature !== "string" || signature.length === 0) {
+              safeNotify({ type: "signature_rejected", message: "Bundle signature missing but verifySignatures is enabled" });
+              continue;
+            }
+            if (signature.length > MAX_SIGNATURE_LENGTH) {
+              safeNotify({ type: "signature_rejected", message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})` });
               continue;
             }
             try {
@@ -672,8 +685,11 @@ async function _cleanupResources(
   if ("close" in auditSink && typeof auditSink.close === "function") {
     try {
       await (auditSink as { close(): Promise<void> }).close();
-    } catch {
-      // Ignore flush errors during shutdown
+    } catch (err) {
+      console.warn(
+        "[edictum] WARNING: Failed to flush audit sink on shutdown. Some events may have been lost.",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 

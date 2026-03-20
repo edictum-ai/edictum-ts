@@ -365,9 +365,26 @@ describe("constructor validation", () => {
     expect(() => new ServerContractSource(client, { maxReconnectDelay: NaN })).toThrow(/maxReconnectDelay/);
   });
 
+  it("rejects maxReconnectDelay = Infinity", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { maxReconnectDelay: Infinity })).toThrow(/maxReconnectDelay/);
+  });
+
   it("accepts valid reconnectDelay and maxReconnectDelay", () => {
     const client = mockClient();
     expect(() => new ServerContractSource(client, { reconnectDelay: 500, maxReconnectDelay: 5000 })).not.toThrow();
+  });
+
+  it("reconnectDelay is used as initial delay value", () => {
+    const client = mockClient();
+    const source = new ServerContractSource(client, { reconnectDelay: 200 });
+    expect((source as any)._reconnectDelay).toBe(200);
+  });
+
+  it("maxReconnectDelay caps backoff", () => {
+    const client = mockClient();
+    const source = new ServerContractSource(client, { reconnectDelay: 500, maxReconnectDelay: 2000 });
+    expect((source as any)._maxReconnectDelay).toBe(2000);
   });
 });
 

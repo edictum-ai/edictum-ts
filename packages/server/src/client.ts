@@ -90,14 +90,14 @@ export class EdictumServerClient {
       ["agentId", agentId],
       ["env", env],
     ] as const) {
-      if (value.length > 10_000 || !SAFE_IDENTIFIER_RE.test(value)) {
+      if (value.length > 256 || !SAFE_IDENTIFIER_RE.test(value)) {
         throw new EdictumConfigError(
           `Invalid ${name}: ${JSON.stringify(value)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
         );
       }
     }
 
-    if (bundleName !== null && (bundleName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(bundleName))) {
+    if (bundleName !== null && (bundleName.length > 256 || !SAFE_IDENTIFIER_RE.test(bundleName))) {
       throw new EdictumConfigError(
         `Invalid bundleName: ${JSON.stringify(bundleName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
@@ -357,7 +357,7 @@ export function _setClientBundleName(
   client: EdictumServerClient,
   name: string,
 ): void {
-  if (name.length > 10_000 || !SAFE_IDENTIFIER_RE.test(name)) {
+  if (name.length > 256 || !SAFE_IDENTIFIER_RE.test(name)) {
     throw new EdictumConfigError(
       `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
     );
