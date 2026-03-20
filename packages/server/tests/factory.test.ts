@@ -490,23 +490,6 @@ describe("security", () => {
     // Serve an unsigned update via SSE
     const unsignedBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64 });
 
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input);
-      if (url.includes("/api/v1/bundles/")) {
-        // Initial fetch with valid signature
-        const kp = generateKeyPairSync("ed25519");
-        const s = sign(null, Buffer.from(TEST_YAML), kp.privateKey);
-        const pubDer = kp.publicKey.export({ type: "spki", format: "der" });
-        // We need the matching pubkey to be used consistently — simplify:
-        // use autoWatch=false for initial fetch, then manually test the watcher behavior
-        return mockJson({ yaml_bytes: TEST_YAML_B64 });
-      }
-      if (url.includes("/api/v1/stream")) {
-        return mockSse([{ event: "contract_update", data: unsignedBundle }]);
-      }
-      return mockJson({ error: "not found" }, 404);
-    });
-
     const keypair = generateKeyPairSync("ed25519");
     const pubDer = keypair.publicKey.export({ type: "spki", format: "der" });
     const pubHex = Buffer.from(pubDer.subarray(-32)).toString("hex");
@@ -711,6 +694,34 @@ describe("server-assignment path (bundleName=null)", () => {
         assignmentTimeout: 200,
       }),
     ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("succeeds when SSE delivers assignment before timeout", async () => {
+    const assignmentEvent = JSON.stringify({ bundle_name: "assigned-bundle" });
+    const assignedYamlB64 = Buffer.from(TEST_YAML.replace("no-rm", "assigned-contract")).toString("base64");
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/assigned-bundle/current")) {
+        return mockJson({ yaml_bytes: assignedYamlB64 });
+      }
+      if (url.includes("/api/v1/stream")) {
+        return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
+      }
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: null,
+      autoWatch: true,
+      assignmentTimeout: 5000,
+    });
+
+    expect(sg.guard).toBeInstanceOf(Edictum);
+    expect(sg.guard.policyVersion).toBeTruthy();
+    expect(sg.client.bundleName).toBe("assigned-bundle");
+    await sg.close();
   });
 });
 

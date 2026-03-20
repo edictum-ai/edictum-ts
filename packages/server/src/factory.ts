@@ -462,16 +462,16 @@ async function _startSseWatcher(
     for await (const bundle of source.watch()) {
       if (signal.aborted) return;
 
+      let newBundleName: string | null = null;
       try {
         let yamlContent: string;
-        let newBundleName: string | null = null;
 
         if (bundle["_assignment_changed"] === true) {
           // Assignment changed — fetch the new bundle
           // Inline validation: _processEvent already validates, but we
           // guard here to avoid implicit cross-file safety dependency.
           const rawName = bundle["bundle_name"];
-          if (typeof rawName !== "string" || !SAFE_IDENTIFIER_RE.test(rawName)) {
+          if (typeof rawName !== "string" || rawName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(rawName)) {
             onWatchError?.({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
             continue;
           }
@@ -552,14 +552,15 @@ async function _startSseWatcher(
         }
 
         guard.reload(yamlContent);
-
-        // Update bundle name only after reload succeeds — keeps client
-        // state consistent with what the guard is actually enforcing.
-        if (newBundleName !== null) {
-          _setClientBundleName(client, newBundleName);
-        }
       } catch (err) {
         onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
+        continue;
+      }
+
+      // Update bundle name only after reload succeeds — outside the
+      // try/catch so failures here have a distinct propagation path.
+      if (newBundleName !== null) {
+        _setClientBundleName(client, newBundleName);
       }
     }
   } catch (err) {
