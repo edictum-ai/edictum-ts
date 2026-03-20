@@ -562,9 +562,19 @@ describe("security", () => {
       return mockJson({ error: "not found" }, 404);
     });
 
+    let sseCallCount = 0;
+    const origImpl = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/stream")) sseCallCount++;
+      return origImpl(input, init);
+    });
+
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle" });
-    // Give SSE time to process
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for SSE to be called (stream processes then closes, triggering reconnect)
+    await vi.waitFor(() => {
+      expect(sseCallCount).toBeGreaterThanOrEqual(1);
+    }, { timeout: 2000 });
     // The malicious bundle_name should have been rejected — no fetch attempt
     expect(fetchedMaliciousBundle).toBe(false);
     expect(sg.client.bundleName).toBe("test-bundle");
@@ -662,6 +672,21 @@ describe("parameter behavior (additional)", () => {
     await sg.guard.run("SafeTool", {}, async () => "ok");
     // Session tracking uses increment for attempt counts
     expect(customBackend.increment).toHaveBeenCalled();
+    await sg.close();
+  });
+
+  it("custom approvalBackend is wired to the guard", async () => {
+    const customApproval = {
+      requestApproval: vi.fn(async () => ({ approvalId: "test" })),
+      waitForDecision: vi.fn(async () => ({ approved: true, status: "approved" })),
+    };
+    setupFullMock();
+    const sg = await createServerGuard({
+      ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false,
+      approvalBackend: customApproval,
+    });
+    // Verify the backend was wired through (internal field)
+    expect(sg.guard._approvalBackend).toBe(customApproval);
     await sg.close();
   });
 });

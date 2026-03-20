@@ -100,12 +100,23 @@ export interface CreateServerGuardOptions {
   readonly onWatchError?: WatchErrorHandler;
 }
 
+/** Read-only view of the server client exposed via ServerGuard. */
+export interface ServerGuardClient {
+  readonly baseUrl: string;
+  readonly agentId: string;
+  readonly env: string;
+  readonly bundleName: string | null;
+  readonly tags: Readonly<Record<string, string>> | null;
+  readonly timeout: number;
+  readonly maxRetries: number;
+}
+
 /** A server-connected guard with lifecycle management. */
 export interface ServerGuard {
   /** The configured Edictum guard. */
   readonly guard: Edictum;
-  /** The underlying server client. */
-  readonly client: EdictumServerClient;
+  /** Read-only view of the server client (updateBundleName not exposed). */
+  readonly client: ServerGuardClient;
   /** Stop SSE watcher, flush audit events, close connections. */
   close(): Promise<void>;
 }
@@ -504,11 +515,6 @@ async function _startSseWatcher(
           }
 
           yamlContent = new TextDecoder().decode(yamlBytes);
-
-          // Update the client's effective bundle name for SSE reconnection.
-          // EdictumServerClient.bundleName is readonly by design. We use
-          // updateBundleName() which re-validates the identifier.
-          client.updateBundleName(newBundleName);
         } else {
           // Contract update — extract YAML from SSE payload
           const yamlB64 = bundle["yaml_bytes"];
@@ -543,6 +549,15 @@ async function _startSseWatcher(
         }
 
         guard.reload(yamlContent);
+
+        // Update bundle name only after reload succeeds — keeps client
+        // state consistent with what the guard is actually enforcing.
+        if (bundle["_assignment_changed"] === true) {
+          const assignedName = bundle["bundle_name"];
+          if (typeof assignedName === "string") {
+            client.updateBundleName(assignedName);
+          }
+        }
       } catch (err) {
         onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
       }

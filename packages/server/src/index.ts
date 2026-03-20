@@ -30,4 +30,4 @@ export {
 
 // Factory
 export { createServerGuard } from "./factory.js";
-export type { CreateServerGuardOptions, ServerGuard, WatchErrorHandler } from "./factory.js";
+export type { CreateServerGuardOptions, ServerGuard, ServerGuardClient, WatchErrorHandler } from "./factory.js";
