@@ -58,10 +58,16 @@ export class EdictumServerClient {
   }
 
   /**
-   * Set the bundle name. Called only by _setClientBundleName().
+   * Set the bundle name with validation. Defence-in-depth: validates
+   * even though _setClientBundleName also validates before calling.
    * @internal
    */
   _setBundleName(name: string): void {
+    if (name.length > 10_000 || !SAFE_IDENTIFIER_RE.test(name)) {
+      throw new EdictumConfigError(
+        `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+      );
+    }
     this._bundleName = name;
   }
 
@@ -186,13 +192,6 @@ export class EdictumServerClient {
     this.agentId = agentId;
     this.env = env;
     this._bundleName = bundleName;
-    // Expose bundleName as own enumerable property so Object.keys(),
-    // JSON.stringify(), and spread include it (getters are on prototype).
-    Object.defineProperty(this, "bundleName", {
-      get: () => this._bundleName,
-      enumerable: true,
-      configurable: false,
-    });
     this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(

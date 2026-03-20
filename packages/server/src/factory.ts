@@ -135,6 +135,9 @@ const DEFAULT_ASSIGNMENT_TIMEOUT_MS = 30_000;
  */
 const MAX_BUNDLE_B64_LENGTH = Math.ceil(512 * 1024 * 4 / 3);
 
+/** Max base64 signature length. Ed25519 sigs are 64 bytes = 88 chars base64. */
+const MAX_SIGNATURE_LENGTH = 512;
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -406,7 +409,7 @@ async function _fetchAndBuildGuard(
   // Verify signature if required
   if (verifySignatures) {
     const signature = response["signature"];
-    if (typeof signature !== "string" || signature.length === 0) {
+    if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
       throw new EdictumConfigError(
         "Bundle signature missing but verifySignatures is enabled",
       );
@@ -476,6 +479,11 @@ async function _startSseWatcher(
   signal: AbortSignal,
   onWatchError: WatchErrorHandler | null,
 ): Promise<void> {
+  // Safe wrapper: user callback must never crash the watcher or double-fire
+  const safeNotify = (error: Parameters<WatchErrorHandler>[0]): void => {
+    try { onWatchError?.(error); } catch { /* user callback error swallowed */ }
+  };
+
   // Fail-fast: validate preconditions within this function, not just the caller
   if (verifySignatures && signingPublicKey === null) {
     throw new EdictumConfigError("signingPublicKey is required when verifySignatures is true");
@@ -497,7 +505,7 @@ async function _startSseWatcher(
           // ContractSource implementations that skip validation.
           const rawName = bundle["bundle_name"];
           if (typeof rawName !== "string" || rawName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(rawName)) {
-            onWatchError?.({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
+            safeNotify({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
             continue;
           }
           newBundleName = rawName;
@@ -511,7 +519,7 @@ async function _startSseWatcher(
             );
           } catch (err) {
             try {
-              onWatchError?.({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+              safeNotify({ type: "fetch_error", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
             } catch { /* user callback must not kill the watcher */ }
             continue;
           }
@@ -520,7 +528,7 @@ async function _startSseWatcher(
 
           const yamlB64 = response["yaml_bytes"];
           if (typeof yamlB64 !== "string") {
-            onWatchError?.({ type: "parse_error", message: "Bundle response missing 'yaml_bytes' field", bundleName: newBundleName });
+            safeNotify({ type: "parse_error", message: "Bundle response missing 'yaml_bytes' field", bundleName: newBundleName });
             continue;
           }
 
@@ -528,20 +536,20 @@ async function _startSseWatcher(
           try {
             yamlBytes = _decodeYamlB64(yamlB64);
           } catch (err) {
-            onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed", bundleName: newBundleName });
+            safeNotify({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed", bundleName: newBundleName });
             continue;
           }
 
           if (verifySignatures) {
             const signature = response["signature"];
-            if (typeof signature !== "string" || signature.length === 0) {
-              onWatchError?.({ type: "signature_rejected", message: "Bundle signature missing", bundleName: newBundleName });
+            if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
+              safeNotify({ type: "signature_rejected", message: "Bundle signature missing", bundleName: newBundleName });
               continue;
             }
             try {
               verifyBundleSignature(yamlBytes, signature, signingPublicKey as string);
             } catch (err) {
-              onWatchError?.({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
+              safeNotify({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err), bundleName: newBundleName });
               continue;
             }
           }
@@ -551,7 +559,7 @@ async function _startSseWatcher(
           // Contract update — extract YAML from SSE payload
           const yamlB64 = bundle["yaml_bytes"];
           if (typeof yamlB64 !== "string") {
-            onWatchError?.({ type: "parse_error", message: "SSE bundle payload missing 'yaml_bytes' field" });
+            safeNotify({ type: "parse_error", message: "SSE bundle payload missing 'yaml_bytes' field" });
             continue;
           }
 
@@ -559,20 +567,20 @@ async function _startSseWatcher(
           try {
             yamlBytes = _decodeYamlB64(yamlB64);
           } catch (err) {
-            onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed" });
+            safeNotify({ type: "parse_error", message: err instanceof Error ? err.message : "Base64 decode failed" });
             continue;
           }
 
           if (verifySignatures) {
             const signature = bundle["signature"];
-            if (typeof signature !== "string" || signature.length === 0) {
-              onWatchError?.({ type: "signature_rejected", message: "Bundle signature missing" });
+            if (typeof signature !== "string" || signature.length === 0 || signature.length > MAX_SIGNATURE_LENGTH) {
+              safeNotify({ type: "signature_rejected", message: "Bundle signature missing" });
               continue;
             }
             try {
               verifyBundleSignature(yamlBytes, signature, signingPublicKey as string);
             } catch (err) {
-              onWatchError?.({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err) });
+              safeNotify({ type: "signature_rejected", message: err instanceof Error ? err.message : String(err) });
               continue;
             }
           }
@@ -582,9 +590,7 @@ async function _startSseWatcher(
 
         guard.reload(yamlContent);
       } catch (err) {
-        try {
-          onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
-        } catch { /* user callback must not kill the watcher */ }
+        safeNotify({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
         continue;
       }
 
@@ -595,12 +601,10 @@ async function _startSseWatcher(
     }
   } catch (err) {
     if (!signal.aborted) {
-      try {
-        onWatchError?.({
-          type: "fetch_error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-      } catch { /* user callback must not kill the watcher */ }
+      safeNotify({
+        type: "fetch_error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }

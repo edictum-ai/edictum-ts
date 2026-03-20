@@ -240,7 +240,7 @@ describe("SSE watcher errors", () => {
       return mockJson({ error: "not found" }, 404);
     });
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError: throwingHandler });
-    await vi.waitFor(() => { expect(throwingHandler).toHaveBeenCalled(); }, { timeout: 2000 });
+    await vi.waitFor(() => { expect(throwingHandler).toHaveBeenCalledTimes(1); }, { timeout: 2000 });
     expect(sg.guard).toBeInstanceOf(Edictum);
     await sg.close();
   });
