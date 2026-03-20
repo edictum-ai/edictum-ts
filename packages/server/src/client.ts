@@ -328,27 +328,29 @@ export class EdictumServerClient {
     }
   }
 
-  /**
-   * Update the effective bundle name for subsequent requests.
-   *
-   * Used by the SSE watcher when a server assignment changes.
-   * Re-validates the name against SAFE_IDENTIFIER_RE.
-   *
-   * @internal
-   */
-  updateBundleName(name: string): void {
-    if (!SAFE_IDENTIFIER_RE.test(name)) {
-      throw new EdictumConfigError(
-        `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
-      );
-    }
-    this._bundleName = name;
-  }
-
   /** Close this client (no-op for fetch-based client, kept for API parity). */
   async close(): Promise<void> {
     // Native fetch() doesn't require explicit connection cleanup.
   }
+}
+
+/**
+ * Update a client's effective bundle name. Internal to the server package —
+ * only used by the factory's SSE watcher after a successful contract reload.
+ * Not exported from index.ts.
+ */
+export function _setClientBundleName(
+  client: EdictumServerClient,
+  name: string,
+): void {
+  if (!SAFE_IDENTIFIER_RE.test(name)) {
+    throw new EdictumConfigError(
+      `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+    );
+  }
+  // Access private field — safe because this is a package-internal function
+  // co-located with the class definition.
+  (client as unknown as { _bundleName: string | null })._bundleName = name;
 }
 
 function sleep(ms: number): Promise<void> {

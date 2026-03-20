@@ -461,34 +461,57 @@ describe("URL normalization", () => {
 });
 
 // ---------------------------------------------------------------------------
-// updateBundleName
+// _setClientBundleName (package-internal)
 // ---------------------------------------------------------------------------
 
-describe("updateBundleName", () => {
+import { _setClientBundleName } from "../src/client.js";
+
+describe("_setClientBundleName", () => {
   it("updates bundleName for valid name", () => {
     const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
     expect(client.bundleName).toBeNull();
-    client.updateBundleName("new-bundle");
+    _setClientBundleName(client, "new-bundle");
     expect(client.bundleName).toBe("new-bundle");
   });
 
   it("rejects empty name", () => {
     const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
-    expect(() => client.updateBundleName("")).toThrow();
+    expect(() => _setClientBundleName(client, "")).toThrow("Invalid bundleName");
   });
 
   it("rejects name with spaces", () => {
     const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
-    expect(() => client.updateBundleName("invalid name")).toThrow();
+    expect(() => _setClientBundleName(client, "invalid name")).toThrow("Invalid bundleName");
   });
 
   it("rejects name exceeding 128 chars", () => {
     const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
-    expect(() => client.updateBundleName("a".repeat(129))).toThrow();
+    expect(() => _setClientBundleName(client, "a".repeat(129))).toThrow("Invalid bundleName");
   });
 
   it("rejects name with path separators", () => {
     const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
-    expect(() => client.updateBundleName("../../evil")).toThrow();
+    expect(() => _setClientBundleName(client, "../../evil")).toThrow("Invalid bundleName");
+  });
+
+  // Security: control character bypass tests
+  it("rejects null byte in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\x00evil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects newline in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\nevil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects carriage return in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\revil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects leading dot in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, ".hidden-bundle")).toThrow("Invalid bundleName");
   });
 });

@@ -772,4 +772,32 @@ describe("SSE watcher errors", () => {
     }, { timeout: 2000 });
     await sg.close();
   });
+
+  it("onWatchError receives parse_error when assignment bundle has invalid YAML", async () => {
+    const onWatchError = vi.fn<WatchErrorHandler>();
+    const badYamlB64 = Buffer.from("not: valid: yaml: bundle").toString("base64");
+    const assignmentEvent = JSON.stringify({ bundle_name: "bad-bundle" });
+
+    mockFetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = extractUrl(input);
+      if (url.includes("/api/v1/bundles/test-bundle/current")) return mockJson({ yaml_bytes: TEST_YAML_B64 });
+      if (url.includes("/api/v1/bundles/bad-bundle/current")) return mockJson({ yaml_bytes: badYamlB64 });
+      if (url.includes("/api/v1/stream")) return mockSse([{ event: "assignment_changed", data: assignmentEvent }]);
+      return mockJson({ error: "not found" }, 404);
+    });
+
+    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
+    const initialVersion = sg.guard.policyVersion;
+
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "parse_error" }),
+      );
+    }, { timeout: 2000 });
+
+    // Contracts unchanged, bundle name NOT updated (reload failed)
+    expect(sg.guard.policyVersion).toBe(initialVersion);
+    expect(sg.client.bundleName).toBe("test-bundle");
+    await sg.close();
+  });
 });

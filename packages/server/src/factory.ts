@@ -24,7 +24,7 @@ import type {
   ToolEnvelope,
 } from "@edictum/core";
 
-import { EdictumServerClient, SAFE_IDENTIFIER_RE } from "./client.js";
+import { EdictumServerClient, SAFE_IDENTIFIER_RE, _setClientBundleName } from "./client.js";
 import type { EdictumServerClientOptions } from "./client.js";
 import { ServerAuditSink } from "./audit-sink.js";
 import { ServerApprovalBackend } from "./approval-backend.js";
@@ -328,10 +328,13 @@ export async function createServerGuard(
   // Return ServerGuard with lifecycle management
   // -----------------------------------------------------------------------
 
+  let closed = false;
   return {
     guard,
     client,
     async close(): Promise<void> {
+      if (closed) return;
+      closed = true;
       await _cleanupResources(
         watchAbort,
         watchPromise,
@@ -454,14 +457,14 @@ async function _startSseWatcher(
   signal: AbortSignal,
   onWatchError: WatchErrorHandler | null,
 ): Promise<void> {
-  await source.connect();
-
   try {
+    await source.connect();
     for await (const bundle of source.watch()) {
       if (signal.aborted) return;
 
       try {
         let yamlContent: string;
+        let newBundleName: string | null = null;
 
         if (bundle["_assignment_changed"] === true) {
           // Assignment changed — fetch the new bundle
@@ -472,7 +475,7 @@ async function _startSseWatcher(
             onWatchError?.({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
             continue;
           }
-          const newBundleName = rawName;
+          newBundleName = rawName;
 
           // Fetch new bundle — network errors are fetch_error, not parse_error
           let response: Record<string, unknown>;
@@ -552,11 +555,8 @@ async function _startSseWatcher(
 
         // Update bundle name only after reload succeeds — keeps client
         // state consistent with what the guard is actually enforcing.
-        if (bundle["_assignment_changed"] === true) {
-          const assignedName = bundle["bundle_name"];
-          if (typeof assignedName === "string") {
-            client.updateBundleName(assignedName);
-          }
+        if (newBundleName !== null) {
+          _setClientBundleName(client, newBundleName);
         }
       } catch (err) {
         onWatchError?.({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
