@@ -117,7 +117,7 @@ export class ServerContractSource {
         const resetIdleTimer = (): void => {
           if (idleTimer !== null) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
-            // Abort the connection — reader.read() will throw, triggering reconnect
+            // Abort the connection if still active — reader.read() will throw, triggering reconnect. No-op if source is already closed.
             this._abortController?.abort();
           }, SSE_IDLE_TIMEOUT_MS);
         };
@@ -251,7 +251,7 @@ export class ServerContractSource {
       const newBundle = obj["bundle_name"];
       if (
         typeof newBundle !== "string" ||
-        newBundle.length > 10_000 ||
+        newBundle.length > 128 ||
         !SAFE_IDENTIFIER_RE.test(newBundle)
       ) {
         return null;

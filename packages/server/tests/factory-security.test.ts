@@ -212,7 +212,7 @@ describe("SSE watcher errors", () => {
     await sg.close();
   });
 
-  it("onWatchError receives parse_error when assignment bundle has invalid YAML", async () => {
+  it("onWatchError receives reload_error when assignment bundle has invalid YAML", async () => {
     const onWatchError = vi.fn<WatchErrorHandler>();
     const badYamlB64 = Buffer.from("not: valid: yaml: bundle").toString("base64");
     const assignmentEvent = JSON.stringify({ bundle_name: "bad-bundle" });
@@ -226,7 +226,7 @@ describe("SSE watcher errors", () => {
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", onWatchError });
     const initialVersion = sg.guard.policyVersion;
     await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: "parse_error" }));
+      expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: "reload_error" }));
     }, { timeout: 2000 });
     expect(sg.guard.policyVersion).toBe(initialVersion);
     expect(sg.client.bundleName).toBe("test-bundle");

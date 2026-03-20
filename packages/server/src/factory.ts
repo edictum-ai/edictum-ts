@@ -38,7 +38,7 @@ import { verifyBundleSignature } from "./verification.js";
 
 /** Callback for SSE watcher errors (signature rejections, parse failures). */
 export type WatchErrorHandler = (error: {
-  readonly type: "signature_rejected" | "parse_error" | "fetch_error";
+  readonly type: "signature_rejected" | "parse_error" | "fetch_error" | "reload_error";
   readonly message: string;
   readonly bundleName?: string;
 }) => void;
@@ -188,6 +188,9 @@ export async function createServerGuard(
 
   // -----------------------------------------------------------------------
   // Validation
+  // Note: TLS enforcement is validated inside EdictumServerClient constructor.
+  // Application-level checks (bundleName, verifySignatures, assignmentTimeout)
+  // are validated here first for clearer error messages on common misconfigurations.
   // -----------------------------------------------------------------------
 
   if (bundleName == null && !autoWatch) {
@@ -509,7 +512,7 @@ async function _startSseWatcher(
           // authoritative validation. This guard protects against alternative
           // ContractSource implementations that skip validation.
           const rawName = bundle["bundle_name"];
-          if (typeof rawName !== "string" || rawName.length > 256 || !SAFE_IDENTIFIER_RE.test(rawName)) {
+          if (typeof rawName !== "string" || rawName.length > 128 || !SAFE_IDENTIFIER_RE.test(rawName)) {
             safeNotify({ type: "parse_error", message: "Invalid bundle_name in assignment_changed event" });
             continue;
           }
@@ -605,7 +608,7 @@ async function _startSseWatcher(
         // reload() is synchronous (returns void) — atomic state swap
         guard.reload(yamlContent);
       } catch (err) {
-        safeNotify({ type: "parse_error", message: err instanceof Error ? err.message : String(err) });
+        safeNotify({ type: "reload_error", message: err instanceof Error ? err.message : String(err) });
         continue;
       }
 
@@ -643,11 +646,11 @@ async function _waitForAssignment(
   }
 
   while (Date.now() - start < timeoutMs) {
-    if (guard.policyVersion != null) {
-      return true;
-    }
     if (watcherDied) {
       return false; // Watcher exited — no point waiting further
+    }
+    if (guard.policyVersion != null) {
+      return true;
     }
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }

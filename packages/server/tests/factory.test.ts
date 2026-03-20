@@ -395,6 +395,8 @@ describe("parameter behavior", () => {
     };
     setup();
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: "test-bundle", autoWatch: false, approvalBackend: customApproval });
+    // Verify via internal field — no approval-type contract in the test
+    // YAML to trigger the approval flow behaviorally.
     expect(sg.guard._approvalBackend).toBe(customApproval);
     await sg.close();
   });
