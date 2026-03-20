@@ -5,6 +5,8 @@
  * logic, and event handling form a cohesive streaming client.
  */
 
+import { EdictumConfigError } from "@edictum/core";
+
 import type { EdictumServerClient } from "./client.js";
 import { SAFE_IDENTIFIER_RE } from "./client.js";
 
@@ -35,8 +37,20 @@ export class ServerContractSource {
     },
   ) {
     this._client = client;
-    this._reconnectDelay = options?.reconnectDelay ?? 1_000;
-    this._maxReconnectDelay = options?.maxReconnectDelay ?? 60_000;
+    const reconnectDelay = options?.reconnectDelay ?? 1_000;
+    const maxReconnectDelay = options?.maxReconnectDelay ?? 60_000;
+    if (!Number.isFinite(reconnectDelay) || reconnectDelay <= 0) {
+      throw new EdictumConfigError(
+        `reconnectDelay must be a positive finite number, got ${reconnectDelay}`,
+      );
+    }
+    if (!Number.isFinite(maxReconnectDelay) || maxReconnectDelay < reconnectDelay) {
+      throw new EdictumConfigError(
+        `maxReconnectDelay must be a finite number >= reconnectDelay (${reconnectDelay}), got ${maxReconnectDelay}`,
+      );
+    }
+    this._reconnectDelay = reconnectDelay;
+    this._maxReconnectDelay = maxReconnectDelay;
   }
 
   /** Mark the source as ready to receive events.
