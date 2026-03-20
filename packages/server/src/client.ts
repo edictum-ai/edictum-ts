@@ -166,10 +166,10 @@ export class EdictumServerClient {
       }
     }
 
-    // Validate maxRetries is at least 1
-    if (maxRetries < 1) {
+    // Validate maxRetries is a positive integer
+    if (!Number.isFinite(maxRetries) || !Number.isInteger(maxRetries) || maxRetries < 1) {
       throw new EdictumConfigError(
-        `maxRetries must be >= 1, got ${maxRetries}`,
+        `maxRetries must be a positive integer >= 1, got ${maxRetries}`,
       );
     }
 

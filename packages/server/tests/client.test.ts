@@ -461,6 +461,42 @@ describe("URL normalization", () => {
 });
 
 // ---------------------------------------------------------------------------
+// maxRetries validation
+// ---------------------------------------------------------------------------
+
+describe("maxRetries validation", () => {
+  it("rejects NaN", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: NaN }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects Infinity", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: Infinity }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects non-integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 1.5 }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects zero", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 0 }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("accepts valid positive integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 5 }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // _setClientBundleName (package-internal)
 // ---------------------------------------------------------------------------
 

@@ -356,7 +356,19 @@ function _decodeYamlB64(yamlB64: string): Uint8Array {
       `Bundle yaml_bytes exceeds maximum size (base64 length ${yamlB64.length} > ${MAX_BUNDLE_B64_LENGTH})`,
     );
   }
-  return Buffer.from(yamlB64, "base64");
+  // Validate base64 charset before decoding — Buffer.from silently
+  // ignores invalid chars, producing garbage that causes misleading
+  // YAML parse errors downstream. Round-trip check is O(n) and safe.
+  const decoded = Buffer.from(yamlB64, "base64");
+  if (decoded.length === 0 && yamlB64.length > 0) {
+    throw new EdictumConfigError("Bundle yaml_bytes contains invalid base64");
+  }
+  const reEncoded = decoded.toString("base64");
+  // Strip trailing padding for comparison (some servers omit it)
+  if (reEncoded.replace(/=+$/, "") !== yamlB64.replace(/=+$/, "")) {
+    throw new EdictumConfigError("Bundle yaml_bytes contains invalid base64 characters");
+  }
+  return decoded;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,8 +569,7 @@ async function _startSseWatcher(
         continue;
       }
 
-      // Update bundle name only after reload succeeds — outside the
-      // try/catch so failures here have a distinct propagation path.
+      // Update bundle name after successful reload to maintain consistency.
       if (newBundleName !== null) {
         _setClientBundleName(client, newBundleName);
       }
