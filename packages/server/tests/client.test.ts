@@ -355,6 +355,21 @@ describe("retry logic", () => {
     await expect(client.get("/test")).rejects.toThrow(EdictumServerError);
   });
 
+  it("handles 204 No Content without calling json()", async () => {
+    vi.useRealTimers();
+    fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+    });
+
+    const result = await client.delete("/items/1");
+    expect(result).toEqual({});
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("does not retry on 4xx errors", async () => {
     fetchSpy = vi.spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("Not Found", { status: 404 }));

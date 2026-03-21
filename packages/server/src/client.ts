@@ -283,6 +283,12 @@ export class EdictumServerClient {
           );
         }
 
+        // 204 No Content has no body — return empty object instead of
+        // calling .json() which would throw a parse error.
+        if (response.status === 204) {
+          return {};
+        }
+
         return (await response.json()) as Record<string, unknown>;
       } catch (error) {
         if (error instanceof EdictumServerError) {

@@ -52,6 +52,31 @@ export class ServerApprovalBackend implements ApprovalBackend {
       metadata?: Record<string, unknown> | null;
     },
   ): Promise<ApprovalRequest> {
+    // Validate toolName — must be a safe identifier to prevent injection
+    // when interpolated into server API paths or log messages.
+    if (!toolName || !SAFE_IDENTIFIER_RE.test(toolName)) {
+      throw new EdictumConfigError(
+        `Invalid toolName: ${JSON.stringify(toolName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+      );
+    }
+
+    // Validate message — must be non-empty and free of control characters.
+    if (!message || message.length === 0) {
+      throw new EdictumConfigError(
+        "message must be a non-empty string",
+      );
+    }
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(message)) {
+      throw new EdictumConfigError(
+        "message contains invalid control characters",
+      );
+    }
+    if (message.length > 4096) {
+      throw new EdictumConfigError(
+        `message too long (${message.length} > 4096)`,
+      );
+    }
+
     const timeout = options?.timeout ?? 300;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(

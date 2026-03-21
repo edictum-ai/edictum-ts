@@ -78,6 +78,11 @@ export class ServerAuditSink implements AuditSink {
         `maxBufferSize must be an integer >= 1, got ${this._maxBufferSize}`,
       );
     }
+    if (this._maxBufferSize > ServerAuditSink.MAX_BUFFER_SIZE) {
+      throw new EdictumConfigError(
+        `maxBufferSize must be <= ${ServerAuditSink.MAX_BUFFER_SIZE}, got ${this._maxBufferSize}`,
+      );
+    }
   }
 
   /** Convert an AuditEvent to server format and add to batch buffer. */

@@ -481,6 +481,20 @@ describe("ServerAuditSink constructor validation", () => {
     );
   });
 
+  it("rejects maxBufferSize exceeding MAX_BUFFER_SIZE", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { maxBufferSize: ServerAuditSink.MAX_BUFFER_SIZE + 1 }),
+    ).toThrow(/maxBufferSize must be <= /);
+  });
+
+  it("accepts maxBufferSize at MAX_BUFFER_SIZE", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { maxBufferSize: ServerAuditSink.MAX_BUFFER_SIZE }),
+    ).not.toThrow();
+  });
+
   it("accepts valid constructor options", () => {
     const client = mockClient();
     expect(

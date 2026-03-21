@@ -359,6 +359,99 @@ describe("ServerApprovalBackend pending map cap", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// toolName validation
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend toolName validation", () => {
+  it("rejects empty toolName", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("", {}, "msg"),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects toolName with spaces", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("bad tool", {}, "msg"),
+    ).rejects.toThrow(/Invalid toolName/);
+  });
+
+  it("rejects toolName with path separators", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("../../escape", {}, "msg"),
+    ).rejects.toThrow(/Invalid toolName/);
+  });
+
+  it("rejects toolName with null bytes", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("tool\x00evil", {}, "msg"),
+    ).rejects.toThrow(/Invalid toolName/);
+  });
+
+  it("accepts valid toolName", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    const request = await backend.requestApproval("Bash", {}, "msg");
+    expect(request.toolName).toBe("Bash");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// message validation
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend message validation", () => {
+  it("rejects empty message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Bash", {}, ""),
+    ).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects message with null byte", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\x00evil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
+  it("rejects message exceeding 4096 chars", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Bash", {}, "x".repeat(4097)),
+    ).rejects.toThrow(/message too long/);
+  });
+
+  it("allows message with newlines and tabs", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    const request = await backend.requestApproval("Bash", {}, "line1\nline2\ttab");
+    expect(request.message).toBe("line1\nline2\ttab");
+  });
+});
+
 describe("security", () => {
   it("rejects path traversal in waitForDecision approvalId", async () => {
     const client = mockClient();
