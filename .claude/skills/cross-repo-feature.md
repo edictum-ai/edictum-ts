@@ -48,9 +48,15 @@ If you find a bug that exists in multiple repos, file ONE issue in `edictum-ai/.
 
 ## Checklist Before Merging
 
+- [ ] `pnpm -r build` — all packages build
+- [ ] `pnpm -r test` — full test suite passes
+- [ ] `pnpm -r lint` — ESLint clean
+- [ ] `pnpm -r typecheck` — tsc --noEmit passes
 - [ ] Shared fixtures pass
 - [ ] Python parity verified (same inputs → same outputs)
 - [ ] TypeScript-native tests written
 - [ ] Security tests in `describe("security")` blocks
-- [ ] Terminology matches `.docs-style-guide.md`
+- [ ] Security review: path handling, shell classification, fail-closed errors, input validation
+- [ ] Terminology matches `CLAUDE.md` Terminology Enforcement section
+- [ ] If touching adapters: `pnpm --filter @edictum/core test -- --grep "adapter parity"`
 - [ ] Tracking issue updated with PR link
