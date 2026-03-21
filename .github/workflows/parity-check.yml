@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   schedule:
     - cron: '0 4 * * 1'  # Weekly Monday 4am UTC
 
@@ -12,6 +13,7 @@ permissions:
 
 jobs:
   behavioral-fixtures:
+    if: false  # TODO: enable when fixture runner is implemented
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -19,11 +21,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: edictum-ai/edictum-schemas
+          ref: main
           path: edictum-schemas
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "pnpm"
@@ -32,13 +35,10 @@ jobs:
 
       - name: Run behavioral fixtures
         run: |
-          echo "Fixture runner not yet implemented — placeholder for tracking"
-          echo "Fixtures available at: edictum-schemas/fixtures/behavioral/"
-          ls edictum-schemas/fixtures/behavioral/ || true
-          echo "TODO: Implement fixture runner in this repo"
+          echo "::warning::Parity fixture runner not yet implemented. This step is a placeholder."
+          ls edictum-schemas/fixtures/behavioral/ 2>/dev/null || echo "(no fixtures found)"
 
       - name: Run adversarial fixtures
         run: |
-          echo "Adversarial fixtures available at: edictum-schemas/fixtures/adversarial/"
-          ls edictum-schemas/fixtures/adversarial/ || true
-          echo "TODO: Implement adversarial fixture runner in this repo"
+          echo "::warning::Adversarial fixture runner not yet implemented. This step is a placeholder."
+          ls edictum-schemas/fixtures/adversarial/ 2>/dev/null || echo "(no fixtures found)"
