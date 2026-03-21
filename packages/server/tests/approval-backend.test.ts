@@ -382,24 +382,6 @@ describe("ServerApprovalBackend toolName validation", () => {
     ).rejects.toThrow(/Invalid toolName/);
   });
 
-  it("rejects toolName with path separators", async () => {
-    const client = mockClient();
-    const backend = new ServerApprovalBackend(client);
-
-    await expect(
-      backend.requestApproval("../../escape", {}, "msg"),
-    ).rejects.toThrow(/Invalid toolName/);
-  });
-
-  it("rejects toolName with null bytes", async () => {
-    const client = mockClient();
-    const backend = new ServerApprovalBackend(client);
-
-    await expect(
-      backend.requestApproval("tool\x00evil", {}, "msg"),
-    ).rejects.toThrow(/Invalid toolName/);
-  });
-
   it("accepts valid toolName", async () => {
     const client = mockClient();
     vi.mocked(client.post).mockResolvedValue({ id: "a1" });
@@ -424,15 +406,6 @@ describe("ServerApprovalBackend message validation", () => {
     ).rejects.toThrow(EdictumConfigError);
   });
 
-  it("rejects message with null byte", async () => {
-    const client = mockClient();
-    const backend = new ServerApprovalBackend(client);
-
-    await expect(
-      backend.requestApproval("Bash", {}, "msg\x00evil"),
-    ).rejects.toThrow(/control characters/);
-  });
-
   it("rejects message exceeding 4096 chars", async () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
@@ -453,6 +426,30 @@ describe("ServerApprovalBackend message validation", () => {
 });
 
 describe("security", () => {
+  it("rejects path traversal in requestApproval toolName", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("../../escape", {}, "msg"),
+    ).rejects.toThrow(/Invalid toolName/);
+  });
+
+  it("rejects null byte in requestApproval toolName", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("tool\x00evil", {}, "msg"),
+    ).rejects.toThrow(/Invalid toolName/);
+  });
+
+  it("rejects null byte in requestApproval message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\x00evil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
   it("rejects path traversal in waitForDecision approvalId", async () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);

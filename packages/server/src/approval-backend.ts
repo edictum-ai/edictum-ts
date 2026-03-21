@@ -60,20 +60,20 @@ export class ServerApprovalBackend implements ApprovalBackend {
       );
     }
 
-    // Validate message — must be non-empty and free of control characters.
-    if (!message || message.length === 0) {
+    // Validate message — must be non-empty, length-capped, and free of control characters.
+    if (!message) {
       throw new EdictumConfigError(
         "message must be a non-empty string",
-      );
-    }
-    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(message)) {
-      throw new EdictumConfigError(
-        "message contains invalid control characters",
       );
     }
     if (message.length > 4096) {
       throw new EdictumConfigError(
         `message too long (${message.length} > 4096)`,
+      );
+    }
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(message)) {
+      throw new EdictumConfigError(
+        "message contains invalid control characters",
       );
     }
 
