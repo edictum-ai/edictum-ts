@@ -4,7 +4,8 @@
   "out": "docs/api",
   "tsconfig": "tsconfig.json",
   "intentionallyNotExported": [
-    "AnyFunction"
+    "AnyFunction",
+    "NamedContract"
   ],
   "treatWarningsAsErrors": true
 }
