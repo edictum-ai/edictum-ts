@@ -52,7 +52,7 @@ metadata:
 defaults:
   mode: enforce
 contracts:
-  - id: block-sensitive-reads
+  - id: deny-sensitive-reads
     type: pre
     tool: readFile
     when:
@@ -108,7 +108,7 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
 // Claude Agent SDK -- pre/post tool use hooks
 import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
-const { preToolUse, postToolUse } = adapter.toSdkHooks();
+const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
 
 // LangChain.js -- middleware for ToolNode
 import { LangChainAdapter } from "@edictum/langchain";
@@ -181,6 +181,6 @@ MIT -- see [LICENSE](LICENSE).
 
 - **[edictum](https://github.com/edictum-ai/edictum)** -- Python core library (PyPI: `edictum`)
 - **[edictum-ts](https://github.com/edictum-ai/edictum-ts)** -- TypeScript core library (this repo)
-- **[edictum-go](https://github.com/edictum-ai/edictum-go)** -- Go core library
 - **[edictum-console](https://github.com/edictum-ai/edictum-console)** -- Self-hostable server for contract management
+- **[edictum-schemas](https://github.com/edictum-ai/edictum-schemas)** -- Shared YAML contract schema
 - **[Documentation](https://docs.edictum.ai)**
