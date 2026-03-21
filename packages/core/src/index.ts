@@ -141,4 +141,7 @@ export type {
   BundleHash,
   ComposedBundle,
   CompositionReport,
+  CompositionOverride,
+  ObserveContract,
+  EvaluateOptions as ExpressionEvaluateOptions,
 } from "./yaml-engine/index.js";
