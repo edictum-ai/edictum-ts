@@ -37,7 +37,7 @@ export function validateSchema(data: Record<string, unknown>): void {
 
 // Reject control characters in contract IDs — null bytes, newlines, carriage
 // returns, and other C0/C1 control chars could corrupt storage keys or logs.
-const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f]/;
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/;
 
 /** Validate a single contract ID for dangerous characters. */
 function validateContractId(contractId: string): void {

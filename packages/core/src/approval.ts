@@ -7,7 +7,7 @@ import { RedactionPolicy } from "./redaction.js";
 
 /** Strip ANSI escape sequences and control characters from terminal output. */
 function sanitizeForTerminal(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f]/g, "");
+  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
 }
 
 // ---------------------------------------------------------------------------
