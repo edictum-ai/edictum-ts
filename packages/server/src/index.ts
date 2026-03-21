@@ -27,3 +27,7 @@ export {
   BundleVerificationError,
   verifyBundleSignature,
 } from "./verification.js";
+
+// Factory
+export { createServerGuard } from "./factory.js";
+export type { CreateServerGuardOptions, ServerGuard, ServerGuardClient, WatchErrorHandler } from "./factory.js";

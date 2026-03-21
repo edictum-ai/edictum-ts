@@ -329,3 +329,108 @@ describe("ServerContractSource reconnect", () => {
     expect(client.rawFetch).toHaveBeenCalledTimes(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Constructor validation
+// ---------------------------------------------------------------------------
+
+describe("constructor validation", () => {
+  it("rejects reconnectDelay = 0", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: 0 })).toThrow(/reconnectDelay/);
+  });
+
+  it("rejects reconnectDelay = NaN", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: NaN })).toThrow(/reconnectDelay/);
+  });
+
+  it("rejects reconnectDelay = Infinity", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: Infinity })).toThrow(/reconnectDelay/);
+  });
+
+  it("rejects negative reconnectDelay", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: -1 })).toThrow(/reconnectDelay/);
+  });
+
+  it("rejects maxReconnectDelay < reconnectDelay", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: 5000, maxReconnectDelay: 1000 })).toThrow(/maxReconnectDelay/);
+  });
+
+  it("rejects maxReconnectDelay = NaN", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { maxReconnectDelay: NaN })).toThrow(/maxReconnectDelay/);
+  });
+
+  it("rejects maxReconnectDelay = Infinity", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { maxReconnectDelay: Infinity })).toThrow(/maxReconnectDelay/);
+  });
+
+  it("accepts valid reconnectDelay and maxReconnectDelay", () => {
+    const client = mockClient();
+    expect(() => new ServerContractSource(client, { reconnectDelay: 500, maxReconnectDelay: 5000 })).not.toThrow();
+  });
+
+  it("reconnectDelay is used as initial delay value", () => {
+    const client = mockClient();
+    const source = new ServerContractSource(client, { reconnectDelay: 200 });
+    expect((source as any)._reconnectDelay).toBe(200);
+  });
+
+  it("maxReconnectDelay caps backoff", () => {
+    const client = mockClient();
+    const source = new ServerContractSource(client, { reconnectDelay: 500, maxReconnectDelay: 2000 });
+    expect((source as any)._maxReconnectDelay).toBe(2000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security — SSE buffer overflow
+// ---------------------------------------------------------------------------
+
+describe("security", () => {
+  it("resets buffer when SSE data exceeds 1 MB without crashing", async () => {
+    const client = mockClient();
+    // 1 MB+ of garbage with no newlines, then stream closes
+    const garbage = "x".repeat(1_100_000) + "\n";
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const bytes = encoder.encode(garbage);
+        const chunkSize = 65536;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          controller.enqueue(bytes.slice(i, i + chunkSize));
+        }
+        controller.close();
+      },
+    });
+
+    // First call: oversized stream. Second call: never (close before reconnect).
+    client.rawFetch = vi.fn().mockResolvedValueOnce(
+      new Response(stream, { status: 200 }),
+    );
+
+    const source = new ServerContractSource(client);
+    await source.connect();
+
+    // Start watch, close immediately after first stream ends
+    const watchPromise = (async () => {
+      for await (const _bundle of source.watch()) {
+        // Should not yield anything from garbage
+      }
+    })();
+
+    // Give stream time to process, then close
+    await new Promise((r) => setTimeout(r, 100));
+    await source.close();
+    await watchPromise;
+
+    // Watcher survived the oversized buffer — did not crash
+    expect(source.connected).toBe(false);
+  });
+});

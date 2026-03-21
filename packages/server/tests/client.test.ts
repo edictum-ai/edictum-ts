@@ -459,3 +459,161 @@ describe("URL normalization", () => {
     expect(client.baseUrl).toBe("https://api.example.com");
   });
 });
+
+// ---------------------------------------------------------------------------
+// maxRetries validation
+// ---------------------------------------------------------------------------
+
+describe("maxRetries validation", () => {
+  it("rejects NaN", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: NaN }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects Infinity", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: Infinity }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects non-integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 1.5 }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects zero", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 0 }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("rejects negative integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: -1 }),
+    ).toThrow(/maxRetries/);
+  });
+
+  it("accepts valid positive integer", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", maxRetries: 5 }),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// timeout validation
+// ---------------------------------------------------------------------------
+
+describe("timeout validation", () => {
+  it("rejects NaN", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: NaN }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects Infinity", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: Infinity }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects zero", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: 0 }),
+    ).toThrow(/timeout/);
+  });
+
+  it("rejects negative", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "k", timeout: -1 }),
+    ).toThrow(/timeout/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apiKey validation
+// ---------------------------------------------------------------------------
+
+describe("apiKey validation", () => {
+  it("rejects empty string", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "" }),
+    ).toThrow(/apiKey/);
+  });
+
+  it("rejects null byte in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\x00evil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects newline in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\nevil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects carriage return in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\revil" }),
+    ).toThrow(/control characters/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _setClientBundleName (package-internal)
+// ---------------------------------------------------------------------------
+
+import { _setClientBundleName } from "../src/client.js";
+
+describe("_setClientBundleName", () => {
+  it("updates bundleName for valid name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(client.bundleName).toBeNull();
+    _setClientBundleName(client, "new-bundle");
+    expect(client.bundleName).toBe("new-bundle");
+  });
+
+  it("rejects empty name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects name with spaces", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "invalid name")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects name exceeding 128 chars", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "a".repeat(129))).toThrow("Invalid bundleName");
+  });
+
+  it("rejects name with path separators", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "../../evil")).toThrow("Invalid bundleName");
+  });
+
+  // Security: control character bypass tests
+  it("rejects null byte in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\x00evil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects newline in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\nevil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects carriage return in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, "bundle\revil")).toThrow("Invalid bundleName");
+  });
+
+  it("rejects leading dot in bundle name", () => {
+    const client = new EdictumServerClient({ baseUrl: "http://localhost", apiKey: "k" });
+    expect(() => _setClientBundleName(client, ".hidden-bundle")).toThrow("Invalid bundleName");
+  });
+});

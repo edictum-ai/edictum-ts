@@ -26,15 +26,15 @@ export class EdictumServerError extends Error {
 }
 
 export interface EdictumServerClientOptions {
-  baseUrl: string;
-  apiKey: string;
-  agentId?: string;
-  env?: string;
-  bundleName?: string | null;
-  tags?: Record<string, string> | null;
-  timeout?: number;
-  maxRetries?: number;
-  allowInsecure?: boolean;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly agentId?: string;
+  readonly env?: string;
+  readonly bundleName?: string | null;
+  readonly tags?: Record<string, string> | null;
+  readonly timeout?: number;
+  readonly maxRetries?: number;
+  readonly allowInsecure?: boolean;
 }
 
 /**
@@ -47,10 +47,18 @@ export class EdictumServerClient {
   private readonly _apiKey: string;
   readonly agentId: string;
   readonly env: string;
-  readonly bundleName: string | null;
+  private _bundleName: string | null;
   readonly tags: Readonly<Record<string, string>> | null;
   readonly timeout: number;
   readonly maxRetries: number;
+
+  /** Current bundle name. Read-only externally. */
+  get bundleName(): string | null {
+    return this._bundleName;
+  }
+
+  // No public setter — bundleName is mutated only via the package-internal
+  // _setClientBundleName() function which validates before calling this.
 
   constructor(options: EdictumServerClientOptions) {
     const {
@@ -82,14 +90,14 @@ export class EdictumServerClient {
       ["agentId", agentId],
       ["env", env],
     ] as const) {
-      if (!SAFE_IDENTIFIER_RE.test(value)) {
+      if (value.length > 128 || !SAFE_IDENTIFIER_RE.test(value)) {
         throw new EdictumConfigError(
           `Invalid ${name}: ${JSON.stringify(value)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
         );
       }
     }
 
-    if (bundleName !== null && !SAFE_IDENTIFIER_RE.test(bundleName)) {
+    if (bundleName !== null && (bundleName.length > 128 || !SAFE_IDENTIFIER_RE.test(bundleName))) {
       throw new EdictumConfigError(
         `Invalid bundleName: ${JSON.stringify(bundleName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
@@ -161,10 +169,10 @@ export class EdictumServerClient {
       }
     }
 
-    // Validate maxRetries is at least 1
-    if (maxRetries < 1) {
+    // Validate maxRetries is a positive integer
+    if (!Number.isFinite(maxRetries) || !Number.isInteger(maxRetries) || maxRetries < 1) {
       throw new EdictumConfigError(
-        `maxRetries must be >= 1, got ${maxRetries}`,
+        `maxRetries must be a positive integer >= 1, got ${maxRetries}`,
       );
     }
 
@@ -172,7 +180,7 @@ export class EdictumServerClient {
     this._apiKey = apiKey;
     this.agentId = agentId;
     this.env = env;
-    this.bundleName = bundleName;
+    this._bundleName = bundleName;
     this.tags = tags !== null ? Object.freeze({ ...tags }) : null;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(
@@ -195,8 +203,9 @@ export class EdictumServerClient {
   async get(
     path: string,
     params?: Record<string, string>,
+    options?: { signal?: AbortSignal },
   ): Promise<Record<string, unknown>> {
-    return this._request("GET", path, { params });
+    return this._request("GET", path, { params, signal: options?.signal });
   }
 
   /** Send a POST request with retry logic. */
@@ -227,6 +236,7 @@ export class EdictumServerClient {
     options?: {
       params?: Record<string, string>;
       body?: Record<string, unknown>;
+      signal?: AbortSignal;
     },
   ): Promise<Record<string, unknown>> {
     let lastError: Error | null = null;
@@ -239,10 +249,12 @@ export class EdictumServerClient {
           url += `?${searchParams.toString()}`;
         }
 
+        const signals: AbortSignal[] = [AbortSignal.timeout(this.timeout)];
+        if (options?.signal) signals.push(options.signal);
         const fetchOptions: RequestInit = {
           method,
           headers: this._headers(),
-          signal: AbortSignal.timeout(this.timeout),
+          signal: AbortSignal.any(signals),
         };
 
         if (options?.body !== undefined) {
@@ -327,6 +339,32 @@ export class EdictumServerClient {
   async close(): Promise<void> {
     // Native fetch() doesn't require explicit connection cleanup.
   }
+}
+
+/**
+ * Update a client's effective bundle name. Internal to the server package —
+ * only used by the factory's SSE watcher after a successful contract reload.
+ * Not exported from index.ts. Accessible via subpath import but validated —
+ * callers who bypass the public API do so at their own risk.
+ *
+ * Only accepts non-null strings — once a bundle is assigned, it can only
+ * transition to another named bundle. Resetting to null (assignment revocation)
+ * is not supported; the watcher would need to be restarted for that case.
+ *
+ * @internal
+ */
+export function _setClientBundleName(
+  client: EdictumServerClient,
+  name: string,
+): void {
+  if (name.length > 128 || !SAFE_IDENTIFIER_RE.test(name)) {
+    throw new EdictumConfigError(
+      `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+    );
+  }
+  // Access private field — safe because this is a package-internal function
+  // co-located with the class definition. Validation is the single owner above.
+  (client as unknown as { _bundleName: string | null })._bundleName = name;
 }
 
 function sleep(ms: number): Promise<void> {
