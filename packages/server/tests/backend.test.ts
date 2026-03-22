@@ -321,6 +321,19 @@ describe("ServerBackend key validation", () => {
     await expect(backend.batchGet(["ok", "bad\x00key"])).rejects.toThrow(EdictumConfigError);
   });
 
+  it("rejects C1 control chars in keys", async () => {
+    await expect(backend.get("key\u0085nel")).rejects.toThrow(EdictumConfigError);
+    await expect(backend.get("key\u0090dcs")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects line separator U+2028 in keys", async () => {
+    await expect(backend.get("key\u2028sep")).rejects.toThrow(EdictumConfigError);
+  });
+
+  it("rejects paragraph separator U+2029 in keys", async () => {
+    await expect(backend.get("key\u2029sep")).rejects.toThrow(EdictumConfigError);
+  });
+
   it("accepts valid keys with special URL characters", async () => {
     vi.mocked(client.get).mockResolvedValue({ value: "ok" });
     const result = await backend.get("session:user@example.com:count");
