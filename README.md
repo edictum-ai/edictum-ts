@@ -110,6 +110,8 @@ import { VercelAIAdapter } from "@edictum/vercel-ai";
 const adapter = new VercelAIAdapter(guard);
 const { experimental_onToolCallStart, experimental_onToolCallFinish } =
   adapter.asCallbacks();
+// Preconditions enforced via onToolCallStart. Postcondition redact/deny
+// requires the wrapper integration path (callbacks are notification-only).
 ```
 
 **OpenAI Agents SDK** -- input/output guardrails:
