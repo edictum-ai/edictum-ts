@@ -390,6 +390,57 @@ describe("ServerApprovalBackend toolName validation", () => {
     const request = await backend.requestApproval("Bash", {}, "msg");
     expect(request.toolName).toBe("Bash");
   });
+
+  it("accepts toolName of exactly 128 chars", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+    const name128 = "a" + "b".repeat(127);
+    await expect(backend.requestApproval(name128, {}, "msg")).resolves.toBeDefined();
+  });
+
+  it("rejects toolName of 129 chars", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    const name129 = "a" + "b".repeat(128);
+    await expect(backend.requestApproval(name129, {}, "msg")).rejects.toThrow(/Invalid toolName/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// timeoutEffect validation
+// ---------------------------------------------------------------------------
+
+describe("ServerApprovalBackend timeoutEffect validation", () => {
+  it("rejects invalid timeoutEffect", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "invalid" }),
+    ).rejects.toThrow(EdictumConfigError);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "invalid" }),
+    ).rejects.toThrow(/timeoutEffect must be "deny" or "allow"/);
+  });
+
+  it("accepts timeoutEffect 'deny'", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    const request = await backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "deny" });
+    expect(request.timeoutEffect).toBe("deny");
+  });
+
+  it("accepts timeoutEffect 'allow'", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    const request = await backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "allow" });
+    expect(request.timeoutEffect).toBe("allow");
+  });
 });
 
 // ---------------------------------------------------------------------------

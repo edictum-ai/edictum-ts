@@ -54,8 +54,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
   ): Promise<ApprovalRequest> {
     // Validate toolName — must be a safe identifier to prevent injection
     // when interpolated into server API paths or log messages.
-    // Length cap before regex per security policy (SAFE_IDENTIFIER_RE caps at 128).
-    if (!toolName || toolName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(toolName)) {
+    if (!toolName || toolName.length > 128 || !SAFE_IDENTIFIER_RE.test(toolName)) {
       throw new EdictumConfigError(
         `Invalid toolName: ${JSON.stringify(toolName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
@@ -92,6 +91,11 @@ export class ServerApprovalBackend implements ApprovalBackend {
     }
 
     const timeoutEffect = options?.timeoutEffect ?? "deny";
+    if (timeoutEffect !== "deny" && timeoutEffect !== "allow") {
+      throw new EdictumConfigError(
+        `timeoutEffect must be "deny" or "allow", got ${JSON.stringify(timeoutEffect)}`,
+      );
+    }
 
     const body = {
       agent_id: this._client.agentId,
