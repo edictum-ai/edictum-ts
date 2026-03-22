@@ -47,7 +47,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
     message: string,
     options?: {
       timeout?: number;
-      timeoutEffect?: string;
+      timeoutEffect?: "deny" | "allow";
       principal?: Record<string, unknown> | null;
       metadata?: Record<string, unknown> | null;
     },
