@@ -535,6 +535,30 @@ describe("security", () => {
     ).rejects.toThrow(/control characters/);
   });
 
+  it("rejects C1 control char NEL in message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\u0085evil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
+  it("rejects line separator U+2028 in message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\u2028evil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
+  it("rejects paragraph separator U+2029 in message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\u2029evil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
   it("rejects path traversal in waitForDecision approvalId", async () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
