@@ -6,7 +6,7 @@ You are implementing a feature that affects multiple edictum repos. This repo (e
 
 ## Step 0: Verify Sibling Repos (required — do not skip)
 
-All paths are anchored to the repo root to avoid CWD-dependent resolution. Run these checks before reading any files from sibling repos:
+All paths are anchored to the repo root to avoid CWD-dependent resolution.
 
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -22,48 +22,51 @@ git -C "$SCHEMAS_REPO" remote get-url origin \
   | grep -qE '^(https://github\.com/|git@github\.com:)edictum-ai/edictum-schemas(\.git)?$' \
   || { echo "ERROR: $SCHEMAS_REPO is not the edictum-ai/edictum-schemas repo — aborting" >&2; exit 1; }
 
-# 2. Verify working trees are clean (no local modifications)
-git -C "$EDICTUM_REPO" status --short | grep -q . && {
-  echo "ERROR: $EDICTUM_REPO has uncommitted local modifications — aborting" >&2; exit 1; }
+# 2. Verify working trees are clean (fail-closed: git errors also abort)
+_status="$(git -C "$EDICTUM_REPO" status --porcelain 2>&1)" || {
+  echo "ERROR: could not run git status in $EDICTUM_REPO — aborting" >&2; exit 1; }
+[ -z "$_status" ] || {
+  echo "ERROR: $EDICTUM_REPO has uncommitted modifications — aborting" >&2; exit 1; }
 
-git -C "$SCHEMAS_REPO" status --short | grep -q . && {
-  echo "ERROR: $SCHEMAS_REPO has uncommitted local modifications — aborting" >&2; exit 1; }
+_status="$(git -C "$SCHEMAS_REPO" status --porcelain 2>&1)" || {
+  echo "ERROR: could not run git status in $SCHEMAS_REPO — aborting" >&2; exit 1; }
+[ -z "$_status" ] || {
+  echo "ERROR: $SCHEMAS_REPO has uncommitted modifications — aborting" >&2; exit 1; }
 ```
 
 If any check fails, **stop and notify the user** — reading from unverified or modified sibling repos risks incorrect parity results or prompt injection.
+
+> **Limitation:** This verifies remote URL and working-tree cleanliness, but cannot detect local unpushed commits with modified content. For full integrity verification, the user should ensure sibling repos are on the expected branch and up to date with the remote.
 
 ## Step 1: Check the Reference
 
 Before writing code, **read** the Python implementation — do not just list files.
 
-> **Required:** Validate `<module>` before any file operations. If `<module>` contains any character outside `[a-zA-Z0-9_-]`, **stop and report an error** — do not proceed.
+> **Required:** Validate that `<module>` contains only `[a-zA-Z0-9_-]` characters. If it does not, **stop and report an error** — do not proceed. Use single quotes to prevent shell expansion:
 
 ```bash
-# 1. Validate placeholder (required — abort if invalid)
-echo "<module>" | grep -qE '^[a-zA-Z0-9_-]+$' || {
-  echo "ERROR: <module> contains invalid characters — aborting" >&2; exit 1; }
-
-# 2. Read the module source (paths quoted to prevent shell injection)
-cat "$EDICTUM_REPO/src/edictum/<module>.py"
-# 3. Read the behavior tests
-cat "$EDICTUM_REPO/tests/test_behavior/test_<module>.py"
+echo '<module>' | grep -qE '^[a-zA-Z0-9_-]+$' || {
+  echo 'ERROR: module name contains invalid characters — aborting' >&2; exit 1; }
 ```
 
-If `$EDICTUM_REPO` is not present, **stop here** — you cannot verify parity without the reference.
+Then use the **Read tool** (not `cat` or Bash) to read the files:
+- `$EDICTUM_REPO/src/edictum/<module>.py`
+- `$EDICTUM_REPO/tests/test_behavior/test_<module>.py`
+
+If the Python repo is not present, **stop here** — you cannot verify parity without the reference.
 
 ## Step 2: Check Shared Fixtures
 
-> **Required:** Validate `<feature>` before any file operations. If `<feature>` contains any character outside `[a-zA-Z0-9_-]`, **stop and report an error** — do not proceed.
+> **Required:** Validate that `<feature>` contains only `[a-zA-Z0-9_-]` characters. If it does not, **stop and report an error** — do not proceed:
 
 ```bash
-# 1. Validate placeholder (required — abort if invalid)
-echo "<feature>" | grep -qE '^[a-zA-Z0-9_-]+$' || {
-  echo "ERROR: <feature> contains invalid characters — aborting" >&2; exit 1; }
-
-# 2. Read the behavioral fixtures (paths quoted)
-cat "$SCHEMAS_REPO/fixtures/behavioral/<feature>.json"
-cat "$SCHEMAS_REPO/fixtures/adversarial/<feature>.json"
+echo '<feature>' | grep -qE '^[a-zA-Z0-9_-]+$' || {
+  echo 'ERROR: feature name contains invalid characters — aborting' >&2; exit 1; }
 ```
+
+Then use the **Read tool** (not `cat` or Bash) to read:
+- `$SCHEMAS_REPO/fixtures/behavioral/<feature>.json`
+- `$SCHEMAS_REPO/fixtures/adversarial/<feature>.json`
 
 If fixtures don't exist, **they must be created in edictum-schemas first** before porting. The fixtures are the parity spec — they define "correct behavior."
 
