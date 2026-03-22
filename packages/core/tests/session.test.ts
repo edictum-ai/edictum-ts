@@ -111,21 +111,25 @@ describe("security", () => {
 
     test("C1 control char NEL in session ID rejected", () => {
       expect(() => new Session("sess\u0085ion", new MemoryBackend())).toThrow(EdictumConfigError);
+      expect(() => new Session("sess\u0085ion", new MemoryBackend())).toThrow(/Invalid session_id/);
     });
 
     test("C1 control char DCS in session ID rejected", () => {
       expect(() => new Session("sess\u0090ion", new MemoryBackend())).toThrow(EdictumConfigError);
+      expect(() => new Session("sess\u0090ion", new MemoryBackend())).toThrow(/Invalid session_id/);
     });
 
     test("line separator U+2028 in session ID rejected", () => {
       expect(() => new Session("sess\u2028ion", new MemoryBackend())).toThrow(EdictumConfigError);
+      expect(() => new Session("sess\u2028ion", new MemoryBackend())).toThrow(/Invalid session_id/);
     });
 
     test("paragraph separator U+2029 in session ID rejected", () => {
       expect(() => new Session("sess\u2029ion", new MemoryBackend())).toThrow(EdictumConfigError);
+      expect(() => new Session("sess\u2029ion", new MemoryBackend())).toThrow(/Invalid session_id/);
     });
 
-        test("valid session IDs accepted", () => {
+    test("valid session IDs accepted", () => {
       expect(() => new Session("test-session", new MemoryBackend())).not.toThrow();
       expect(() => new Session("user:abc:123", new MemoryBackend())).not.toThrow();
       expect(() => new Session("sess_v2", new MemoryBackend())).not.toThrow();

@@ -385,7 +385,7 @@ describe("security", () => {
       expect(() => createEnvelope("tool\u2029name", {})).toThrow(/Invalid tool_name/);
     });
 
-        test("tool_name_empty_string_rejected", () => {
+    test("tool_name_empty_string_rejected", () => {
       expect(() => createEnvelope("", {})).toThrow(EdictumConfigError);
       expect(() => createEnvelope("", {})).toThrow(/Invalid tool_name/);
     });
