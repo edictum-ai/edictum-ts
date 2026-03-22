@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ApprovalStatus, EdictumConfigError } from "@edictum/core";
 
-import { EdictumServerClient } from "../src/client.js";
+import { EdictumServerClient, EdictumServerError } from "../src/client.js";
 import { ServerApprovalBackend } from "../src/approval-backend.js";
 
 // ---------------------------------------------------------------------------
@@ -68,7 +68,10 @@ describe("ServerApprovalBackend.requestApproval", () => {
 
     await expect(
       backend.requestApproval("Tool", {}, "msg"),
-    ).rejects.toThrow("Server returned invalid approvalId");
+    ).rejects.toThrow(EdictumServerError);
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(/Server returned invalid approvalId/);
   });
 
   it("rejects non-string approvalId from server", async () => {
@@ -78,7 +81,10 @@ describe("ServerApprovalBackend.requestApproval", () => {
 
     await expect(
       backend.requestApproval("Tool", {}, "msg"),
-    ).rejects.toThrow("Server returned invalid approvalId");
+    ).rejects.toThrow(EdictumServerError);
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(/Server returned invalid approvalId/);
   });
 
   it("passes custom options", async () => {
@@ -450,10 +456,21 @@ describe("security", () => {
     ).rejects.toThrow(/control characters/);
   });
 
+  it("rejects carriage return in requestApproval message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\x0devil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
   it("rejects path traversal in waitForDecision approvalId", async () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
 
+    await expect(
+      backend.waitForDecision("../../admin/secrets"),
+    ).rejects.toThrow(EdictumConfigError);
     await expect(
       backend.waitForDecision("../../admin/secrets"),
     ).rejects.toThrow(/Invalid approvalId/);
@@ -463,6 +480,9 @@ describe("security", () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
 
+    await expect(
+      backend.waitForDecision("id\x00injected"),
+    ).rejects.toThrow(EdictumConfigError);
     await expect(
       backend.waitForDecision("id\x00injected"),
     ).rejects.toThrow(/Invalid approvalId/);
@@ -475,6 +495,9 @@ describe("security", () => {
 
     await expect(
       backend.requestApproval("Tool", {}, "msg"),
-    ).rejects.toThrow(/invalid approvalId|Invalid/i);
+    ).rejects.toThrow(EdictumServerError);
+    await expect(
+      backend.requestApproval("Tool", {}, "msg"),
+    ).rejects.toThrow(/Server returned invalid approvalId/);
   });
 });

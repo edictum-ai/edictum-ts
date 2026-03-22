@@ -10,7 +10,7 @@ import { ApprovalStatus, deepFreeze } from "@edictum/core";
 import { EdictumConfigError } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
-import { SAFE_IDENTIFIER_RE } from "./client.js";
+import { EdictumServerError, SAFE_IDENTIFIER_RE } from "./client.js";
 
 /**
  * Approval backend that delegates to the edictum-server approval queue.
@@ -71,7 +71,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `message too long (${message.length} > 4096)`,
       );
     }
-    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(message)) {
+    if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {
       throw new EdictumConfigError(
         "message contains invalid control characters",
       );
@@ -106,7 +106,8 @@ export class ServerApprovalBackend implements ApprovalBackend {
 
     // Validate server-returned approvalId immediately
     if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
-      throw new Error(
+      throw new EdictumServerError(
+        0,
         `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
@@ -152,7 +153,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
   ): Promise<ApprovalDecision> {
     // Validate approvalId before interpolating into URL path
     if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
-      throw new Error(
+      throw new EdictumConfigError(
         `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
