@@ -125,8 +125,8 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
 import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
-// Note: postcondition deny/redact requires the wrapper integration path.
-// toSdkHooks() enforces preconditions fully; postconditions emit warnings only.
+// Preconditions fully enforced. Postconditions return updatedMCPToolOutput
+// for redact/deny effects when the SDK supports tool result substitution.
 ```
 
 **LangChain.js** -- middleware for ToolNode:
@@ -167,7 +167,7 @@ const guard = new Edictum({ contracts: [noRm] });
 
 **Principal-aware enforcement** -- role-gate tools with claims and `env.*` context.
 
-**Callbacks** -- `onDeny` / `onAllow` for logging, observability, or approval workflows.
+**Callbacks** -- `onDeny` / `onAllow` for logging and observability. For human-in-the-loop approvals, use `approvalBackend`.
 
 **Observe mode** -- log what would be denied without blocking, then switch to enforce.
 
