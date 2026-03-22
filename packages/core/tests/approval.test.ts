@@ -234,9 +234,12 @@ describe("security", () => {
       writes.push(String(s));
       return true;
     });
-    const backend = new LocalApprovalBackend();
-    await backend.requestApproval("Tool", {}, "approve\u0085this");
-    spy.mockRestore();
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool", {}, "approve\u0085this");
+    } finally {
+      spy.mockRestore();
+    }
     const combined = writes.join("");
     expect(combined).not.toContain("\u0085");
     expect(combined).toContain("approvethis");
@@ -248,9 +251,12 @@ describe("security", () => {
       writes.push(String(s));
       return true;
     });
-    const backend = new LocalApprovalBackend();
-    await backend.requestApproval("Tool", { cmd: "val\u2028ue" }, "msg");
-    spy.mockRestore();
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool", { cmd: "val\u2028ue" }, "msg");
+    } finally {
+      spy.mockRestore();
+    }
     expect(writes.join("")).not.toContain("\u2028");
   });
 
@@ -260,9 +266,12 @@ describe("security", () => {
       writes.push(String(s));
       return true;
     });
-    const backend = new LocalApprovalBackend();
-    await backend.requestApproval("Tool\u2029Name", {}, "msg");
-    spy.mockRestore();
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool\u2029Name", {}, "msg");
+    } finally {
+      spy.mockRestore();
+    }
     expect(writes.join("")).not.toContain("\u2029");
     expect(writes.join("")).toContain("ToolName");
   });
