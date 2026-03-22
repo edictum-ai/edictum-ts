@@ -98,7 +98,7 @@ pnpm add @edictum/core js-yaml
 | [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter |
 | [`@edictum/claude-sdk`](packages/claude-sdk) | Claude Agent SDK adapter |
 | [`@edictum/langchain`](packages/langchain) | LangChain.js adapter |
-| [`@edictum/openclaw`](packages/openclaw) | OpenClaw adapter |
+| [`@edictum/openclaw`](packages/openclaw) | OpenClaw adapter (coming soon) |
 | [`@edictum/server`](packages/server) | Server SDK -- HTTP client, SSE hot-reload, audit sink |
 
 ## Works With Your Framework
@@ -116,6 +116,8 @@ const { experimental_onToolCallStart, experimental_onToolCallFinish } =
 import { OpenAIAgentsAdapter } from "@edictum/openai-agents";
 const adapter = new OpenAIAgentsAdapter(guard);
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
+// Note: postcondition redact requires the wrapper integration path.
+// asGuardrails() enforces preconditions and postcondition deny natively.
 ```
 
 **Claude Agent SDK** -- pre/post tool use hooks:
@@ -123,6 +125,8 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
 import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
+// Note: postcondition deny/redact requires the wrapper integration path.
+// toSdkHooks() enforces preconditions fully; postconditions emit warnings only.
 ```
 
 **LangChain.js** -- middleware for ToolNode:
