@@ -29,11 +29,16 @@ const result = await readFile(".env");
 
 ```typescript
 import { Edictum, EdictumDenied } from "@edictum/core";
+import { readFile } from "node:fs/promises";
 
 const guard = Edictum.fromYaml("contracts.yaml");
 
+// toolCallable must accept args as Record<string, unknown>
+const governedReadFile = (args: Record<string, unknown>) =>
+  readFile(args.path as string, "utf8");
+
 try {
-  const result = await guard.run("readFile", { path: ".env" }, readFile);
+  const result = await guard.run("readFile", { path: ".env" }, governedReadFile);
 } catch (e) {
   if (e instanceof EdictumDenied) {
     console.log(e.reason);
@@ -147,7 +152,7 @@ const guard = new Edictum({ contracts: [noRm] });
 
 **Principal-aware enforcement** -- role-gate tools with claims and `env.*` context.
 
-**Callbacks** -- `onDeny` / `onAllow` for logging, alerting, or approval workflows.
+**Callbacks** -- `onDeny` / `onAllow` for logging, observability, or approval workflows.
 
 **Observe mode** -- log what would be denied without blocking, then switch to enforce.
 
