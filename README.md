@@ -42,7 +42,7 @@ const governedReadFile = (args: Record<string, unknown>) => {
 };
 
 try {
-  const result = await guard.run("readFile", { path: ".env" }, governedReadFile);
+  await guard.run("readFile", { path: ".env" }, governedReadFile);
 } catch (e) {
   if (e instanceof EdictumDenied) {
     console.log(e.reason);
@@ -74,7 +74,7 @@ contracts:
       message: "Sensitive file '{args.path}' denied."
 ```
 
-Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. When using `guard.run()` or the wrapper integration path, the agent cannot bypass a matched contract. Native framework hook adapters enforce preconditions fully; postcondition redact/deny depends on framework support (see adapter notes below).
+Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. Preconditions are enforced before tool execution across all integration paths. Postconditions scan tool output after execution -- for read-only tools, output is redacted or suppressed; for write-side-effect tools, a warning is appended (the tool has already executed). Native framework hook adapters enforce preconditions fully; postcondition behavior depends on framework support (see adapter notes below).
 
 ## Install
 
