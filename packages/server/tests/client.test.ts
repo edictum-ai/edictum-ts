@@ -230,6 +230,61 @@ describe("tag validation", () => {
     ).toThrow("Tag key contains control characters");
   });
 
+  it("rejects C1 control char NEL in tag key", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { "key\u0085nel": "v" },
+        }),
+    ).toThrow("Tag key contains control characters");
+  });
+
+  it("rejects line separator U+2028 in tag value", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { k: "val\u2028ue" },
+        }),
+    ).toThrow("Tag value contains control characters");
+  });
+
+  it("rejects paragraph separator U+2029 in tag key", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { "key\u2029ps": "v" },
+        }),
+    ).toThrow("Tag key contains control characters");
+  });
+
+  it("rejects C1 control char NEL in tag value", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { env: "val\u0085ue" },
+        }),
+    ).toThrow("Tag value contains control characters");
+  });
+
+  it("rejects paragraph separator U+2029 in tag value", () => {
+    expect(
+      () =>
+        new EdictumServerClient({
+          baseUrl: "https://x.com",
+          apiKey: "k",
+          tags: { env: "val\u2029ue" },
+        }),
+    ).toThrow("Tag value contains control characters");
+  });
+
   it("accepts valid tags", () => {
     expect(
       () =>
@@ -558,6 +613,24 @@ describe("apiKey validation", () => {
   it("rejects carriage return in apiKey", () => {
     expect(
       () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\revil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects C1 control char NEL in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\u0085evil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects line separator U+2028 in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\u2028evil" }),
+    ).toThrow(/control characters/);
+  });
+
+  it("rejects paragraph separator U+2029 in apiKey", () => {
+    expect(
+      () => new EdictumServerClient({ baseUrl: "https://x.com", apiKey: "key\u2029evil" }),
     ).toThrow(/control characters/);
   });
 });

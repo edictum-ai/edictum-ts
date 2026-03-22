@@ -403,6 +403,48 @@ contracts:
     }
   });
 
+  test("U+2028 line separator in contract ID rejected", () => {
+    const yaml = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: test
+defaults:
+  mode: enforce
+contracts:
+  - id: "bad\u2028id"
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: "bad"
+`;
+    expect(() => loadBundleString(yaml)).toThrow(/control characters/);
+  });
+
+  test("U+2029 paragraph separator in contract ID rejected", () => {
+    const yaml = `
+apiVersion: edictum/v1
+kind: ContractBundle
+metadata:
+  name: test
+defaults:
+  mode: enforce
+contracts:
+  - id: "bad\u2029id"
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: "bad"
+`;
+    expect(() => loadBundleString(yaml)).toThrow(/control characters/);
+  });
+
   test("extremely deeply nested YAML does not cause stack overflow", () => {
     // Build a moderately nested structure — should throw config error, not crash
     let nested = '{ equals: "x" }';

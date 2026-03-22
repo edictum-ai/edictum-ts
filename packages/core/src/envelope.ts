@@ -72,7 +72,8 @@ export function createPrincipal(
  *
  * Throws EdictumConfigError for:
  * - Empty string
- * - Any ASCII control character (code < 0x20 or code === 0x7f)
+ * - Any C0 control character (code < 0x20), DEL/C1 (U+007F-U+009F)
+ * - Unicode line/paragraph separators (U+2028, U+2029)
  * - Forward slash `/`
  * - Backslash `\`
  */
@@ -83,7 +84,7 @@ export function _validateToolName(toolName: string): void {
   for (let i = 0; i < toolName.length; i++) {
     const code = toolName.charCodeAt(i);
     const ch = toolName[i];
-    if (code < 0x20 || code === 0x7f || ch === "/" || ch === "\\") {
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || ch === "/" || ch === "\\") {
       throw new EdictumConfigError(`Invalid tool_name: ${JSON.stringify(toolName)}`);
     }
   }

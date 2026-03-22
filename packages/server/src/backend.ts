@@ -17,6 +17,8 @@ import { EdictumServerError } from "./client.js";
 /**
  * Validate a storage key: reject empty strings and control characters.
  * Mirrors core session.ts _validateStorageKeyComponent logic.
+ * Covers C0 (U+0000–U+001F), DEL (U+007F), C1 (U+0080–U+009F),
+ * and Unicode line/paragraph separators (U+2028, U+2029).
  */
 function validateKey(key: string): void {
   if (!key) {
@@ -24,7 +26,7 @@ function validateKey(key: string): void {
   }
   for (let i = 0; i < key.length; i++) {
     const code = key.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) {
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) {
       throw new EdictumConfigError(
         `Invalid storage key: contains control character at index ${i}`,
       );

@@ -226,3 +226,53 @@ describe("TestAuditActionApprovalEvents", () => {
     expect(AuditAction.CALL_APPROVAL_TIMEOUT).toBe("call_approval_timeout");
   });
 });
+
+describe("security", () => {
+  test("C1 control char in message is stripped from terminal output", async () => {
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((s: unknown) => {
+      writes.push(String(s));
+      return true;
+    });
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool", {}, "approve\u0085this");
+    } finally {
+      spy.mockRestore();
+    }
+    const combined = writes.join("");
+    expect(combined).not.toContain("\u0085");
+    expect(combined).toContain("approvethis");
+  });
+
+  test("U+2028 line separator in toolArgs is stripped from terminal output", async () => {
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((s: unknown) => {
+      writes.push(String(s));
+      return true;
+    });
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool", { cmd: "val\u2028ue" }, "msg");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(writes.join("")).not.toContain("\u2028");
+  });
+
+  test("U+2029 paragraph separator in toolName is stripped from terminal output", async () => {
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((s: unknown) => {
+      writes.push(String(s));
+      return true;
+    });
+    try {
+      const backend = new LocalApprovalBackend();
+      await backend.requestApproval("Tool\u2029Name", {}, "msg");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(writes.join("")).not.toContain("\u2029");
+    expect(writes.join("")).toContain("ToolName");
+  });
+});

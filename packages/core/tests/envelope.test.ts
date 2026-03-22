@@ -365,6 +365,26 @@ describe("security", () => {
       );
     });
 
+    test("tool_name_with_C1_control_char_NEL_rejected", () => {
+      expect(() => createEnvelope("tool\u0085name", {})).toThrow(EdictumConfigError);
+      expect(() => createEnvelope("tool\u0085name", {})).toThrow(/Invalid tool_name/);
+    });
+
+    test("tool_name_with_C1_control_char_DCS_rejected", () => {
+      expect(() => createEnvelope("tool\u0090name", {})).toThrow(EdictumConfigError);
+      expect(() => createEnvelope("tool\u0090name", {})).toThrow(/Invalid tool_name/);
+    });
+
+    test("tool_name_with_line_separator_rejected", () => {
+      expect(() => createEnvelope("tool\u2028name", {})).toThrow(EdictumConfigError);
+      expect(() => createEnvelope("tool\u2028name", {})).toThrow(/Invalid tool_name/);
+    });
+
+    test("tool_name_with_paragraph_separator_rejected", () => {
+      expect(() => createEnvelope("tool\u2029name", {})).toThrow(EdictumConfigError);
+      expect(() => createEnvelope("tool\u2029name", {})).toThrow(/Invalid tool_name/);
+    });
+
     test("tool_name_empty_string_rejected", () => {
       expect(() => createEnvelope("", {})).toThrow(EdictumConfigError);
       expect(() => createEnvelope("", {})).toThrow(/Invalid tool_name/);
