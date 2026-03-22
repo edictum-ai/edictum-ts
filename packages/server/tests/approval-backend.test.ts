@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ApprovalStatus, EdictumConfigError } from "@edictum/core";
 
-import { EdictumServerClient, EdictumServerError } from "../src/client.js";
+import { EdictumServerClient } from "../src/client.js";
 import { ServerApprovalBackend } from "../src/approval-backend.js";
 
 // ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ describe("ServerApprovalBackend.requestApproval", () => {
     const backend = new ServerApprovalBackend(client);
 
     const err = await backend.requestApproval("Tool", {}, "msg").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(EdictumServerError);
+    expect(err).toBeInstanceOf(EdictumConfigError);
     expect((err as Error).message).toMatch(/Server returned invalid approvalId/);
   });
 
@@ -77,7 +77,7 @@ describe("ServerApprovalBackend.requestApproval", () => {
     const backend = new ServerApprovalBackend(client);
 
     const err = await backend.requestApproval("Tool", {}, "msg").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(EdictumServerError);
+    expect(err).toBeInstanceOf(EdictumConfigError);
     expect((err as Error).message).toMatch(/Server returned invalid approvalId/);
   });
 
@@ -490,7 +490,7 @@ describe("security", () => {
     const backend = new ServerApprovalBackend(client);
 
     const err = await backend.requestApproval("Tool", {}, "msg").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(EdictumServerError);
+    expect(err).toBeInstanceOf(EdictumConfigError);
     expect((err as Error).message).toMatch(/Server returned invalid approvalId/);
   });
 });

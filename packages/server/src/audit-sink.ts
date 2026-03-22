@@ -58,10 +58,10 @@ export class ServerAuditSink implements AuditSink {
     },
   ) {
     this._client = client;
-    this._batchSize = options?.batchSize ?? 50;
     this._flushInterval = options?.flushInterval ?? 5_000;
     this._maxBufferSize =
       options?.maxBufferSize ?? ServerAuditSink.MAX_BUFFER_SIZE;
+    this._batchSize = options?.batchSize ?? Math.min(50, this._maxBufferSize);
 
     if (!Number.isInteger(this._batchSize) || this._batchSize < 1) {
       throw new EdictumConfigError(

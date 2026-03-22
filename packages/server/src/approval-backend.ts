@@ -10,7 +10,7 @@ import { ApprovalStatus, deepFreeze } from "@edictum/core";
 import { EdictumConfigError } from "@edictum/core";
 
 import type { EdictumServerClient } from "./client.js";
-import { EdictumServerError, SAFE_IDENTIFIER_RE } from "./client.js";
+import { SAFE_IDENTIFIER_RE } from "./client.js";
 
 /**
  * Approval backend that delegates to the edictum-server approval queue.
@@ -104,11 +104,10 @@ export class ServerApprovalBackend implements ApprovalBackend {
     const response = await this._client.post("/api/v1/approvals", body);
     const approvalId = response["id"];
 
-    // Validate server-returned approvalId immediately
+    // Validate server-returned approvalId — this is a local validation
+    // failure on the server's response, not an HTTP-layer error.
     if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
-      // -1 signals a local protocol error (malformed server response), not an HTTP status
-      throw new EdictumServerError(
-        -1,
+      throw new EdictumConfigError(
         `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
