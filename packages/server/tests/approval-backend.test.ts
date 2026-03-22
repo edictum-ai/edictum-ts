@@ -416,12 +416,11 @@ describe("ServerApprovalBackend timeoutEffect validation", () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
 
-    await expect(
-      backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "invalid" }),
-    ).rejects.toThrow(EdictumConfigError);
-    await expect(
-      backend.requestApproval("Bash", {}, "msg", { timeoutEffect: "invalid" }),
-    ).rejects.toThrow(/timeoutEffect must be "deny" or "allow"/);
+    // Cast to bypass compile-time type check — testing runtime validation
+    const opts = { timeoutEffect: "invalid" as "deny" | "allow" };
+    const err = await backend.requestApproval("Bash", {}, "msg", opts).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EdictumConfigError);
+    expect((err as Error).message).toMatch(/timeoutEffect must be "deny" or "allow"/);
   });
 
   it("accepts timeoutEffect 'deny'", async () => {

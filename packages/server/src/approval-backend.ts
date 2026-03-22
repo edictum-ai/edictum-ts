@@ -56,7 +56,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
     // when interpolated into server API paths or log messages.
     if (!toolName || toolName.length > 128 || !SAFE_IDENTIFIER_RE.test(toolName)) {
       throw new EdictumConfigError(
-        `Invalid toolName: ${JSON.stringify(toolName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
+        `Invalid toolName: ${JSON.stringify(toolName)}. Must start with alphanumeric, followed by alphanumeric, hyphens, underscores, or dots (1-128 chars total).`,
       );
     }
 
