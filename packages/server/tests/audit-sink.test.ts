@@ -100,6 +100,18 @@ describe("ServerAuditSink batching", () => {
 
     expect(client.post).not.toHaveBeenCalled();
   });
+
+  it("default batchSize is capped at maxBufferSize when maxBufferSize < 50", async () => {
+    const client = mockClient();
+    const sink = new ServerAuditSink(client, { maxBufferSize: 3 });
+
+    await sink.emit(makeEvent({ callId: "1" }));
+    await sink.emit(makeEvent({ callId: "2" }));
+    expect(client.post).not.toHaveBeenCalled();
+
+    await sink.emit(makeEvent({ callId: "3" }));
+    expect(client.post).toHaveBeenCalledOnce();
+  });
 });
 
 // ---------------------------------------------------------------------------

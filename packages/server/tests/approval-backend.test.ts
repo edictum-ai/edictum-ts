@@ -406,6 +406,16 @@ describe("ServerApprovalBackend message validation", () => {
     ).rejects.toThrow(EdictumConfigError);
   });
 
+  it("accepts message of exactly 4096 chars", async () => {
+    const client = mockClient();
+    vi.mocked(client.post).mockResolvedValue({ id: "a1" });
+    const backend = new ServerApprovalBackend(client);
+
+    await expect(
+      backend.requestApproval("Bash", {}, "x".repeat(4096)),
+    ).resolves.toBeDefined();
+  });
+
   it("rejects message exceeding 4096 chars", async () => {
     const client = mockClient();
     const backend = new ServerApprovalBackend(client);
@@ -463,6 +473,14 @@ describe("security", () => {
     const backend = new ServerApprovalBackend(client);
     await expect(
       backend.requestApproval("Bash", {}, "msg\x0bevil"),
+    ).rejects.toThrow(/control characters/);
+  });
+
+  it("rejects DEL character in requestApproval message", async () => {
+    const client = mockClient();
+    const backend = new ServerApprovalBackend(client);
+    await expect(
+      backend.requestApproval("Bash", {}, "msg\x7fevil"),
     ).rejects.toThrow(/control characters/);
   });
 
