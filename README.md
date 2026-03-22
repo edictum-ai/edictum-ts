@@ -74,7 +74,7 @@ contracts:
       message: "Sensitive file '{args.path}' denied."
 ```
 
-Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. The agent cannot bypass a matched contract.
+Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. When using `guard.run()` or the wrapper integration path, the agent cannot bypass a matched contract. Native framework hook adapters enforce preconditions fully; postcondition redact/deny depends on framework support (see adapter notes below).
 
 ## Install
 
@@ -128,8 +128,8 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
 import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
-// Preconditions fully enforced. Postconditions return updatedMCPToolOutput
-// for redact/deny effects when the SDK supports tool result substitution.
+// Preconditions fully enforced. Postcondition redact/deny sets
+// updatedMCPToolOutput — use wrapper path for guaranteed enforcement.
 ```
 
 **LangChain.js** -- middleware for ToolNode:
