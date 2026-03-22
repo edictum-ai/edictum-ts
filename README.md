@@ -31,6 +31,7 @@ const result = await readFile(".env");
 import { Edictum, EdictumDenied } from "@edictum/core";
 import { readFile } from "node:fs/promises";
 
+// fromYaml() is synchronous — no await needed
 const guard = Edictum.fromYaml("contracts.yaml");
 
 // toolCallable must accept args as Record<string, unknown>
