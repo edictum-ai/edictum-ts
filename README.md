@@ -74,7 +74,7 @@ contracts:
       message: "Sensitive file '{args.path}' denied."
 ```
 
-Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. Preconditions are enforced before tool execution across all integration paths. Postconditions scan tool output after execution -- for read-only tools, output is redacted or suppressed; for write-side-effect tools, a warning is appended (the tool has already executed). Native framework hook adapters enforce preconditions fully; postcondition behavior depends on framework support (see adapter notes below).
+Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path, just pattern matching against tool names and arguments. Preconditions are enforced before tool execution across all integration paths. Postcondition behavior depends on the integration method: with `guard.run()`, read-only tool output is redacted or suppressed, and write-side-effect tools receive a warning (the tool has already executed). For native framework hook adapters, postcondition redact/deny depends on whether the SDK supports result substitution (see adapter notes below).
 
 ## Install
 
@@ -111,7 +111,7 @@ const adapter = new VercelAIAdapter(guard);
 const { experimental_onToolCallStart, experimental_onToolCallFinish } =
   adapter.asCallbacks();
 // Preconditions enforced via onToolCallStart. Postcondition redact/deny
-// requires the wrapper integration path (callbacks are notification-only).
+// requires guard.run() for full enforcement (callbacks are notification-only).
 ```
 
 **OpenAI Agents SDK** -- input/output guardrails:
@@ -119,7 +119,7 @@ const { experimental_onToolCallStart, experimental_onToolCallFinish } =
 import { OpenAIAgentsAdapter } from "@edictum/openai-agents";
 const adapter = new OpenAIAgentsAdapter(guard);
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
-// Note: postcondition redact requires the wrapper integration path.
+// Note: postcondition redact requires guard.run() for full enforcement.
 // asGuardrails() enforces preconditions and postcondition deny natively.
 ```
 
@@ -129,7 +129,7 @@ import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
 // Preconditions fully enforced. Postcondition redact/deny sets
-// updatedMCPToolOutput — use wrapper path for guaranteed enforcement.
+// updatedMCPToolOutput — use guard.run() for guaranteed enforcement.
 ```
 
 **LangChain.js** -- middleware for ToolNode:
