@@ -54,7 +54,8 @@ export class ServerApprovalBackend implements ApprovalBackend {
   ): Promise<ApprovalRequest> {
     // Validate toolName — must be a safe identifier to prevent injection
     // when interpolated into server API paths or log messages.
-    if (!toolName || !SAFE_IDENTIFIER_RE.test(toolName)) {
+    // Length cap before regex per security policy (SAFE_IDENTIFIER_RE caps at 128).
+    if (!toolName || toolName.length > 10_000 || !SAFE_IDENTIFIER_RE.test(toolName)) {
       throw new EdictumConfigError(
         `Invalid toolName: ${JSON.stringify(toolName)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
       );
@@ -71,7 +72,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `message too long (${message.length} > 4096)`,
       );
     }
-    if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {
+    if (/[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]/.test(message)) {
       throw new EdictumConfigError(
         "message contains invalid control characters",
       );
