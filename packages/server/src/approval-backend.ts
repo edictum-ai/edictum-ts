@@ -106,8 +106,9 @@ export class ServerApprovalBackend implements ApprovalBackend {
 
     // Validate server-returned approvalId immediately
     if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      // -1 signals a local protocol error (malformed server response), not an HTTP status
       throw new EdictumServerError(
-        0,
+        -1,
         `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }

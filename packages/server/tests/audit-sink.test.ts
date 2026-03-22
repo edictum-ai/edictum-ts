@@ -497,12 +497,14 @@ describe("ServerAuditSink constructor validation", () => {
 
   it("rejects batchSize exceeding maxBufferSize", () => {
     const client = mockClient();
-    expect(
-      () => new ServerAuditSink(client, { batchSize: 100, maxBufferSize: 10 }),
-    ).toThrow(EdictumConfigError);
-    expect(
-      () => new ServerAuditSink(client, { batchSize: 100, maxBufferSize: 10 }),
-    ).toThrow(/batchSize.*must be <= maxBufferSize/);
+    let err: unknown;
+    try {
+      new ServerAuditSink(client, { batchSize: 100, maxBufferSize: 10 });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(EdictumConfigError);
+    expect((err as Error).message).toMatch(/batchSize.*must be <= maxBufferSize/);
   });
 
   it("accepts batchSize equal to maxBufferSize", () => {
