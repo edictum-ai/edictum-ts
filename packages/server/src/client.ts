@@ -79,7 +79,7 @@ export class EdictumServerClient {
         "apiKey must be a non-empty string",
       );
     }
-    if (/[\r\n\x00-\x1f\x7f]/.test(apiKey)) {
+    if (/[\r\n\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(apiKey)) {
       throw new EdictumConfigError(
         "apiKey contains invalid control characters",
       );
@@ -132,12 +132,12 @@ export class EdictumServerClient {
           );
         }
         // Reject control characters in tag keys and values
-        if (/[\x00-\x1f\x7f]/.test(k)) {
+        if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(k)) {
           throw new EdictumConfigError(
             `Tag key contains control characters: ${JSON.stringify(k)}`,
           );
         }
-        if (/[\x00-\x1f\x7f]/.test(v)) {
+        if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(v)) {
           throw new EdictumConfigError(
             `Tag value contains control characters for key ${JSON.stringify(k)}`,
           );
