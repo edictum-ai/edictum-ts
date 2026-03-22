@@ -34,8 +34,11 @@ import { readFile } from "node:fs/promises";
 const guard = Edictum.fromYaml("contracts.yaml");
 
 // toolCallable must accept args as Record<string, unknown>
-const governedReadFile = (args: Record<string, unknown>) =>
-  readFile(args.path as string, "utf8");
+const governedReadFile = (args: Record<string, unknown>) => {
+  const path = args.path;
+  if (typeof path !== "string") throw new TypeError("path must be a string");
+  return readFile(path, "utf8");
+};
 
 try {
   const result = await guard.run("readFile", { path: ".env" }, governedReadFile);
@@ -43,6 +46,8 @@ try {
   if (e instanceof EdictumDenied) {
     console.log(e.reason);
     // => "Sensitive file '.env' denied."
+  } else {
+    throw e;
   }
 }
 ```
@@ -98,27 +103,33 @@ pnpm add @edictum/core js-yaml
 
 ## Works With Your Framework
 
+**Vercel AI SDK** -- callbacks for generateText / streamText:
 ```typescript
-// Vercel AI SDK -- callbacks for generateText / streamText
 import { VercelAIAdapter } from "@edictum/vercel-ai";
 const adapter = new VercelAIAdapter(guard);
 const { experimental_onToolCallStart, experimental_onToolCallFinish } =
   adapter.asCallbacks();
+```
 
-// OpenAI Agents SDK -- input/output guardrails
+**OpenAI Agents SDK** -- input/output guardrails:
+```typescript
 import { OpenAIAgentsAdapter } from "@edictum/openai-agents";
 const adapter = new OpenAIAgentsAdapter(guard);
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
+```
 
-// Claude Agent SDK -- pre/post tool use hooks
+**Claude Agent SDK** -- pre/post tool use hooks:
+```typescript
 import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
 const adapter = new ClaudeAgentSDKAdapter(guard);
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
+```
 
-// LangChain.js -- middleware for ToolNode
+**LangChain.js** -- middleware for ToolNode:
+```typescript
 import { LangChainAdapter } from "@edictum/langchain";
 const adapter = new LangChainAdapter(guard);
-const { wrapToolCall } = adapter.asMiddleware();
+const middleware = adapter.asMiddleware(); // { name: "edictum", wrapToolCall }
 ```
 
 Adapters are thin wrappers. All governance logic lives in the pipeline.
