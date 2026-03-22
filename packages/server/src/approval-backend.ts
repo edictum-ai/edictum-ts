@@ -71,6 +71,8 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `message too long (${message.length} > 4096)`,
       );
     }
+    // Allow TAB (\x09) and LF (\x0a) for multi-line messages; block CR (\x0d),
+    // C1 chars (\x7f-\x9f), and Unicode line/paragraph separators.
     if (/[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]/.test(message)) {
       throw new EdictumConfigError(
         "message contains invalid control characters",
@@ -84,16 +86,16 @@ export class ServerApprovalBackend implements ApprovalBackend {
       );
     }
 
-    if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
-      throw new EdictumConfigError(
-        `Maximum pending approvals (${ServerApprovalBackend.MAX_PENDING}) exceeded — cannot track more concurrent requests`,
-      );
-    }
-
     const timeoutEffect = options?.timeoutEffect ?? "deny";
     if (timeoutEffect !== "deny" && timeoutEffect !== "allow") {
       throw new EdictumConfigError(
         `timeoutEffect must be "deny" or "allow", got ${JSON.stringify(timeoutEffect)}`,
+      );
+    }
+
+    if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
+      throw new EdictumConfigError(
+        `Maximum pending approvals (${ServerApprovalBackend.MAX_PENDING}) exceeded — cannot track more concurrent requests`,
       );
     }
 
@@ -157,7 +159,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
     timeout?: number | null,
   ): Promise<ApprovalDecision> {
     // Validate approvalId before interpolating into URL path
-    if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
+    if (!approvalId || approvalId.length > 128 || !SAFE_IDENTIFIER_RE.test(approvalId)) {
       throw new EdictumConfigError(
         `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
       );
