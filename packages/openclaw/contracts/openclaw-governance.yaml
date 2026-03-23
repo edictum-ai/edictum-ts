@@ -164,6 +164,20 @@ contracts:
       message: "Reading private keys is denied: '{args.path}'"
       tags: [credentials, private-keys]
 
+  - id: protect-ssh-keys-exec
+    type: pre
+    tool: exec
+    when:
+      any:
+        - args.command: { matches: '\b(cat|head|tail|less|more|bat|xxd|base64|strings|od|hexdump)\b.*\.ssh/id_' }
+        - args.command: { matches: '\b(cat|head|tail|less|more|bat|xxd|base64|strings|od|hexdump)\b.*\.(pem|key)\b' }
+        - args.command: { matches: '\b(tar|zip|7z|gzip)\b.*\.ssh/' }
+        - args.command: { matches: '\bcp\b.*\.ssh/id_' }
+    then:
+      effect: deny
+      message: "Shell access to SSH private keys is denied."
+      tags: [credentials, private-keys, exfiltration-prevention]
+
   # ==========================================================================
   # ENV VAR EXFILTRATION — audit found gateway tokens readable via exec
   # ==========================================================================
@@ -276,8 +290,10 @@ contracts:
     type: pre
     tool: exec
     when:
-      args.elevated:
-        equals: true
+      any:
+        - args.elevated: { equals: true }
+        - args.elevated: { equals: "true" }
+        - args.elevated: { equals: 1 }
     then:
       effect: deny
       message: "Elevated exec is denied. It bypasses all security controls."
@@ -361,9 +377,11 @@ contracts:
     tool: exec
     when:
       any:
-        # Recursive delete of root or home
+        # Recursive delete of root, home, cwd, or variable paths
         - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+/' }
         - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+~' }
+        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+\.' }
+        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+\$\{?(HOME|PWD|OLDPWD)\}?' }
         # Filesystem formatting
         - args.command: { matches: '\bmkfs\b' }
         # Raw disk writes

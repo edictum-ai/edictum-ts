@@ -549,6 +549,18 @@ describe("EdictumOpenClawAdapter", () => {
       ).rejects.toThrow(EdictumConfigError);
     });
 
+    it("handleBeforeToolCall with invalid toolName denies instead of throwing", async () => {
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const event = makeEvent({ toolName: "exec\x00tool" });
+      const ctx = makeCtx();
+
+      // Must NOT throw — must return a deny (block) result
+      const result = await adapter.handleBeforeToolCall(event, ctx);
+      expect(result?.block).toBe(true);
+      expect(typeof result?.blockReason).toBe("string");
+    });
+
     it("#54/#57 — MAX_PENDING eviction: 10,001st call still works", async () => {
       // Use a separate sink with higher capacity and raise limits to allow 10,001 attempts
       const bigSink = new CollectingAuditSink(20_000);

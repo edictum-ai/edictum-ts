@@ -329,6 +329,7 @@ export class EdictumOpenClawAdapter {
 
         const denyReason = approvalDecision.reason ?? decision.reason ?? "Approval denied.";
         this._safeDeny(envelope, denyReason, decision.decisionSource);
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED);
         return denyReason;
       } catch {
         // Approval backend failure -> deny (not timeout — distinguish infra errors from real timeouts)
@@ -498,9 +499,20 @@ export class EdictumOpenClawAdapter {
     const callId =
       event.toolCallId ?? ctx.toolCallId ?? `ec_${Date.now()}_${this._callIndex}`;
 
-    const reason = await this.pre(event.toolName, event.params, callId, ctx);
+    let reason: string | null;
+    try {
+      reason = await this.pre(event.toolName, event.params, callId, ctx);
+    } catch {
+      // Any unhandled error in pre() must deny, not propagate.
+      // Propagating to OpenClaw risks fail-open if the plugin host
+      // treats exceptions as "no result" (allow).
+      // NOTE: OpenClaw wire protocol uses `block`/`blockReason` — canonical
+      // Edictum terminology is `deny`/`denyReason`, forced by OpenClaw API.
+      return { block: true, blockReason: "Governance error — call denied for safety" };
+    }
 
     if (reason !== null) {
+      // NOTE: `block`/`blockReason` forced by OpenClaw plugin API contract.
       return { block: true, blockReason: reason };
     }
     // Allow: return nothing (OpenClaw treats undefined as allow)
@@ -594,18 +606,6 @@ export class EdictumOpenClawAdapter {
   }
 
   /**
-   * Track a pending call, evicting the oldest entry if at capacity (#42).
-   * Map iteration order in JS is insertion order, so `keys().next()` yields
-   * the oldest entry.
-   *
-   * Eviction note (#54): The evicted entry was an ALLOWED call whose
-   * after_tool_call never arrived. We log a warning but do NOT emit a full
-   * audit event because the original call was already audited as CALL_ALLOWED.
-   * When the after_tool_call eventually arrives, post() will not find a
-   * pending entry and will return a passthrough — which is already the
-   * expected behavior for orphaned post calls.
-   */
-  /**
    * Emit individual audit events for observe_alongside contracts.
    * Matches vercel-ai pattern (lines 382-413). Errors swallowed per-result.
    */
@@ -647,6 +647,18 @@ export class EdictumOpenClawAdapter {
     }
   }
 
+  /**
+   * Track a pending call, evicting the oldest entry if at capacity (#42).
+   * Map iteration order in JS is insertion order, so `keys().next()` yields
+   * the oldest entry.
+   *
+   * Eviction note (#54): The evicted entry was an ALLOWED call whose
+   * after_tool_call never arrived. We log a warning but do NOT emit a full
+   * audit event because the original call was already audited as CALL_ALLOWED.
+   * When the after_tool_call eventually arrives, post() will not find a
+   * pending entry and will return a passthrough — which is already the
+   * expected behavior for orphaned post calls.
+   */
   private _trackPending(callId: string, pending: PendingCall): void {
     if (this._pending.size >= MAX_PENDING) {
       const oldest = this._pending.keys().next().value;
