@@ -33,7 +33,7 @@ export function buildFindings(postDecision: {
       findings.push({
         contractId: (c.contractId as string) ?? null,
         message: (c.message as string) ?? "Postcondition failed.",
-        tags: Array.isArray(c.tags) ? [...c.tags] : [],
+        tags: Array.isArray(c.tags) ? c.tags.filter((t): t is string => typeof t === "string") : [],
         severity: (c.policyError as boolean) ? "error" : "warn",
       });
     }

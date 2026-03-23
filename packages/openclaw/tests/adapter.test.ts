@@ -563,6 +563,18 @@ describe("EdictumOpenClawAdapter", () => {
       expect(typeof result?.blockReason).toBe("string");
     });
 
+    it("empty callId is accepted but tracked (no validation error)", async () => {
+      // Empty string passes control-char and length checks. This is a known
+      // edge case — collisions are logged via console.warn. The contract is
+      // that pre() never throws for valid-shaped inputs.
+      const guard = new Edictum({ auditSink: sink });
+      const adapter = new EdictumOpenClawAdapter(guard);
+      const ctx = makeCtx();
+
+      const reason = await adapter.pre("exec", { command: "ls" }, "", ctx);
+      expect(reason).toBeNull(); // allowed
+    });
+
     it("#54/#57 — MAX_PENDING eviction: 10,001st call still works", async () => {
       // Use a separate sink with higher capacity and raise limits to allow 10,001 attempts
       const bigSink = new CollectingAuditSink(20_000);
