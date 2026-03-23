@@ -6,9 +6,10 @@
  *
  * Integration point: PreToolUse / PostToolUse hooks.
  *
- * Note: Hook output (toSdkHooks) cannot substitute tool results.
- * Postcondition effects (redact/deny) require the wrapper integration path
- * for full enforcement. Native hooks can only warn via additionalContext.
+ * Note: toSdkHooks() fully enforces preconditions. For postcondition
+ * redact/deny, the adapter sets updatedMCPToolOutput in the PostToolUse
+ * response, but full enforcement depends on the Claude Agent SDK honoring
+ * this field. Use the wrapper integration path for guaranteed enforcement.
  */
 
 import { randomUUID } from "node:crypto";
