@@ -47,15 +47,50 @@ export class ServerApprovalBackend implements ApprovalBackend {
     message: string,
     options?: {
       timeout?: number;
-      timeoutEffect?: string;
+      timeoutEffect?: "deny" | "allow";
       principal?: Record<string, unknown> | null;
       metadata?: Record<string, unknown> | null;
     },
   ): Promise<ApprovalRequest> {
+    // Validate toolName — must be a safe identifier to prevent injection
+    // when interpolated into server API paths or log messages.
+    if (!toolName || toolName.length > 128 || !SAFE_IDENTIFIER_RE.test(toolName)) {
+      const display = JSON.stringify(typeof toolName === "string" ? toolName.slice(0, 64) : toolName);
+      throw new EdictumConfigError(
+        `Invalid toolName: ${display}${typeof toolName === "string" && toolName.length > 64 ? "…" : ""}. Must start with alphanumeric, followed by alphanumeric, hyphens, underscores, or dots (1-128 chars total).`,
+      );
+    }
+
+    // Validate message — must be non-empty, length-capped, and free of control characters.
+    if (!message) {
+      throw new EdictumConfigError(
+        "message must be a non-empty string",
+      );
+    }
+    if (message.length > 4096) {
+      throw new EdictumConfigError(
+        `message too long (${message.length} > 4096)`,
+      );
+    }
+    // Allow TAB (\x09) and LF (\x0a) for multi-line messages; block CR (\x0d),
+    // C1 chars (\x7f-\x9f), and Unicode line/paragraph separators.
+    if (/[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]/.test(message)) {
+      throw new EdictumConfigError(
+        "message contains invalid control characters",
+      );
+    }
+
     const timeout = options?.timeout ?? 300;
     if (!Number.isFinite(timeout) || timeout <= 0) {
       throw new EdictumConfigError(
         `timeout must be a positive finite number, got ${timeout}`,
+      );
+    }
+
+    const timeoutEffect = options?.timeoutEffect ?? "deny";
+    if (timeoutEffect !== "deny" && timeoutEffect !== "allow") {
+      throw new EdictumConfigError(
+        `timeoutEffect must be "deny" or "allow", got ${JSON.stringify(timeoutEffect)}`,
       );
     }
 
@@ -64,8 +99,6 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `Maximum pending approvals (${ServerApprovalBackend.MAX_PENDING}) exceeded — cannot track more concurrent requests`,
       );
     }
-
-    const timeoutEffect = options?.timeoutEffect ?? "deny";
 
     const body = {
       agent_id: this._client.agentId,
@@ -79,10 +112,14 @@ export class ServerApprovalBackend implements ApprovalBackend {
     const response = await this._client.post("/api/v1/approvals", body);
     const approvalId = response["id"];
 
-    // Validate server-returned approvalId immediately
-    if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
-      throw new Error(
-        `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+    // Validate server-returned approvalId — this is a local validation
+    // failure on the server's response, not an HTTP-layer error.
+    if (typeof approvalId !== "string" || approvalId.length > 128 || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      const display = typeof approvalId === "string"
+        ? JSON.stringify(approvalId.slice(0, 64)) + (approvalId.length > 64 ? "…" : "")
+        : JSON.stringify(approvalId);
+      throw new EdictumConfigError(
+        `Server returned invalid approvalId: ${display}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
 
@@ -126,9 +163,10 @@ export class ServerApprovalBackend implements ApprovalBackend {
     timeout?: number | null,
   ): Promise<ApprovalDecision> {
     // Validate approvalId before interpolating into URL path
-    if (!SAFE_IDENTIFIER_RE.test(approvalId)) {
-      throw new Error(
-        `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+    if (!approvalId || approvalId.length > 128 || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      const display = JSON.stringify(typeof approvalId === "string" ? approvalId.slice(0, 64) : approvalId);
+      throw new EdictumConfigError(
+        `Invalid approvalId: ${display}${typeof approvalId === "string" && approvalId.length > 64 ? "…" : ""}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
 

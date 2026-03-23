@@ -100,6 +100,18 @@ describe("ServerAuditSink batching", () => {
 
     expect(client.post).not.toHaveBeenCalled();
   });
+
+  it("default batchSize is capped at maxBufferSize when maxBufferSize < 50", async () => {
+    const client = mockClient();
+    const sink = new ServerAuditSink(client, { maxBufferSize: 3 });
+
+    await sink.emit(makeEvent({ callId: "1" }));
+    await sink.emit(makeEvent({ callId: "2" }));
+    expect(client.post).not.toHaveBeenCalled();
+
+    await sink.emit(makeEvent({ callId: "3" }));
+    expect(client.post).toHaveBeenCalledOnce();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -479,6 +491,39 @@ describe("ServerAuditSink constructor validation", () => {
     expect(() => new ServerAuditSink(client, { maxBufferSize: NaN })).toThrow(
       EdictumConfigError,
     );
+  });
+
+  it("rejects maxBufferSize exceeding MAX_BUFFER_SIZE", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { maxBufferSize: ServerAuditSink.MAX_BUFFER_SIZE + 1 }),
+    ).toThrow(/maxBufferSize must be <= /);
+  });
+
+  it("accepts maxBufferSize at MAX_BUFFER_SIZE", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { maxBufferSize: ServerAuditSink.MAX_BUFFER_SIZE }),
+    ).not.toThrow();
+  });
+
+  it("rejects batchSize exceeding maxBufferSize", () => {
+    const client = mockClient();
+    let err: unknown;
+    try {
+      new ServerAuditSink(client, { batchSize: 100, maxBufferSize: 10 });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(EdictumConfigError);
+    expect((err as Error).message).toMatch(/batchSize.*must be <= maxBufferSize/);
+  });
+
+  it("accepts batchSize equal to maxBufferSize", () => {
+    const client = mockClient();
+    expect(
+      () => new ServerAuditSink(client, { batchSize: 50, maxBufferSize: 50 }),
+    ).not.toThrow();
   });
 
   it("accepts valid constructor options", () => {

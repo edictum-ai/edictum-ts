@@ -58,24 +58,38 @@ export class ServerAuditSink implements AuditSink {
     },
   ) {
     this._client = client;
-    this._batchSize = options?.batchSize ?? 50;
     this._flushInterval = options?.flushInterval ?? 5_000;
     this._maxBufferSize =
       options?.maxBufferSize ?? ServerAuditSink.MAX_BUFFER_SIZE;
+
+    // Validate maxBufferSize BEFORE using it to compute the default batchSize —
+    // otherwise invalid maxBufferSize values propagate and produce misleading errors.
+    if (!Number.isInteger(this._maxBufferSize) || this._maxBufferSize < 1) {
+      throw new EdictumConfigError(
+        `maxBufferSize must be an integer >= 1, got ${this._maxBufferSize}`,
+      );
+    }
+    if (this._maxBufferSize > ServerAuditSink.MAX_BUFFER_SIZE) {
+      throw new EdictumConfigError(
+        `maxBufferSize must be <= ${ServerAuditSink.MAX_BUFFER_SIZE}, got ${this._maxBufferSize}`,
+      );
+    }
+
+    this._batchSize = options?.batchSize ?? Math.min(50, this._maxBufferSize);
 
     if (!Number.isInteger(this._batchSize) || this._batchSize < 1) {
       throw new EdictumConfigError(
         `batchSize must be an integer >= 1, got ${this._batchSize}`,
       );
     }
+    if (this._batchSize > this._maxBufferSize) {
+      throw new EdictumConfigError(
+        `batchSize (${this._batchSize}) must be <= maxBufferSize (${this._maxBufferSize})`,
+      );
+    }
     if (!Number.isFinite(this._flushInterval) || this._flushInterval <= 0) {
       throw new EdictumConfigError(
         `flushInterval must be a positive finite number, got ${this._flushInterval}`,
-      );
-    }
-    if (!Number.isInteger(this._maxBufferSize) || this._maxBufferSize < 1) {
-      throw new EdictumConfigError(
-        `maxBufferSize must be an integer >= 1, got ${this._maxBufferSize}`,
       );
     }
   }
