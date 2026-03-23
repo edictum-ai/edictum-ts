@@ -353,7 +353,7 @@ contracts:
 
   - id: block-exfil-domains
     type: sandbox
-    tools: [web_fetch, web_search]
+    tools: [web_fetch, web_search, browser]
     allows:
       domains: ["*"]
     not_allows:
@@ -485,11 +485,22 @@ contracts:
         - args.message: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
         - args.message: { matches: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' }
         - args.message: { matches: 'OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }
+        # --- args.text (full pattern set) ---
         - args.text: { matches: 'AKIA[0-9A-Z]{16}' }
         - args.text: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
+        - args.text: { matches: 'ghp_[a-zA-Z0-9]{36}' }
+        - args.text: { matches: 'xox[bp]-[0-9]+-[0-9]+' }
         - args.text: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
+        - args.text: { matches: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' }
+        - args.text: { matches: 'OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }
+        # --- args.content (full pattern set) ---
         - args.content: { matches: 'AKIA[0-9A-Z]{16}' }
         - args.content: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
+        - args.content: { matches: 'ghp_[a-zA-Z0-9]{36}' }
+        - args.content: { matches: 'xox[bp]-[0-9]+-[0-9]+' }
+        - args.content: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
+        - args.content: { matches: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' }
+        - args.content: { matches: 'OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }
     then:
       effect: deny
       message: "Message contains credential patterns. Remove secrets before sending."
