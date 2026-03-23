@@ -55,8 +55,9 @@ export class ServerApprovalBackend implements ApprovalBackend {
     // Validate toolName — must be a safe identifier to prevent injection
     // when interpolated into server API paths or log messages.
     if (!toolName || toolName.length > 128 || !SAFE_IDENTIFIER_RE.test(toolName)) {
+      const display = JSON.stringify(typeof toolName === "string" ? toolName.slice(0, 64) : toolName);
       throw new EdictumConfigError(
-        `Invalid toolName: ${JSON.stringify(toolName)}. Must start with alphanumeric, followed by alphanumeric, hyphens, underscores, or dots (1-128 chars total).`,
+        `Invalid toolName: ${display}${typeof toolName === "string" && toolName.length > 64 ? "…" : ""}. Must start with alphanumeric, followed by alphanumeric, hyphens, underscores, or dots (1-128 chars total).`,
       );
     }
 
@@ -160,8 +161,9 @@ export class ServerApprovalBackend implements ApprovalBackend {
   ): Promise<ApprovalDecision> {
     // Validate approvalId before interpolating into URL path
     if (!approvalId || approvalId.length > 128 || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      const display = JSON.stringify(typeof approvalId === "string" ? approvalId.slice(0, 64) : approvalId);
       throw new EdictumConfigError(
-        `Invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+        `Invalid approvalId: ${display}${typeof approvalId === "string" && approvalId.length > 64 ? "…" : ""}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
 
