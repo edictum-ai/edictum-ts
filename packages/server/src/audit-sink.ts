@@ -82,14 +82,14 @@ export class ServerAuditSink implements AuditSink {
         `batchSize must be an integer >= 1, got ${this._batchSize}`,
       );
     }
-    if (!Number.isFinite(this._flushInterval) || this._flushInterval <= 0) {
-      throw new EdictumConfigError(
-        `flushInterval must be a positive finite number, got ${this._flushInterval}`,
-      );
-    }
     if (this._batchSize > this._maxBufferSize) {
       throw new EdictumConfigError(
         `batchSize (${this._batchSize}) must be <= maxBufferSize (${this._maxBufferSize})`,
+      );
+    }
+    if (!Number.isFinite(this._flushInterval) || this._flushInterval <= 0) {
+      throw new EdictumConfigError(
+        `flushInterval must be a positive finite number, got ${this._flushInterval}`,
       );
     }
   }
