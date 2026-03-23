@@ -87,7 +87,7 @@ contracts:
     tool: "*"
     when:
       all:
-        - tool.name: { in: [write, edit, apply_patch] }
+        - tool.name: { in: [write, edit, apply_patch, process] }
         - any:
             - args.path: { contains: "edictum" }
             - args.path: { contains: "Edictum" }
@@ -162,6 +162,9 @@ contracts:
         - args.command: { matches: '\b(cat|head|tail|less|more|bat|xxd|base64|strings|od|hexdump)\b.*\.openclaw/credentials' }
         - args.command: { matches: '\b(cat|head|tail|less|more|bat|xxd|base64|strings|od|hexdump)\b.*\.openclaw/auth' }
         - args.command: { matches: '\b(cat|head|tail|less|more|bat|xxd|base64|strings|od|hexdump)\b.*\.openclaw/secrets' }
+        # /proc/self/environ — dumps ALL env vars including API keys
+        - args.command: { contains: "/proc/self/environ" }
+        - args.command: { matches: '/proc/[0-9]+/environ' }
         # Tar/zip the credentials directory
         - args.command: { matches: '\b(tar|zip|7z|gzip)\b.*\.openclaw/credentials' }
         # Copy credentials to an exfil-able location
@@ -355,14 +358,22 @@ contracts:
       domains: ["*"]
     not_allows:
       domains:
-        # Known exfil/interception services
+        # Known exfil/interception services (apex + wildcard)
+        - "requestbin.com"
         - "*.requestbin.com"
+        - "hookbin.com"
         - "*.hookbin.com"
+        - "webhook.site"
         - "*.webhook.site"
+        - "ngrok.io"
         - "*.ngrok.io"
+        - "ngrok-free.app"
         - "*.ngrok-free.app"
+        - "burpcollaborator.net"
         - "*.burpcollaborator.net"
+        - "oastify.com"
         - "*.oastify.com"
+        - "interact.sh"
         - "*.interact.sh"
         - "*.canarytokens.com"
         - "*.pipedream.net"
@@ -378,6 +389,9 @@ contracts:
         # Sending credential-shaped data via curl/wget
         - args.command: { matches: '\bcurl\b.*\b(AKIA|sk-|ghp_|xoxb-|eyJ)' }
         - args.command: { matches: '\bwget\b.*\b(AKIA|sk-|ghp_|xoxb-|eyJ)' }
+        # Env var expansion in curl/wget — exfiltrates keys without literals
+        - args.command: { matches: '\bcurl\b.*\$\{?(OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_PASSWORD|AWS_SECRET_ACCESS_KEY)\}?' }
+        - args.command: { matches: '\bwget\b.*\$\{?(OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_PASSWORD|AWS_SECRET_ACCESS_KEY)\}?' }
         # Piping sensitive files to network tools
         - args.command: { matches: '\b(cat|base64)\b.*\.(env|pem|key)\b.*\|\s*\b(curl|wget|nc)\b' }
         - args.command: { matches: '\bcurl\b.*-d\s*@.*\.(env|pem|key)\b' }
@@ -399,10 +413,15 @@ contracts:
     when:
       any:
         # Recursive delete of root, home, cwd, or variable paths
-        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+/' }
-        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+~' }
-        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+\.' }
-        - args.command: { matches: '\brm\s+(-rf?|--recursive)\s+\$\{?(HOME|PWD|OLDPWD)\}?' }
+        # Pattern covers both "rm -rf /" and "rm / -rf" orderings
+        - args.command: { matches: '\brm\s+(-[rRf]{1,3}\s+)+/' }
+        - args.command: { matches: '\brm\s+(-[rRf]{1,3}\s+)+~' }
+        - args.command: { matches: '\brm\s+(-[rRf]{1,3}\s+)+\.' }
+        - args.command: { matches: '\brm\s+(-[rRf]{1,3}\s+)+\$\{?(HOME|PWD|OLDPWD)\}?' }
+        - args.command: { matches: '\brm\s+/\s+-[rRf]' }
+        - args.command: { matches: '\brm\s+~\s+-[rRf]' }
+        - args.command: { matches: '\brm\s+\.\s+-[rRf]' }
+        - args.command: { matches: '\brm\s+--recursive\s+/' }
         # Filesystem formatting
         - args.command: { matches: '\bmkfs\b' }
         # Raw disk writes
@@ -462,7 +481,7 @@ contracts:
         - args.message: { matches: 'AKIA[0-9A-Z]{16}' }
         - args.message: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
         - args.message: { matches: 'ghp_[a-zA-Z0-9]{36}' }
-        - args.message: { matches: 'xox[bp]-[0-9]+' }
+        - args.message: { matches: 'xox[bp]-[0-9]+-[0-9]+' }
         - args.message: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
         - args.message: { matches: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' }
         - args.message: { matches: 'OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }

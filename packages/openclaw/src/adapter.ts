@@ -534,6 +534,7 @@ export class EdictumOpenClawAdapter {
         await this._guard.auditSink.emit(
           createAuditEvent({
             timestamp: new Date(),
+            runId: ctx.runId ?? this._sessionId,
             callId,
             toolName: event.toolName,
             action: AuditAction.CALL_DENIED,
