@@ -250,20 +250,43 @@ export class EdictumOpenClawAdapter {
       return "Principal resolution failed";
     }
     const principal = principalResult.value;
-    const envelope = createEnvelope(toolName, toolInput, {
-      callId,
-      runId: ctx.runId ?? this._sessionId,
-      callIndex: this._callIndex++,
-      principal,
-      environment: this._guard.environment,
-      metadata: {
-        openclawAgentId: ctx.agentId ?? null,
-        // sessionKey is an identifier, not a credential — safe to include in audit metadata
-        openclawSessionKey: ctx.sessionKey ?? null,
-        openclawSessionId: ctx.sessionId ?? null,
-      },
-      registry: this._guard.toolRegistry,
-    });
+    let envelope: ReturnType<typeof createEnvelope>;
+    try {
+      envelope = createEnvelope(toolName, toolInput, {
+        callId,
+        runId: ctx.runId ?? this._sessionId,
+        callIndex: this._callIndex++,
+        principal,
+        environment: this._guard.environment,
+        metadata: {
+          openclawAgentId: ctx.agentId ?? null,
+          // sessionKey is an identifier, not a credential — safe to include in audit metadata
+          openclawSessionKey: ctx.sessionKey ?? null,
+          openclawSessionId: ctx.sessionId ?? null,
+        },
+        registry: this._guard.toolRegistry,
+      });
+    } catch {
+      // createEnvelope throws EdictumConfigError for invalid toolName (control chars, etc.)
+      // Return denial string per pre()'s API contract — do not propagate.
+      try {
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            timestamp: new Date(),
+            runId: ctx.runId ?? this._sessionId,
+            callId,
+            toolName,
+            action: AuditAction.CALL_DENIED,
+            reason: "Invalid toolName",
+            mode: this._guard.mode,
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      } catch {
+        // Audit errors must never block
+      }
+      return "Invalid toolName";
+    }
 
     await this._session.incrementAttempts();
     const decision = await this._pipeline.preExecute(envelope, this._session);
@@ -329,7 +352,8 @@ export class EdictumOpenClawAdapter {
 
         const denyReason = approvalDecision.reason ?? decision.reason ?? "Approval denied.";
         this._safeDeny(envelope, denyReason, decision.decisionSource);
-        await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED);
+        // CALL_APPROVAL_DENIED or CALL_APPROVAL_TIMEOUT already emitted above —
+        // do not double-emit CALL_DENIED to avoid double-counting in audit analysis.
         return denyReason;
       } catch {
         // Approval backend failure -> deny (not timeout — distinguish infra errors from real timeouts)
@@ -506,8 +530,22 @@ export class EdictumOpenClawAdapter {
       // Any unhandled error in pre() must deny, not propagate.
       // Propagating to OpenClaw risks fail-open if the plugin host
       // treats exceptions as "no result" (allow).
-      // NOTE: OpenClaw wire protocol uses `block`/`blockReason` — canonical
-      // Edictum terminology is `deny`/`denyReason`, forced by OpenClaw API.
+      try {
+        await this._guard.auditSink.emit(
+          createAuditEvent({
+            timestamp: new Date(),
+            callId,
+            toolName: event.toolName,
+            action: AuditAction.CALL_DENIED,
+            reason: "Governance error — call denied for safety",
+            mode: this._guard.mode,
+            policyVersion: this._guard.policyVersion,
+          }),
+        );
+      } catch {
+        // Audit errors must never block
+      }
+      // NOTE: `block`/`blockReason` forced by OpenClaw plugin API contract.
       return { block: true, blockReason: "Governance error — call denied for safety" };
     }
 
@@ -668,6 +706,11 @@ export class EdictumOpenClawAdapter {
           `[edictum/openclaw] MAX_PENDING (${MAX_PENDING}) reached — evicted oldest pending call: ${oldest}`,
         );
       }
+    }
+    if (this._pending.has(callId)) {
+      console.warn(
+        `[edictum/openclaw] callId collision: ${callId} already pending — overwriting previous entry`,
+      );
     }
     this._pending.set(callId, pending);
   }

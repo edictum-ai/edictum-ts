@@ -536,17 +536,15 @@ describe("EdictumOpenClawAdapter", () => {
       expect(denied!.toolName).toBe("exec");
     });
 
-    it("#57 — toolName with control characters is rejected by core's createEnvelope", async () => {
+    it("#57 — toolName with control characters returns denial (not throw)", async () => {
       const guard = new Edictum({ auditSink: sink });
       const adapter = new EdictumOpenClawAdapter(guard);
       const ctx = makeCtx();
 
-      // toolName with control chars is rejected by @edictum/core's envelope
-      // validation (not the adapter). This is correct — core validates all
-      // envelope inputs, and the adapter does not need to duplicate that check.
-      await expect(
-        adapter.pre("exec\x00tool", { command: "ls" }, "tc-ctrl-tool", ctx),
-      ).rejects.toThrow(EdictumConfigError);
+      // pre() catches createEnvelope's EdictumConfigError and returns a
+      // denial string per its API contract (returns null | string, never throws).
+      const reason = await adapter.pre("exec\x00tool", { command: "ls" }, "tc-ctrl-tool", ctx);
+      expect(reason).toBe("Invalid toolName");
     });
 
     it("handleBeforeToolCall with invalid toolName denies instead of throwing", async () => {

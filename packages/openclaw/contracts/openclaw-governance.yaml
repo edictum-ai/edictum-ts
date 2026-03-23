@@ -90,11 +90,32 @@ contracts:
         - tool.name: { in: [write, edit, apply_patch] }
         - any:
             - args.path: { contains: "edictum" }
+            - args.path: { contains: "Edictum" }
+            - args.path: { contains: "EDICTUM" }
             - args.path: { contains: "openclaw-governance" }
             - args.path: { contains: "contracts/TAMPER" }
     then:
       effect: deny
       message: "Cannot modify governance files. These are managed by the system administrator."
+      tags: [tamper-resistance]
+
+  - id: tamper-protect-governance-files-exec
+    type: pre
+    tool: exec
+    when:
+      any:
+        # Shell-redirect writes to governance files
+        - args.command: { matches: '>\s*.*edictum.*\.ya?ml' }
+        - args.command: { matches: '>\s*.*openclaw-governance' }
+        - args.command: { matches: '\btee\b.*edictum' }
+        - args.command: { matches: '\btee\b.*openclaw-governance' }
+        - args.command: { matches: '\bcp\b.*edictum.*\.ya?ml' }
+        - args.command: { matches: '\bcp\b.*openclaw-governance' }
+        - args.command: { matches: '\bmv\b.*edictum.*\.ya?ml' }
+        - args.command: { matches: '\bmv\b.*openclaw-governance' }
+    then:
+      effect: deny
+      message: "Cannot overwrite governance files via shell. These are managed by the system administrator."
       tags: [tamper-resistance]
 
   - id: tamper-protect-exec
@@ -161,7 +182,7 @@ contracts:
         - args.path: { ends_with: ".key" }
     then:
       effect: deny
-      message: "Reading private keys is denied: '{args.path}'"
+      message: "Reading private keys is denied."
       tags: [credentials, private-keys]
 
   - id: protect-ssh-keys-exec
@@ -347,7 +368,7 @@ contracts:
         - "*.pipedream.net"
         - "*.beeceptor.com"
     outside: deny
-    message: "Domain is a known exfiltration/interception service: {args.url}"
+    message: "Domain is a known exfiltration/interception service."
 
   - id: block-exfil-via-curl
     type: pre
@@ -439,17 +460,17 @@ contracts:
     when:
       any:
         - args.message: { matches: 'AKIA[0-9A-Z]{16}' }
-        - args.message: { matches: 'sk-[a-zA-Z0-9]{20,}' }
+        - args.message: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
         - args.message: { matches: 'ghp_[a-zA-Z0-9]{36}' }
         - args.message: { matches: 'xox[bp]-[0-9]+' }
         - args.message: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
         - args.message: { matches: 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' }
         - args.message: { matches: 'OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }
         - args.text: { matches: 'AKIA[0-9A-Z]{16}' }
-        - args.text: { matches: 'sk-[a-zA-Z0-9]{20,}' }
+        - args.text: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
         - args.text: { matches: '-----BEGIN (RSA |EC )?PRIVATE KEY-----' }
         - args.content: { matches: 'AKIA[0-9A-Z]{16}' }
-        - args.content: { matches: 'sk-[a-zA-Z0-9]{20,}' }
+        - args.content: { matches: 'sk-(proj-)?[a-zA-Z0-9]{20,}' }
     then:
       effect: deny
       message: "Message contains credential patterns. Remove secrets before sending."
@@ -482,7 +503,7 @@ contracts:
             - args.media: { contains: "/etc/shadow" }
     then:
       effect: deny
-      message: "Attaching sensitive file is denied: '{args.media}'"
+      message: "Attaching sensitive file is denied."
       tags: [exfiltration, file-exfil, sendAttachment]
       metadata:
         severity: critical
@@ -500,8 +521,8 @@ contracts:
         matches_any:
           # AWS keys
           - 'AKIA[0-9A-Z]{16}'
-          # OpenAI / Anthropic / generic sk- keys
-          - 'sk-[a-zA-Z0-9]{20,}'
+          # OpenAI / Anthropic / generic sk- keys (including sk-proj- format)
+          - 'sk-(proj-)?[a-zA-Z0-9]{20,}'
           # GitHub tokens
           - 'ghp_[a-zA-Z0-9]{36}'
           - 'gho_[a-zA-Z0-9]{36}'
