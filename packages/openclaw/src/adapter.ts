@@ -709,8 +709,14 @@ export class EdictumOpenClawAdapter {
       }
     }
     if (this._pending.has(callId)) {
+      // Collision: a second call arrived with the same callId before the first
+      // call's after_tool_call hook fired. We overwrite rather than reject because:
+      // - Rejecting would deny a legitimate call
+      // - The overwritten entry's postconditions won't run, but this is a host bug
+      //   (duplicate callIds), not an attacker scenario we can mitigate here
+      // - The original call was already audited as CALL_ALLOWED
       console.warn(
-        `[edictum/openclaw] callId collision: ${callId} already pending — overwriting previous entry`,
+        `[edictum/openclaw] callId collision: ${callId} already pending — overwriting previous entry (postconditions for original call will not run)`,
       );
     }
     this._pending.set(callId, pending);

@@ -377,10 +377,14 @@ describe("EdictumOpenClawAdapter", () => {
 
       await adapter.pre("exec", { command: "ls" }, "tc-meta", ctx);
 
-      // Verify via audit event — metadata flows through the envelope
+      // Verify via audit event — envelope was created with metadata
       const event = sink.events[0];
       expect(event).toBeDefined();
       expect(event.toolName).toBe("exec");
+      expect(event.callId).toBe("tc-meta");
+      // Metadata (openclawAgentId, etc.) is on the envelope, not the audit event.
+      // The envelope is internal to the adapter; we verify it was created correctly
+      // by confirming the audit event has the expected callId and toolName.
     });
   });
 

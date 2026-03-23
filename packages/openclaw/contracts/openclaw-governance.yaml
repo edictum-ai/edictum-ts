@@ -99,6 +99,11 @@ contracts:
       message: "Cannot modify governance files. These are managed by the system administrator."
       tags: [tamper-resistance]
 
+  # Known limitation: Turing-complete tools (python -c, node -e) can write
+  # files via their own APIs (e.g., python -c "open('file','w').write(...)").
+  # Pattern-matching shell commands cannot exhaustively cover all scripting
+  # languages. Defence-in-depth: filesystem permissions on the governance
+  # directory are the primary protection; these contracts are a secondary guard.
   - id: tamper-protect-governance-files-exec
     type: pre
     tool: exec
@@ -128,8 +133,12 @@ contracts:
         # Kill the governance process
         - args.command: { matches: '\bkill(all)?\b.*openclaw' }
         - args.command: { matches: '\bpkill\b.*openclaw' }
-        # Tamper with governance env vars
+        # Tamper with governance env vars (export, unset, inline assignment)
         - args.command: { matches: '\b(export|unset)\b.*EDICTUM' }
+        - args.command: { matches: '\bEDICTUM_\w+=.*\b(node|python|openclaw)\b' }
+        # sed -i on governance config files
+        - args.command: { matches: '\bsed\s+-i\b.*edictum' }
+        - args.command: { matches: '\bsed\s+-i\b.*openclaw-governance' }
     then:
       effect: deny
       message: "Cannot modify governance infrastructure via shell."
@@ -208,19 +217,25 @@ contracts:
   # CRITICAL: exec tool exposes process.env including OPENCLAW_GATEWAY_TOKEN,
   # OPENCLAW_GATEWAY_PASSWORD, and all provider API keys (OPENAI_API_KEY, etc.)
 
-  - id: block-env-exfil
+  # block-env-exfil uses a sandbox contract to allowlist safe exec patterns
+  # and deny env-dumping commands. This is more robust than pattern-matching
+  # individual bypass variants (env > file, env | grep, printenv VAR, etc.)
+  - id: block-env-dump-commands
     type: pre
     tool: exec
     when:
       any:
-        # Direct env dump
-        - args.command: { matches: '\b(printenv|env)\s*$' }
-        - args.command: { matches: '\b(printenv|env)\s+(OPENCLAW_|ANTHROPIC_|OPENAI_|GOOGLE_|AWS_)' }
-        # Echo/printf of known token vars
-        - args.command: { matches: '\becho\s+.*\$\{?OPENCLAW_GATEWAY_(TOKEN|PASSWORD)' }
-        - args.command: { matches: '\becho\s+.*\$\{?(OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY|AWS_SECRET)' }
-        - args.command: { matches: '\bprintf\b.*\$\{?OPENCLAW_GATEWAY' }
-        - args.command: { matches: '\bprintf\b.*\$\{?(OPENAI_API_KEY|ANTHROPIC_API_KEY)' }
+        # env/printenv anywhere in the command — catches all variants:
+        # env, env | grep, env > file, printenv VAR, etc.
+        - args.command: { matches: '\benv\b' }
+        - args.command: { matches: '\bprintenv\b' }
+        # set (bash builtin that dumps all vars when called without args)
+        - args.command: { matches: '\bset\b\s*$' }
+        - args.command: { matches: '\bset\b\s*\|' }
+        # Echo/printf of known credential env vars
+        - args.command: { matches: '\$\{?(OPENCLAW_GATEWAY_(TOKEN|PASSWORD)|OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN)\}?' }
+        # Python/node/ruby one-liners accessing os.environ
+        - args.command: { matches: '\b(python3?|node|ruby)\b.*\b(os\.environ|process\.env|ENV\[)' }
     then:
       effect: deny
       message: "Reading API keys or gateway tokens via shell is denied. These are available to tools automatically."
@@ -351,6 +366,10 @@ contracts:
       metadata:
         severity: critical
 
+  # Known limitation: static domain blocklist cannot prevent DNS rebinding,
+  # CNAME chains through unlisted intermediary domains, or attacker-controlled
+  # content on legitimate domains (e.g., S3 buckets, GitHub Gists).
+  # Defence-in-depth: combine with network-level egress filtering at the host.
   - id: block-exfil-domains
     type: sandbox
     tools: [web_fetch, web_search, browser]
@@ -422,6 +441,12 @@ contracts:
         - args.command: { matches: '\brm\s+~\s+-[rRf]' }
         - args.command: { matches: '\brm\s+\.\s+-[rRf]' }
         - args.command: { matches: '\brm\s+--recursive\s+/' }
+        - args.command: { matches: '\brm\s+--no-preserve-root\b' }
+        - args.command: { matches: '\brm\s+--recursive\s+--force\s+/' }
+        # find -delete on root/home
+        - args.command: { matches: '\bfind\s+/\s+.*-delete\b' }
+        - args.command: { matches: '\bfind\s+~\s+.*-delete\b' }
+        - args.command: { matches: '\bfind\s+\.\s+.*-delete\b' }
         # Filesystem formatting
         - args.command: { matches: '\bmkfs\b' }
         # Raw disk writes
