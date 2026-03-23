@@ -114,9 +114,12 @@ export class ServerApprovalBackend implements ApprovalBackend {
 
     // Validate server-returned approvalId — this is a local validation
     // failure on the server's response, not an HTTP-layer error.
-    if (typeof approvalId !== "string" || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+    if (typeof approvalId !== "string" || approvalId.length > 128 || !SAFE_IDENTIFIER_RE.test(approvalId)) {
+      const display = typeof approvalId === "string"
+        ? JSON.stringify(approvalId.slice(0, 64)) + (approvalId.length > 64 ? "…" : "")
+        : JSON.stringify(approvalId);
       throw new EdictumConfigError(
-        `Server returned invalid approvalId: ${JSON.stringify(approvalId)}. Must match SAFE_IDENTIFIER_RE.`,
+        `Server returned invalid approvalId: ${display}. Must match SAFE_IDENTIFIER_RE.`,
       );
     }
 
