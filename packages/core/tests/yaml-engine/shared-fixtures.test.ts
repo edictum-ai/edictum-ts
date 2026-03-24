@@ -108,36 +108,40 @@ if (!fixturesDir && conformanceRequired) {
 
 const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
 
-describe.skipIf(suites == null)('shared rejection fixtures (edictum-schemas)', () => {
-  for (const suite of suites!) {
-    describe(suite.suite, () => {
-      for (const fixture of suite.fixtures) {
-        it(`${fixture.id}: ${fixture.description}`, () => {
-          // Re-serialize the bundle to YAML so we exercise the full
-          // loadBundleString path (parse + validate).
-          const bundleYaml = yaml.dump(fixture.bundle, { lineWidth: -1 })
+if (suites) {
+  describe('shared rejection fixtures (edictum-schemas)', () => {
+    for (const suite of suites) {
+      describe(suite.suite, () => {
+        for (const fixture of suite.fixtures) {
+          it(`${fixture.id}: ${fixture.description}`, () => {
+            // Re-serialize the bundle to YAML so we exercise the full
+            // loadBundleString path (parse + validate).
+            const bundleYaml = yaml.dump(fixture.bundle, { lineWidth: -1 })
 
-          let threw = false
-          let errorMessage = ''
+            let threw = false
+            let errorMessage = ''
 
-          try {
-            loadBundleString(bundleYaml)
-          } catch (err: unknown) {
-            threw = true
-            expect(err).toBeInstanceOf(EdictumConfigError)
-            errorMessage = (err as Error).message
-          }
+            try {
+              loadBundleString(bundleYaml)
+            } catch (err: unknown) {
+              threw = true
+              expect(err).toBeInstanceOf(EdictumConfigError)
+              errorMessage = (err as Error).message
+            }
 
-          expect(threw, `Expected fixture ${fixture.id} to throw, but it did not`).toBe(true)
+            expect(threw, `Expected fixture ${fixture.id} to throw, but it did not`).toBe(true)
 
-          if (fixture.expected.error_contains) {
-            expect(
-              errorMessage.toLowerCase(),
-              `Fixture ${fixture.id}: error "${errorMessage}" must contain "${fixture.expected.error_contains}"`,
-            ).toContain(fixture.expected.error_contains.toLowerCase())
-          }
-        })
-      }
-    })
-  }
-})
+            if (fixture.expected.error_contains) {
+              expect(
+                errorMessage.toLowerCase(),
+                `Fixture ${fixture.id}: error "${errorMessage}" must contain "${fixture.expected.error_contains}"`,
+              ).toContain(fixture.expected.error_contains.toLowerCase())
+            }
+          })
+        }
+      })
+    }
+  })
+} else {
+  it.skip('shared rejection fixtures — edictum-schemas not found', () => {})
+}
