@@ -116,7 +116,11 @@ export function validateContractFields(data: Record<string, unknown>): void {
 
 function validatePrePost(c: Record<string, unknown>, t: string, cid: string): void {
   if (c.tool == null) fail(`${t} contract '${cid}' requires 'tool'`)
-  if (c.when == null) fail(`${t} contract '${cid}' requires 'when'`)
+  if (c.when == null || typeof c.when !== 'object' || Array.isArray(c.when)) {
+    fail(
+      `${t} contract '${cid}' requires 'when' to be a mapping (got ${Array.isArray(c.when) ? 'array' : typeof c.when})`,
+    )
+  }
   if (c.then == null || typeof c.then !== 'object') fail(`${t} contract '${cid}' requires 'then'`)
 
   const then = c.then as Record<string, unknown>

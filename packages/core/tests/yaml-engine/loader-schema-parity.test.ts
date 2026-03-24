@@ -285,6 +285,24 @@ describe('pre contract required fields', () => {
   })
 })
 
+describe('pre contract when field type', () => {
+  test('when as plain string rejected', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: string-when
+    type: pre
+    tool: "*"
+    when: "invalid"
+    then:
+      effect: deny
+      message: "denied"`,
+      }),
+      /when/,
+    )
+  })
+})
+
 describe('post contract required fields', () => {
   test('missing tool rejected', () => {
     expectReject(
