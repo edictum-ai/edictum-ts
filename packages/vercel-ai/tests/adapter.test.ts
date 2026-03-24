@@ -614,18 +614,20 @@ describe('asCallbacks', () => {
     ).rejects.toThrow(EdictumDenied)
   })
 
-  it('defaults to empty object when neither input nor args is present', async () => {
+  it('throws EdictumDenied when neither input nor args is present (fail closed)', async () => {
     const guard = makeGuard()
     const adapter = new VercelAIAdapter(guard)
     const callbacks = adapter.asCallbacks()
 
-    // Neither input nor args — should not throw, args defaults to {}
-    await callbacks.experimental_onToolCallStart({
-      toolCall: {
-        toolCallId: 'call-empty',
-        toolName: 'MyTool',
-      },
-    })
+    // Neither input nor args — fail closed, deny the call
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-empty',
+          toolName: 'MyTool',
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
   })
 
   it('handles error events in onToolCallFinish', async () => {
