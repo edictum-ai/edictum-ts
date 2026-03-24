@@ -61,21 +61,23 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
 
   // Env overrides — sanitize all string inputs
   const actualService = sanitize(process.env['OTEL_SERVICE_NAME'] ?? serviceName)
-  const actualEndpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint).slice(0, 10_000)
+  const actualEndpoint = sanitize(process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint)
 
   // Validate endpoint scheme — only http:// and https:// are safe
   try {
     const scheme = new URL(actualEndpoint).protocol
     if (scheme !== 'http:' && scheme !== 'https:') {
       throw new EdictumConfigError(
-        `Invalid OTel endpoint scheme: ${JSON.stringify(scheme)}. Must be http:// or https://`,
+        `Invalid OTel endpoint scheme: ${JSON.stringify(scheme.slice(0, 50))}. Must be http:// or https://`,
       )
     }
   } catch (e) {
     if (e instanceof EdictumConfigError) throw e
-    throw new EdictumConfigError(`Invalid OTel endpoint URL: ${JSON.stringify(actualEndpoint)}`)
+    throw new EdictumConfigError(
+      `Invalid OTel endpoint URL: ${JSON.stringify(actualEndpoint.slice(0, 200))}`,
+    )
   }
-  const rawProtocol = process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] ?? protocol
+  const rawProtocol = (process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] ?? protocol).slice(0, 100)
 
   // Validate protocol
   const validSet: ReadonlySet<string> = new Set(VALID_PROTOCOLS)

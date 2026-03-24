@@ -26,7 +26,11 @@ class OTelSpanWrapper implements TelemetrySpan {
     }
   }
   setStatus(status: { code: number; message?: string }): void {
-    this._span.setStatus(status)
+    const safe =
+      status.message !== undefined
+        ? { code: status.code, message: sanitize(status.message, 1000) }
+        : status
+    this._span.setStatus(safe)
   }
   addEvent(name: string, attributes?: Record<string, unknown>): void {
     const safeName = sanitize(name, 1000)
