@@ -41,7 +41,8 @@ export interface OnToolCallStartEvent {
   readonly toolCall: {
     readonly toolCallId: string
     readonly toolName: string
-    readonly args: Record<string, unknown>
+    readonly input?: Record<string, unknown> // AI SDK v6 (MCP-aligned)
+    readonly args?: Record<string, unknown> // AI SDK v5 (backward compat)
   }
 }
 
@@ -50,7 +51,8 @@ export interface OnToolCallFinishEvent {
   readonly toolCall: {
     readonly toolCallId: string
     readonly toolName: string
-    readonly args: Record<string, unknown>
+    readonly input?: Record<string, unknown> // AI SDK v6 (MCP-aligned)
+    readonly args?: Record<string, unknown> // AI SDK v5 (backward compat)
   }
   readonly output?: unknown
   readonly error?: unknown
@@ -159,7 +161,8 @@ export class VercelAIAdapter {
 
     return {
       experimental_onToolCallStart: async (event: OnToolCallStartEvent): Promise<void> => {
-        const { toolCallId, toolName, args } = event.toolCall
+        const { toolCallId, toolName } = event.toolCall
+        const args = event.toolCall.input ?? event.toolCall.args ?? {}
         const result = await this._pre(toolName, args, toolCallId)
         if (result != null) {
           throw new EdictumDenied(result)

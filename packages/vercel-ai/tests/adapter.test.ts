@@ -534,6 +534,100 @@ describe('asCallbacks', () => {
     expect(warnFn.mock.calls[0]?.[1]?.length).toBeGreaterThan(0)
   })
 
+  it('reads toolCall.input (AI SDK v6) for precondition args', async () => {
+    const blockDangerous: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        if ((envelope.args as Record<string, unknown>)['dangerous']) {
+          return Verdict.fail('Dangerous arg detected')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [blockDangerous] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // AI SDK v6 sends `input`, not `args`
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-v6',
+          toolName: 'MyTool',
+          input: { dangerous: true },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('falls back to toolCall.args when input is absent (AI SDK v5 compat)', async () => {
+    const blockDangerous: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        if ((envelope.args as Record<string, unknown>)['dangerous']) {
+          return Verdict.fail('Dangerous arg detected')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [blockDangerous] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // AI SDK v5 sends `args`
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-v5',
+          toolName: 'MyTool',
+          args: { dangerous: true },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('prefers input over args when both are present', async () => {
+    const checkArgs: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        const args = envelope.args as Record<string, unknown>
+        if (args['source'] === 'input') {
+          return Verdict.fail('Got input field')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [checkArgs] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // Both present — input should win
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-both',
+          toolName: 'MyTool',
+          input: { source: 'input' },
+          args: { source: 'args' },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('defaults to empty object when neither input nor args is present', async () => {
+    const guard = makeGuard()
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // Neither input nor args — should not throw, args defaults to {}
+    await callbacks.experimental_onToolCallStart({
+      toolCall: {
+        toolCallId: 'call-empty',
+        toolName: 'MyTool',
+      },
+    })
+  })
+
   it('handles error events in onToolCallFinish', async () => {
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
