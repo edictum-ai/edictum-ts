@@ -32,6 +32,7 @@
  */
 
 import { EdictumConfigError } from '@edictum/core'
+import type { PushMetricExporter } from '@opentelemetry/sdk-metrics'
 
 /** Valid export protocols. */
 const VALID_PROTOCOLS = ['grpc', 'http', 'http/protobuf'] as const
@@ -129,7 +130,8 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
   // OTEL_RESOURCE_ATTRIBUTES — highest precedence for all keys EXCEPT
   // service.name when OTEL_SERVICE_NAME is explicitly set.
   const envServiceNameSet = process.env['OTEL_SERVICE_NAME'] !== undefined
-  const envAttrs = process.env['OTEL_RESOURCE_ATTRIBUTES'] ?? ''
+  // Cap env input per CLAUDE.md input validation policy
+  const envAttrs = (process.env['OTEL_RESOURCE_ATTRIBUTES'] ?? '').slice(0, 10_000)
   if (envAttrs) {
     for (const pair of envAttrs.split(',')) {
       if (pair.includes('=')) {
@@ -175,7 +177,7 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
     metricsEndpoint = 'http://localhost:4318/v1/metrics'
   }
 
-  let metricExporter
+  let metricExporter: PushMetricExporter
   if (useGrpc) {
     const { OTLPMetricExporter } = await import('@opentelemetry/exporter-metrics-otlp-grpc')
     metricExporter = new OTLPMetricExporter({ url: metricsEndpoint })

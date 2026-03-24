@@ -197,4 +197,70 @@ describe('GovernanceTelemetry', () => {
     expect(spans[0]!.status.code).toBe(SpanStatusCode.OK)
     expect(spans[1]!.status.code).toBe(SpanStatusCode.ERROR)
   })
+
+  describe('security', () => {
+    it('strips control characters from span name', () => {
+      const telemetry = new GovernanceTelemetry()
+      const envelope: TelemetryEnvelope = {
+        ...ENVELOPE,
+        toolName: 'Bash\x00\x1f\x7f\x9f',
+      }
+      telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+
+      const spans = spanExporter.getFinishedSpans()
+      expect(spans[0]!.name).toBe('tool.execute Bash')
+    })
+
+    it('strips unicode line separators from span name', () => {
+      const telemetry = new GovernanceTelemetry()
+      const envelope: TelemetryEnvelope = {
+        ...ENVELOPE,
+        toolName: 'Tool\u2028Name\u2029End',
+      }
+      telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+
+      const spans = spanExporter.getFinishedSpans()
+      expect(spans[0]!.name).toBe('tool.execute ToolNameEnd')
+    })
+
+    it('caps span name at 10,000 characters', () => {
+      const telemetry = new GovernanceTelemetry()
+      const longName = 'A'.repeat(10_001)
+      const envelope: TelemetryEnvelope = {
+        ...ENVELOPE,
+        toolName: longName,
+      }
+      telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+
+      const spans = spanExporter.getFinishedSpans()
+      // "tool.execute " prefix + 10,000 chars
+      expect(spans[0]!.name).toBe(`tool.execute ${'A'.repeat(10_000)}`)
+    })
+
+    it('caps tool.name attribute at 10,000 characters', () => {
+      const telemetry = new GovernanceTelemetry()
+      const longName = 'B'.repeat(10_001)
+      const envelope: TelemetryEnvelope = {
+        ...ENVELOPE,
+        toolName: longName,
+      }
+      telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+
+      const spans = spanExporter.getFinishedSpans()
+      const attrValue = spans[0]!.attributes['tool.name'] as string
+      expect(attrValue.length).toBe(10_000)
+    })
+
+    it('strips newlines from span name', () => {
+      const telemetry = new GovernanceTelemetry()
+      const envelope: TelemetryEnvelope = {
+        ...ENVELOPE,
+        toolName: 'Bash\ninjected\rheader',
+      }
+      telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+
+      const spans = spanExporter.getFinishedSpans()
+      expect(spans[0]!.name).toBe('tool.execute Bashinjectedheader')
+    })
+  })
 })

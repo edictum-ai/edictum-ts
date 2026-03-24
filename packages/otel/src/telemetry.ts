@@ -40,7 +40,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
       .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
     const span = this._tracer.startSpan(`tool.execute ${safeName}`, {
       attributes: {
-        'tool.name': envelope.toolName,
+        'tool.name': envelope.toolName.slice(0, 10_000),
         'tool.side_effect': envelope.sideEffect,
         'tool.call_index': envelope.callIndex,
         'governance.environment': envelope.environment,
