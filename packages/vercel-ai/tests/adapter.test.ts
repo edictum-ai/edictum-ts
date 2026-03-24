@@ -615,7 +615,9 @@ describe('asCallbacks', () => {
   })
 
   it('throws EdictumDenied when neither input nor args is present (fail closed)', async () => {
-    const guard = makeGuard()
+    const sink = makeSink()
+    const denyFn = vi.fn()
+    const guard = makeGuard({ auditSink: sink, onDeny: denyFn })
     const adapter = new VercelAIAdapter(guard)
     const callbacks = adapter.asCallbacks()
 
@@ -628,6 +630,11 @@ describe('asCallbacks', () => {
         },
       }),
     ).rejects.toThrow(EdictumDenied)
+
+    // Audit event must be emitted even on the early-fail path
+    const events = sink.filter(AuditAction.CALL_ALLOWED)
+    expect(events.length).toBe(1)
+    expect(events[0]?.toolName).toBe('MyTool')
   })
 
   it('handles error events in onToolCallFinish', async () => {

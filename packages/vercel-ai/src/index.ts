@@ -162,8 +162,10 @@ export class VercelAIAdapter {
     return {
       experimental_onToolCallStart: async (event: OnToolCallStartEvent): Promise<void> => {
         const { toolCallId, toolName } = event.toolCall
-        // Fail closed: deny if neither input (v6) nor args (v5) is present
+        // Fail closed: deny if neither input (v6) nor args (v5) is present.
+        // Route through _pre so audit, on_deny callback, and session tracking all fire.
         if (event.toolCall.input === undefined && event.toolCall.args === undefined) {
+          await this._pre(toolName, {}, toolCallId)
           throw new EdictumDenied(
             'DENIED: Cannot determine tool arguments — neither input nor args present in event',
           )
