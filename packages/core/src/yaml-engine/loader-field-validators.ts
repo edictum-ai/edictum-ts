@@ -118,7 +118,9 @@ export function validateContractFields(data: Record<string, unknown>): void {
 // ---------------------------------------------------------------------------
 
 function validatePrePost(c: Record<string, unknown>, t: string, cid: string): void {
-  if (c.tool == null) fail(`${t} contract '${cid}' requires 'tool'`)
+  if (c.tool == null || typeof c.tool !== 'string') {
+    fail(`${t} contract '${cid}' requires 'tool' to be a string`)
+  }
   if (c.when == null || typeof c.when !== 'object' || Array.isArray(c.when)) {
     fail(
       `${t} contract '${cid}' requires 'when' to be a mapping (got ${Array.isArray(c.when) ? 'array' : typeof c.when})`,
@@ -176,8 +178,17 @@ function validateSandboxStructure(c: Record<string, unknown>, cid: string): void
   if (c.tool == null && c.tools == null) {
     fail(`sandbox contract '${cid}' requires either 'tool' or 'tools'`)
   }
+  if (c.tool != null && typeof c.tool !== 'string') {
+    fail(`sandbox contract '${cid}': 'tool' must be a string`)
+  }
+  if (c.tools != null && (!Array.isArray(c.tools) || (c.tools as unknown[]).length === 0)) {
+    fail(`sandbox contract '${cid}': 'tools' must be a non-empty array`)
+  }
   if (c.within == null && c.allows == null) {
     fail(`sandbox contract '${cid}' requires either 'within' or 'allows'`)
+  }
+  if (c.within != null && (!Array.isArray(c.within) || (c.within as unknown[]).length === 0)) {
+    fail(`sandbox contract '${cid}': 'within' must be a non-empty array`)
   }
   if (c.message == null) fail(`sandbox contract '${cid}' requires 'message'`)
   validateMessageLength(c.message, `sandbox contract '${cid}'`)

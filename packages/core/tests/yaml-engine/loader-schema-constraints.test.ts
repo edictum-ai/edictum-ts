@@ -225,6 +225,48 @@ describe('sandbox contract structure', () => {
       ),
     ).not.toThrow()
   })
+
+  test('sandbox with tools: [] rejected (minItems: 1)', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: sb-empty-tools
+    type: sandbox
+    tools: []
+    within: ["/tmp"]
+    message: "sandbox denied"`,
+      }),
+      /non-empty array/,
+    )
+  })
+
+  test('sandbox with non-string tool rejected', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: sb-num-tool
+    type: sandbox
+    tool: 42
+    within: ["/tmp"]
+    message: "sandbox denied"`,
+      }),
+      /tool.*string/,
+    )
+  })
+
+  test('sandbox with within: [] rejected (minItems: 1)', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: sb-empty-within
+    type: sandbox
+    tool: "Bash"
+    within: []
+    message: "sandbox denied"`,
+      }),
+      /non-empty array/,
+    )
+  })
 })
 
 // =========================================================================
