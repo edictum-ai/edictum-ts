@@ -153,4 +153,30 @@ describe('configureOtel env overrides', () => {
     process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'ftp://evil.example.com'
     await expect(configureOtel()).rejects.toThrow('Invalid OTel endpoint')
   })
+
+  it('strips control characters from serviceName parameter', async () => {
+    await configureOtel({ serviceName: 'agent\x00injected\x1fchars' })
+    const attrs = getResourceAttributes()
+    expect(attrs).not.toBeNull()
+    expect(attrs!['service.name']).toBe('agentinjectedchars')
+    trace.disable()
+  })
+
+  it('strips control characters from edictumVersion parameter', async () => {
+    await configureOtel({ edictumVersion: '0.1.0\x00\x1f' })
+    const attrs = getResourceAttributes()
+    expect(attrs).not.toBeNull()
+    expect(attrs!['edictum.version']).toBe('0.1.0')
+    trace.disable()
+  })
+
+  it('strips control characters from resourceAttributes values', async () => {
+    await configureOtel({
+      resourceAttributes: { 'deploy\x00id': 'val\x1fue' },
+    })
+    const attrs = getResourceAttributes()
+    expect(attrs).not.toBeNull()
+    expect(attrs!['deployid']).toBe('value')
+    trace.disable()
+  })
 })

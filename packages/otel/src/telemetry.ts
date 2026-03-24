@@ -7,7 +7,7 @@
  * Install: npm install @edictum/otel @opentelemetry/api
  */
 
-import type { Attributes, Counter, Meter, Span, Tracer } from '@opentelemetry/api'
+import type { Counter, Meter, Span, Tracer } from '@opentelemetry/api'
 import { SpanStatusCode, metrics, trace } from '@opentelemetry/api'
 
 import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
@@ -18,15 +18,29 @@ class OTelSpanWrapper implements TelemetrySpan {
   constructor(private readonly _span: Span) {}
 
   setAttribute(key: string, value: unknown): void {
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      this._span.setAttribute(key, value)
+    const safeKey = sanitize(key, 1000)
+    if (typeof value === 'string') {
+      this._span.setAttribute(safeKey, sanitize(value))
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      this._span.setAttribute(safeKey, value)
     }
   }
   setStatus(status: { code: number; message?: string }): void {
     this._span.setStatus(status)
   }
   addEvent(name: string, attributes?: Record<string, unknown>): void {
-    this._span.addEvent(name, attributes as Attributes | undefined)
+    const safeName = sanitize(name, 1000)
+    if (!attributes) {
+      this._span.addEvent(safeName)
+      return
+    }
+    const safeAttrs: Record<string, string | number | boolean> = {}
+    for (const [k, v] of Object.entries(attributes)) {
+      const sk = sanitize(k, 1000)
+      if (typeof v === 'string') safeAttrs[sk] = sanitize(String(v))
+      else if (typeof v === 'number' || typeof v === 'boolean') safeAttrs[sk] = v
+    }
+    this._span.addEvent(safeName, safeAttrs)
   }
   end(): void {
     this._span.end()
