@@ -98,12 +98,16 @@ describe('resolvePath', () => {
     expect(resolvePath('/')).toBe(realpathSync('/'))
   })
 
-  test('null byte in path does not bypass resolution', () => {
-    const input = join(subdir, 'file\x00.txt')
-    // Should not throw — null bytes are passed through to realpathSync
-    // which will throw ENOENT (path doesn't exist), triggering walk-up
+  test('null byte traversal does not escape resolved directory', () => {
+    // Null byte followed by .. traversal: path.resolve canonicalizes this
+    // to an ancestor directory. Verify the result stays within the resolved
+    // parent, not escaping to an unrelated path.
+    const input = join(subdir, 'file\x00', '..', '..', 'etc', 'passwd')
     const result = resolvePath(input)
-    expect(typeof result).toBe('string')
+    // path.resolve canonicalizes: subdir/file\x00/../../etc/passwd → <parent>/etc/passwd
+    // The resolved path must NOT start with /etc — it should stay within
+    // the resolved ancestor chain of subdir
+    expect(result.startsWith('/etc')).toBe(false)
   })
 })
 
