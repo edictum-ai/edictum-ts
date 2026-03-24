@@ -163,9 +163,12 @@ export class VercelAIAdapter {
       experimental_onToolCallStart: async (event: OnToolCallStartEvent): Promise<void> => {
         const { toolCallId, toolName } = event.toolCall
         // Fail closed: deny if neither input (v6) nor args (v5) is present.
+        // Uses == null to catch both null and undefined (JS callers, type assertions).
         // Emit audit + fire on_deny directly (cannot route through _pre — it would
         // emit CALL_ALLOWED when no contracts deny the empty-args envelope).
-        if (event.toolCall.input === undefined && event.toolCall.args === undefined) {
+        // NOTE: observe mode does NOT apply here — we cannot evaluate contracts against
+        // unknown args, so we always fail closed regardless of mode.
+        if (event.toolCall.input == null && event.toolCall.args == null) {
           const reason = 'Cannot determine tool arguments — neither input nor args present in event'
           await this._session.incrementAttempts()
           const envelope = createEnvelope(
@@ -196,6 +199,8 @@ export class VercelAIAdapter {
                 : null,
               decisionSource: 'adapter',
               reason,
+              sessionAttemptCount: await this._session.attemptCount(),
+              sessionExecutionCount: await this._session.executionCount(),
               mode: this._guard.mode,
               policyVersion: this._guard.policyVersion,
             }),

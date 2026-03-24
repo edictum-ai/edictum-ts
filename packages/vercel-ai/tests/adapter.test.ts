@@ -635,9 +635,30 @@ describe('asCallbacks', () => {
     const denied = sink.filter(AuditAction.CALL_DENIED)
     expect(denied.length).toBe(1)
     expect(denied[0]?.toolName).toBe('MyTool')
+    expect(denied[0]?.sessionAttemptCount).toBe(1)
 
     // on_deny callback must fire exactly once
     expect(denyFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when input is null (not just undefined)', async () => {
+    const sink = makeSink()
+    const guard = makeGuard({ auditSink: sink })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-null',
+          toolName: 'MyTool',
+          input: null as unknown as Record<string, unknown>,
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+
+    const denied = sink.filter(AuditAction.CALL_DENIED)
+    expect(denied.length).toBe(1)
   })
 
   it('handles error events in onToolCallFinish', async () => {
