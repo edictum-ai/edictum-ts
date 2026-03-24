@@ -1,12 +1,12 @@
 /**
- * Tests for no-op implementations (NoOpSpan, NoOpTracer, NoOpTelemetry).
+ * Tests for no-op implementations (NoOpSpan, NoOpTelemetry).
  *
  * Verifies that all methods succeed silently without OTel installed.
  */
 
 import { describe, expect, it } from "vitest";
 
-import { NoOpSpan, NoOpTelemetry, NoOpTracer } from "../src/noop.js";
+import { NoOpSpan, NoOpTelemetry } from "../src/noop.js";
 import type { TelemetryEnvelope } from "../src/types.js";
 
 const ENVELOPE: TelemetryEnvelope = {
@@ -38,14 +38,6 @@ describe("NoOpSpan", () => {
   it("end is a no-op", () => {
     const span = new NoOpSpan();
     expect(() => span.end()).not.toThrow();
-  });
-});
-
-describe("NoOpTracer", () => {
-  it("startSpan returns a NoOpSpan", () => {
-    const tracer = new NoOpTracer();
-    const span = tracer.startSpan("test");
-    expect(span).toBeInstanceOf(NoOpSpan);
   });
 });
 

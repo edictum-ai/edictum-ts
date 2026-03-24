@@ -102,9 +102,20 @@ export async function configureOtel(
   // "http/protobuf" and "http" both select HTTP exporter
   const useGrpc = actualProtocol === "grpc";
 
-  // Adjust default endpoint for HTTP when the caller didn't override
+  // Adjust default endpoint for HTTP when the caller didn't override.
+  // Normalize via URL to handle trailing slashes and case differences.
+  const DEFAULT_GRPC_ORIGIN = "http://localhost:4317";
+  const isDefaultEndpoint = (() => {
+    try {
+      return new URL(actualEndpoint).origin === new URL(DEFAULT_GRPC_ORIGIN).origin
+        && new URL(actualEndpoint).pathname.replace(/\/$/, "") === "";
+    } catch {
+      return false;
+    }
+  })();
+
   let resolvedEndpoint = actualEndpoint;
-  if (!useGrpc && actualEndpoint === "http://localhost:4317") {
+  if (!useGrpc && isDefaultEndpoint) {
     resolvedEndpoint = "http://localhost:4318/v1/traces";
   }
 
@@ -170,9 +181,9 @@ export async function configureOtel(
     "@opentelemetry/sdk-metrics"
   );
 
-  // Use the same endpoint with /v1/metrics path for HTTP, or the base endpoint for gRPC
+  // Adjust default metrics endpoint for HTTP — mirror the trace endpoint logic
   let metricsEndpoint = actualEndpoint;
-  if (!useGrpc && metricsEndpoint === "http://localhost:4318/v1/traces") {
+  if (!useGrpc && isDefaultEndpoint) {
     metricsEndpoint = "http://localhost:4318/v1/metrics";
   }
 

@@ -48,7 +48,8 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
     // Sanitize toolName for span name — strip control chars and newlines
     // to prevent injection into trace backends. The validated name is only
     // used in the span name; the raw value is preserved in the attribute.
-    const safeName = envelope.toolName.replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
+    // Cap at 10,000 chars per CLAUDE.md regex DoS policy, then strip control chars
+    const safeName = envelope.toolName.slice(0, 10_000).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
     const span = this._tracer.startSpan(
       `tool.execute ${safeName}`,
       {
@@ -73,7 +74,8 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
       "tool.name": envelope.toolName,
     };
     if (reason !== undefined) {
-      attrs["denial.reason"] = reason;
+      // Truncate to limit metric label cardinality — full reason belongs in spans
+      attrs["denial.reason"] = reason.slice(0, 200);
     }
     this._deniedCounter.add(1, attrs);
   }

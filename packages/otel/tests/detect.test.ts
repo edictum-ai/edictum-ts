@@ -4,7 +4,7 @@
 
 import { describe, expect, it, afterEach } from "vitest";
 
-import { createTelemetry, hasOtel, _resetHasOtelCache } from "../src/detect.js";
+import { createTelemetry, hasOtel, _resetHasOtelCache } from "../src/detect.js"; // @internal import for test only
 import { GovernanceTelemetry } from "../src/telemetry.js";
 
 afterEach(() => {

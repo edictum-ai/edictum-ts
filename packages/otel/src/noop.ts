@@ -29,13 +29,6 @@ export class NoOpSpan implements TelemetrySpan {
   }
 }
 
-/** Dummy tracer — returns NoOpSpan for all operations. */
-export class NoOpTracer {
-  startSpan(_name: string, _options?: unknown): NoOpSpan {
-    return new NoOpSpan();
-  }
-}
-
 /** No-op telemetry — all span/metric methods are silent no-ops. */
 export class NoOpTelemetry implements GovernanceTelemetryLike {
   startToolSpan(_envelope: TelemetryEnvelope): NoOpSpan {
