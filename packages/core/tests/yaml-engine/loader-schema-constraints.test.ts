@@ -9,7 +9,11 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { loadBundleString, validateContractFields } from '../../src/yaml-engine/index.js'
+import {
+  loadBundleString,
+  validateContractFields,
+  validateExpressionShapes,
+} from '../../src/yaml-engine/index.js'
 import { EdictumConfigError } from '../../src/errors.js'
 
 // ---------------------------------------------------------------------------
@@ -428,6 +432,47 @@ describe('null contract elements', () => {
       }),
       /contract must be an object/,
     )
+  })
+})
+
+describe('message type validation', () => {
+  test('non-string message (number) rejected', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: num-msg
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: 42`,
+      }),
+      /message must be a string/,
+    )
+  })
+})
+
+describe('null tool entry', () => {
+  test('null tool entry rejected', () => {
+    expectReject(bundle({ extra: 'tools:\n  my_tool:' }), /tools\.my_tool/)
+  })
+})
+
+describe('expression depth limit', () => {
+  test('deeply nested expression throws EdictumConfigError', () => {
+    // Build a deeply nested expression object programmatically
+    // (YAML flow syntax may not reliably parse at extreme depths)
+    let expr: Record<string, unknown> = { 'args.x': { equals: 'x' } }
+    for (let i = 0; i < 60; i++) expr = { not: expr }
+    const data = {
+      contracts: [
+        { id: 'deep', type: 'pre', tool: '*', when: expr, then: { effect: 'deny', message: 'x' } },
+      ],
+    }
+    expect(() => validateExpressionShapes(data)).toThrow(EdictumConfigError)
+    expect(() => validateExpressionShapes(data)).toThrow(/depth/)
   })
 })
 

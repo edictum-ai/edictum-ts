@@ -19,7 +19,11 @@ export function validateExpressionShapes(data: Record<string, unknown>): void {
   }
 }
 
-function checkExprShape(expr: unknown, cid: string): void {
+const MAX_EXPR_DEPTH = 50
+
+function checkExprShape(expr: unknown, cid: string, depth = 0): void {
+  if (depth > MAX_EXPR_DEPTH)
+    fail(`contract '${cid}': expression nesting exceeds maximum depth (${MAX_EXPR_DEPTH})`)
   if (expr == null || typeof expr !== 'object') return
   const e = expr as Record<string, unknown>
 
@@ -27,18 +31,18 @@ function checkExprShape(expr: unknown, cid: string): void {
     const a = e.all
     if (!Array.isArray(a) || a.length === 0)
       fail(`contract '${cid}': 'all' requires a non-empty array`)
-    for (const s of a) checkExprShape(s, cid)
+    for (const s of a) checkExprShape(s, cid, depth + 1)
     return
   }
   if ('any' in e) {
     const a = e.any
     if (!Array.isArray(a) || a.length === 0)
       fail(`contract '${cid}': 'any' requires a non-empty array`)
-    for (const s of a) checkExprShape(s, cid)
+    for (const s of a) checkExprShape(s, cid, depth + 1)
     return
   }
   if ('not' in e) {
-    checkExprShape(e.not, cid)
+    checkExprShape(e.not, cid, depth + 1)
     return
   }
 

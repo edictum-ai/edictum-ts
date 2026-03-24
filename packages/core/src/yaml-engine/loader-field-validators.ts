@@ -78,13 +78,14 @@ export function validateContractFields(data: Record<string, unknown>): void {
   // --- tools side_effect enum ---
   if (data.tools != null && typeof data.tools === 'object') {
     for (const [tn, td] of Object.entries(data.tools as Record<string, unknown>)) {
-      if (td != null && typeof td === 'object') {
-        const se = (td as Record<string, unknown>).side_effect
-        if (!VALID_SIDE_EFFECTS.has(se as string)) {
-          fail(
-            `tools.${tn}.side_effect must be 'pure', 'read', 'write', or 'irreversible', got '${String(se)}'`,
-          )
-        }
+      if (td == null || typeof td !== 'object') {
+        fail(`tools.${tn} must be an object with a 'side_effect' field`)
+      }
+      const se = (td as Record<string, unknown>).side_effect
+      if (!VALID_SIDE_EFFECTS.has(se as string)) {
+        fail(
+          `tools.${tn}.side_effect must be 'pure', 'read', 'write', or 'irreversible', got '${String(se)}'`,
+        )
       }
     }
   }
@@ -177,7 +178,10 @@ function validateSandboxStructure(c: Record<string, unknown>, cid: string): void
 // ---------------------------------------------------------------------------
 
 function validateMessageLength(msg: unknown, context: string): void {
-  if (typeof msg === 'string' && msg.length > MAX_MESSAGE_LENGTH) {
+  if (typeof msg !== 'string') {
+    fail(`${context}: message must be a string`)
+  }
+  if (msg.length > MAX_MESSAGE_LENGTH) {
     fail(`${context}: message exceeds ${MAX_MESSAGE_LENGTH} characters`)
   }
 }

@@ -44,6 +44,9 @@ const CONTRACT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
 
 /** Validate a single contract ID for dangerous characters and format. */
 function validateContractId(contractId: string): void {
+  if (contractId.length > 10_000) {
+    throw new EdictumConfigError('Contract id exceeds maximum length')
+  }
   // Control chars checked first — more specific error than pattern mismatch.
   if (CONTROL_CHAR_RE.test(contractId)) {
     throw new EdictumConfigError(
