@@ -12,9 +12,16 @@ import { SpanStatusCode, metrics, trace } from '@opentelemetry/api'
 
 import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
 
+/** Strip control chars and cap length for OTel attribute values. */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/g
+
 /** Cap and sanitize a tool name for use in span/metric attributes. */
 const sanitizeToolName = (name: string): string =>
-  name.slice(0, 10_000).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
+  name.slice(0, 10_000).replace(CONTROL_CHAR_RE, '')
+
+/** Cap and sanitize a generic attribute value. */
+const sanitizeAttr = (value: string, maxLen = 10_000): string =>
+  value.slice(0, maxLen).replace(CONTROL_CHAR_RE, '')
 
 export class GovernanceTelemetry implements GovernanceTelemetryLike {
   private readonly _tracer: Tracer
@@ -41,10 +48,10 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
     const span = this._tracer.startSpan(`tool.execute ${safeName}`, {
       attributes: {
         'tool.name': safeName,
-        'tool.side_effect': envelope.sideEffect,
+        'tool.side_effect': sanitizeAttr(envelope.sideEffect),
         'tool.call_index': envelope.callIndex,
-        'governance.environment': envelope.environment,
-        'governance.run_id': envelope.runId,
+        'governance.environment': sanitizeAttr(envelope.environment),
+        'governance.run_id': sanitizeAttr(envelope.runId),
       },
     })
     // OTel Span satisfies TelemetrySpan — setStatus signature is compatible
@@ -60,7 +67,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
     }
     if (reason !== undefined) {
       // Truncate to limit metric label cardinality — full reason belongs in spans
-      attrs['denial.reason'] = reason.slice(0, 200).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
+      attrs['denial.reason'] = sanitizeAttr(reason, 200)
     }
     this._deniedCounter.add(1, attrs)
   }
@@ -72,7 +79,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
 
   /** Set span status to ERROR and end it. */
   setSpanError(span: TelemetrySpan, reason: string): void {
-    span.setStatus({ code: SpanStatusCode.ERROR, message: reason })
+    span.setStatus({ code: SpanStatusCode.ERROR, message: sanitizeAttr(reason, 1000) })
     span.end()
   }
 

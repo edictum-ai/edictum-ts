@@ -143,4 +143,9 @@ describe('configureOtel env overrides', () => {
     expect(attrs!['dirty']).toBeUndefined()
     trace.disable()
   })
+
+  it('throws EdictumConfigError when OTEL_EXPORTER_OTLP_PROTOCOL is invalid', async () => {
+    process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] = 'invalid'
+    await expect(configureOtel()).rejects.toThrow('Invalid OTel protocol')
+  })
 })
