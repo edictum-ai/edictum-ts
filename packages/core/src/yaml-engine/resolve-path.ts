@@ -15,12 +15,23 @@ import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:p
  *
  * This function walks up the directory tree to find the deepest existing
  * ancestor, resolves its symlinks, then appends the remaining components.
+ *
+ * Security: only ENOENT triggers the walk-up fallback. EACCES (permission
+ * denied) and ELOOP (circular symlink) return the normalized path without
+ * partial resolution — fail closed when the true target is unknowable.
  */
 export function resolvePath(p: string): string {
   const resolved = pathResolve(p)
   try {
     return realpathSync(resolved)
-  } catch {
+  } catch (err: unknown) {
+    // Only apply the walk-up fallback for ENOENT (path doesn't exist yet).
+    // For EACCES, ELOOP, or any other error, return the normalized path
+    // without attempting partial resolution — we cannot safely determine
+    // the true target and must fail closed.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return resolved
+    }
     // Walk up to find deepest existing ancestor and resolve its symlinks
     const parts = resolved.split(pathSep)
     for (let i = parts.length - 1; i > 0; i--) {

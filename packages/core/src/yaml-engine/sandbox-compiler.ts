@@ -120,9 +120,6 @@ const _PATH_ARG_KEYS = new Set([
   'dst',
 ])
 
-/** Alias for resolvePath — used internally by extractPaths. */
-const _realpath = resolvePath
-
 // ---------------------------------------------------------------------------
 // Resource extraction
 // ---------------------------------------------------------------------------
@@ -134,7 +131,7 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
 
   function add(p: string): void {
     if (!p) return
-    const resolved = _realpath(p)
+    const resolved = resolvePath(p)
     if (!seen.has(resolved)) {
       seen.add(resolved)
       paths.push(resolved)
