@@ -106,10 +106,12 @@ jobs:
                a. If INTRODUCED by this PR: verify concrete attack path or bug, include fix with code.
                b. If pre-existing: label as "ℹ️ Pre-existing:" — no severity, no fix required.
 
-            7. **Severity classification**:
-               - **Critical** (STATUS: fail): injection, fail-open, deny bypass — concrete exploitable attack path
-               - **Warning** (STATUS: warn): defense-in-depth gaps, missing tests, terminology — real findings without immediate exploitable path
-               - **Suggestion**: naming, file size, minor improvements — does NOT block merge
+            7. **Severity classification** — assign carefully, the CI gate depends on this:
+               - **Critical** (STATUS: fail, blocks merge): concrete exploitable vulnerability with a demonstrable attack path — injection, fail-open on error, data corruption, secrets leaking, deny bypass. You must describe the exact steps an attacker would take.
+               - **Warning** (STATUS: warn, blocks merge): a correctness bug that will produce wrong behavior in a real scenario TODAY — not hypothetically, not "if someone changes X in the future." The bug must be demonstrable with current code.
+               - **Suggestion** (STATUS: pass, does NOT block merge): everything else — style, naming, file size, test structure, theoretical future fragility, missing tests for non-security paths, documentation gaps, defensive hardening without a concrete current vulnerability.
+
+               **Do NOT use warn for:** file size, test ordering, missing non-security tests, theoretical future scenarios, style/naming, pre-existing issues. When in doubt, use suggestion — a false warning costs ~15 min of CI.
 
             8. **Be exhaustive in ONE pass.** Find ALL issues. Batch same-class findings.
 
