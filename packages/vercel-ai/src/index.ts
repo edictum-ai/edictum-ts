@@ -41,7 +41,8 @@ export interface OnToolCallStartEvent {
   readonly toolCall: {
     readonly toolCallId: string
     readonly toolName: string
-    readonly args: Record<string, unknown>
+    readonly input?: Record<string, unknown> // AI SDK v6 (MCP-aligned)
+    readonly args?: Record<string, unknown> // AI SDK v5 (backward compat)
   }
 }
 
@@ -50,7 +51,8 @@ export interface OnToolCallFinishEvent {
   readonly toolCall: {
     readonly toolCallId: string
     readonly toolName: string
-    readonly args: Record<string, unknown>
+    readonly input?: Record<string, unknown> // AI SDK v6 (MCP-aligned)
+    readonly args?: Record<string, unknown> // AI SDK v5 (backward compat)
   }
   readonly output?: unknown
   readonly error?: unknown
@@ -159,7 +161,61 @@ export class VercelAIAdapter {
 
     return {
       experimental_onToolCallStart: async (event: OnToolCallStartEvent): Promise<void> => {
-        const { toolCallId, toolName, args } = event.toolCall
+        const { toolCallId, toolName } = event.toolCall
+        // Fail closed: deny if neither input (v6) nor args (v5) is present.
+        // Uses == null to catch both null and undefined (JS callers, type assertions).
+        // Emit audit + fire on_deny directly (cannot route through _pre — it would
+        // emit CALL_ALLOWED when no contracts deny the empty-args envelope).
+        // NOTE: observe mode does NOT apply here — we cannot evaluate contracts against
+        // unknown args, so we always fail closed regardless of mode.
+        if (event.toolCall.input == null && event.toolCall.args == null) {
+          const reason = 'Cannot determine tool arguments — neither input nor args present in event'
+          await this._session.incrementAttempts()
+          const envelope = createEnvelope(
+            toolName,
+            {},
+            {
+              runId: this._sessionId,
+              callIndex: this._callIndex,
+              toolUseId: toolCallId,
+              environment: this._guard.environment,
+              registry: this._guard.toolRegistry,
+              principal: this._resolvePrincipal(toolName, {}),
+            },
+          )
+          this._callIndex += 1
+          await this._guard.auditSink.emit(
+            createAuditEvent({
+              action: AA.CALL_DENIED,
+              runId: envelope.runId,
+              callId: envelope.callId,
+              callIndex: envelope.callIndex,
+              toolName: envelope.toolName,
+              toolArgs: {},
+              sideEffect: envelope.sideEffect,
+              environment: envelope.environment,
+              principal: envelope.principal
+                ? ({ ...envelope.principal } as Record<string, unknown>)
+                : null,
+              decisionSource: 'adapter',
+              reason,
+              sessionAttemptCount: await this._session.attemptCount(),
+              sessionExecutionCount: await this._session.executionCount(),
+              mode: this._guard.mode,
+              policyVersion: this._guard.policyVersion,
+            }),
+          )
+          if (this._guard._onDeny) {
+            try {
+              this._guard._onDeny(envelope, reason, null)
+            } catch {
+              // on_deny callback errors are swallowed
+            }
+          }
+          throw new EdictumDenied(`DENIED: ${reason}`)
+        }
+        // Safe: the guard above ensures at least one is defined
+        const args = (event.toolCall.input ?? event.toolCall.args) as Record<string, unknown>
         const result = await this._pre(toolName, args, toolCallId)
         if (result != null) {
           throw new EdictumDenied(result)

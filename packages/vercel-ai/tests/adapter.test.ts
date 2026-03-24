@@ -534,6 +534,133 @@ describe('asCallbacks', () => {
     expect(warnFn.mock.calls[0]?.[1]?.length).toBeGreaterThan(0)
   })
 
+  it('reads toolCall.input (AI SDK v6) for precondition args', async () => {
+    const blockDangerous: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        if ((envelope.args as Record<string, unknown>)['dangerous']) {
+          return Verdict.fail('Dangerous arg detected')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [blockDangerous] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // AI SDK v6 sends `input`, not `args`
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-v6',
+          toolName: 'MyTool',
+          input: { dangerous: true },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('falls back to toolCall.args when input is absent (AI SDK v5 compat)', async () => {
+    const blockDangerous: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        if ((envelope.args as Record<string, unknown>)['dangerous']) {
+          return Verdict.fail('Dangerous arg detected')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [blockDangerous] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // AI SDK v5 sends `args`
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-v5',
+          toolName: 'MyTool',
+          args: { dangerous: true },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('prefers input over args when both are present', async () => {
+    const checkArgs: Precondition = {
+      tool: '*',
+      check: async (envelope: ToolEnvelope) => {
+        const args = envelope.args as Record<string, unknown>
+        if (args['source'] === 'input') {
+          return Verdict.fail('Got input field')
+        }
+        return Verdict.pass_()
+      },
+    }
+    const guard = makeGuard({ contracts: [checkArgs] })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // Both present — input should win
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-both',
+          toolName: 'MyTool',
+          input: { source: 'input' },
+          args: { source: 'args' },
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+  })
+
+  it('throws EdictumDenied when neither input nor args is present (fail closed)', async () => {
+    const sink = makeSink()
+    const denyFn = vi.fn()
+    const guard = makeGuard({ auditSink: sink, onDeny: denyFn })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    // Neither input nor args — fail closed, deny the call
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-empty',
+          toolName: 'MyTool',
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+
+    // CALL_DENIED audit event must be emitted on the fail-closed path
+    const denied = sink.filter(AuditAction.CALL_DENIED)
+    expect(denied.length).toBe(1)
+    expect(denied[0]?.toolName).toBe('MyTool')
+    expect(denied[0]?.sessionAttemptCount).toBe(1)
+
+    // on_deny callback must fire exactly once
+    expect(denyFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when input is null (not just undefined)', async () => {
+    const sink = makeSink()
+    const guard = makeGuard({ auditSink: sink })
+    const adapter = new VercelAIAdapter(guard)
+    const callbacks = adapter.asCallbacks()
+
+    await expect(
+      callbacks.experimental_onToolCallStart({
+        toolCall: {
+          toolCallId: 'call-null',
+          toolName: 'MyTool',
+          input: null as unknown as Record<string, unknown>,
+        },
+      }),
+    ).rejects.toThrow(EdictumDenied)
+
+    const denied = sink.filter(AuditAction.CALL_DENIED)
+    expect(denied.length).toBe(1)
+  })
+
   it('handles error events in onToolCallFinish', async () => {
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
