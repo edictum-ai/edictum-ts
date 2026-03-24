@@ -1,9 +1,9 @@
 /** Tool Invocation Envelope — immutable snapshot of a tool call. */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto'
 
-import { EdictumConfigError } from "./errors.js";
-import type { ToolConfig } from "./types.js";
+import { EdictumConfigError } from './errors.js'
+import type { ToolConfig } from './types.js'
 
 // ---------------------------------------------------------------------------
 // SideEffect
@@ -20,13 +20,13 @@ import type { ToolConfig } from "./types.js";
  * - Classification errors always err toward MORE restrictive
  */
 export const SideEffect = {
-  PURE: "pure",
-  READ: "read",
-  WRITE: "write",
-  IRREVERSIBLE: "irreversible",
-} as const;
+  PURE: 'pure',
+  READ: 'read',
+  WRITE: 'write',
+  IRREVERSIBLE: 'irreversible',
+} as const
 
-export type SideEffect = (typeof SideEffect)[keyof typeof SideEffect];
+export type SideEffect = (typeof SideEffect)[keyof typeof SideEffect]
 
 // ---------------------------------------------------------------------------
 // Principal
@@ -40,18 +40,16 @@ export type SideEffect = (typeof SideEffect)[keyof typeof SideEffect];
  * claims as read-only after construction.
  */
 export interface Principal {
-  readonly userId: string | null;
-  readonly serviceId: string | null;
-  readonly orgId: string | null;
-  readonly role: string | null;
-  readonly ticketRef: string | null;
-  readonly claims: Readonly<Record<string, unknown>>;
+  readonly userId: string | null
+  readonly serviceId: string | null
+  readonly orgId: string | null
+  readonly role: string | null
+  readonly ticketRef: string | null
+  readonly claims: Readonly<Record<string, unknown>>
 }
 
 /** Create a frozen Principal with defaults for omitted fields. */
-export function createPrincipal(
-  partial: Partial<Principal> = {},
-): Readonly<Principal> {
+export function createPrincipal(partial: Partial<Principal> = {}): Readonly<Principal> {
   const p: Principal = {
     userId: partial.userId ?? null,
     serviceId: partial.serviceId ?? null,
@@ -59,8 +57,8 @@ export function createPrincipal(
     role: partial.role ?? null,
     ticketRef: partial.ticketRef ?? null,
     claims: partial.claims ?? {},
-  };
-  return deepFreeze(p);
+  }
+  return deepFreeze(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -79,13 +77,20 @@ export function createPrincipal(
  */
 export function _validateToolName(toolName: string): void {
   if (!toolName) {
-    throw new EdictumConfigError(`Invalid tool_name: ${JSON.stringify(toolName)}`);
+    throw new EdictumConfigError(`Invalid tool_name: ${JSON.stringify(toolName)}`)
   }
   for (let i = 0; i < toolName.length; i++) {
-    const code = toolName.charCodeAt(i);
-    const ch = toolName[i];
-    if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || ch === "/" || ch === "\\") {
-      throw new EdictumConfigError(`Invalid tool_name: ${JSON.stringify(toolName)}`);
+    const code = toolName.charCodeAt(i)
+    const ch = toolName[i]
+    if (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029 ||
+      ch === '/' ||
+      ch === '\\'
+    ) {
+      throw new EdictumConfigError(`Invalid tool_name: ${JSON.stringify(toolName)}`)
     }
   }
 }
@@ -102,32 +107,32 @@ export function _validateToolName(toolName: string): void {
  */
 export interface ToolEnvelope {
   // Identity
-  readonly toolName: string;
-  readonly args: Readonly<Record<string, unknown>>;
-  readonly callId: string;
-  readonly runId: string;
-  readonly callIndex: number;
-  readonly parentCallId: string | null;
+  readonly toolName: string
+  readonly args: Readonly<Record<string, unknown>>
+  readonly callId: string
+  readonly runId: string
+  readonly callIndex: number
+  readonly parentCallId: string | null
 
   // Classification
-  readonly sideEffect: SideEffect;
-  readonly idempotent: boolean;
+  readonly sideEffect: SideEffect
+  readonly idempotent: boolean
 
   // Context
-  readonly environment: string;
-  readonly timestamp: Date;
-  readonly caller: string;
-  readonly toolUseId: string | null;
+  readonly environment: string
+  readonly timestamp: Date
+  readonly caller: string
+  readonly toolUseId: string | null
 
   // Principal
-  readonly principal: Readonly<Principal> | null;
+  readonly principal: Readonly<Principal> | null
 
   // Extracted convenience fields
-  readonly bashCommand: string | null;
-  readonly filePath: string | null;
+  readonly bashCommand: string | null
+  readonly filePath: string | null
 
   // Extensible
-  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly metadata: Readonly<Record<string, unknown>>
 }
 
 // ---------------------------------------------------------------------------
@@ -142,25 +147,30 @@ export interface ToolEnvelope {
  * stores state in internal slots, not own properties.
  */
 export function deepFreeze<T>(obj: T): T {
-  if (obj === null || obj === undefined || typeof obj !== "object") {
-    return obj;
+  if (obj === null || obj === undefined || typeof obj !== 'object') {
+    return obj
   }
   // Date internal slots are not freezable — skip to avoid false sense of safety
   if (obj instanceof Date) {
-    return obj;
+    return obj
   }
   // RegExp with global/sticky flags stores mutable lastIndex in internal state.
   // Freezing prevents String.replace() from updating lastIndex → TypeError.
   if (obj instanceof RegExp) {
-    return obj;
+    return obj
   }
-  Object.freeze(obj);
+  Object.freeze(obj)
   for (const value of Object.values(obj as Record<string, unknown>)) {
-    if (value !== null && value !== undefined && typeof value === "object" && !Object.isFrozen(value)) {
-      deepFreeze(value);
+    if (
+      value !== null &&
+      value !== undefined &&
+      typeof value === 'object' &&
+      !Object.isFrozen(value)
+    ) {
+      deepFreeze(value)
     }
   }
-  return obj;
+  return obj
 }
 
 // ---------------------------------------------------------------------------
@@ -169,25 +179,22 @@ export function deepFreeze<T>(obj: T): T {
 
 /** Maps tool names to governance properties. Unregistered tools default to IRREVERSIBLE. */
 export class ToolRegistry {
-  private readonly _tools: Map<string, ToolConfig> = new Map();
+  private readonly _tools: Map<string, ToolConfig> = new Map()
 
   register(
     name: string,
     sideEffect: SideEffect = SideEffect.WRITE,
     idempotent: boolean = false,
   ): void {
-    this._tools.set(name, { name, sideEffect, idempotent });
+    this._tools.set(name, { name, sideEffect, idempotent })
   }
 
-  classify(
-    toolName: string,
-    _args: Record<string, unknown>,
-  ): [SideEffect, boolean] {
-    const cfg = this._tools.get(toolName);
+  classify(toolName: string, _args: Record<string, unknown>): [SideEffect, boolean] {
+    const cfg = this._tools.get(toolName)
     if (cfg) {
-      return [cfg.sideEffect as SideEffect, cfg.idempotent];
+      return [cfg.sideEffect as SideEffect, cfg.idempotent]
     }
-    return [SideEffect.IRREVERSIBLE, false];
+    return [SideEffect.IRREVERSIBLE, false]
   }
 }
 
@@ -205,74 +212,74 @@ export class ToolRegistry {
  */
 export const BashClassifier = {
   READ_ALLOWLIST: [
-    "ls",
-    "cat",
-    "head",
-    "tail",
-    "wc",
-    "find",
-    "grep",
-    "rg",
-    "git status",
-    "git log",
-    "git diff",
-    "git show",
-    "git branch",
-    "git remote",
-    "git tag",
-    "echo",
-    "pwd",
-    "whoami",
-    "date",
-    "which",
-    "file",
-    "stat",
-    "du",
-    "df",
-    "tree",
-    "less",
-    "more",
+    'ls',
+    'cat',
+    'head',
+    'tail',
+    'wc',
+    'find',
+    'grep',
+    'rg',
+    'git status',
+    'git log',
+    'git diff',
+    'git show',
+    'git branch',
+    'git remote',
+    'git tag',
+    'echo',
+    'pwd',
+    'whoami',
+    'date',
+    'which',
+    'file',
+    'stat',
+    'du',
+    'df',
+    'tree',
+    'less',
+    'more',
   ] as const,
 
   SHELL_OPERATORS: [
-    "\n",
-    "\r",
-    "<(",
-    "<<",
-    "$",
-    "${",
-    ">",
-    ">>",
-    "|",
-    ";",
-    "&&",
-    "||",
-    "$(",
-    "`",
-    "#{",
+    '\n',
+    '\r',
+    '<(',
+    '<<',
+    '$',
+    '${',
+    '>',
+    '>>',
+    '|',
+    ';',
+    '&&',
+    '||',
+    '$(',
+    '`',
+    '#{',
   ] as const,
 
   classify(command: string): SideEffect {
-    const stripped = command.trim();
+    const stripped = command.trim()
     if (!stripped) {
-      return SideEffect.READ;
+      return SideEffect.READ
     }
 
     for (const op of BashClassifier.SHELL_OPERATORS) {
       if (stripped.includes(op)) {
-        return SideEffect.IRREVERSIBLE;
+        return SideEffect.IRREVERSIBLE
       }
     }
 
     for (const allowed of BashClassifier.READ_ALLOWLIST) {
-      if (stripped === allowed || stripped.startsWith(allowed + " ")) {
-        return SideEffect.READ;
+      if (stripped === allowed || stripped.startsWith(allowed + ' ')) {
+        return SideEffect.READ
       }
     }
 
-    return SideEffect.IRREVERSIBLE;
+    return SideEffect.IRREVERSIBLE
   },
-} as const;
+} as const
 
 // ---------------------------------------------------------------------------
 // safeDeepCopy — structuredClone with JSON roundtrip fallback
@@ -280,9 +287,9 @@ export const BashClassifier = {
 
 function safeDeepCopy<T>(value: T): T {
   try {
-    return structuredClone(value);
+    return structuredClone(value)
   } catch {
-    return JSON.parse(JSON.stringify(value)) as T;
+    return JSON.parse(JSON.stringify(value)) as T
   }
 }
 
@@ -292,19 +299,19 @@ function safeDeepCopy<T>(value: T): T {
 
 /** Options for `createEnvelope()` beyond the required positional args. */
 export interface CreateEnvelopeOptions {
-  readonly runId?: string;
-  readonly callIndex?: number;
-  readonly callId?: string;
-  readonly parentCallId?: string | null;
-  readonly sideEffect?: SideEffect;
-  readonly idempotent?: boolean;
-  readonly environment?: string;
-  readonly timestamp?: Date;
-  readonly caller?: string;
-  readonly toolUseId?: string | null;
-  readonly principal?: Principal | null;
-  readonly metadata?: Record<string, unknown>;
-  readonly registry?: ToolRegistry | null;
+  readonly runId?: string
+  readonly callIndex?: number
+  readonly callId?: string
+  readonly parentCallId?: string | null
+  readonly sideEffect?: SideEffect
+  readonly idempotent?: boolean
+  readonly environment?: string
+  readonly timestamp?: Date
+  readonly caller?: string
+  readonly toolUseId?: string | null
+  readonly principal?: Principal | null
+  readonly metadata?: Record<string, unknown>
+  readonly registry?: ToolRegistry | null
 }
 
 /**
@@ -318,18 +325,18 @@ export function createEnvelope(
   toolInput: Record<string, unknown>,
   options: CreateEnvelopeOptions = {},
 ): Readonly<ToolEnvelope> {
-  _validateToolName(toolName);
+  _validateToolName(toolName)
 
   // Deep-copy for immutability
-  const safeArgs = safeDeepCopy(toolInput);
+  const safeArgs = safeDeepCopy(toolInput)
 
   // Deep-copy metadata
-  const safeMetadata = options.metadata ? safeDeepCopy(options.metadata) : {};
+  const safeMetadata = options.metadata ? safeDeepCopy(options.metadata) : {}
 
   // Deep-copy Principal to protect claims dict
-  let safePrincipal: Readonly<Principal> | null = null;
+  let safePrincipal: Readonly<Principal> | null = null
   if (options.principal != null) {
-    const p = options.principal;
+    const p = options.principal
     safePrincipal = createPrincipal({
       userId: p.userId,
       serviceId: p.serviceId,
@@ -337,66 +344,62 @@ export function createEnvelope(
       role: p.role,
       ticketRef: p.ticketRef,
       claims: p.claims ? safeDeepCopy(p.claims as Record<string, unknown>) : {},
-    });
+    })
   }
 
   // Classification: explicit options > registry > defaults
-  const registry = options.registry ?? null;
-  let sideEffect: SideEffect = options.sideEffect ?? SideEffect.IRREVERSIBLE;
-  let idempotent = options.idempotent ?? false;
-  let bashCommand: string | null = null;
-  let filePath: string | null = null;
+  const registry = options.registry ?? null
+  let sideEffect: SideEffect = options.sideEffect ?? SideEffect.IRREVERSIBLE
+  let idempotent = options.idempotent ?? false
+  let bashCommand: string | null = null
+  let filePath: string | null = null
 
   // Registry overrides defaults but not explicit options
   if (registry) {
-    const [regEffect, regIdempotent] = registry.classify(toolName, safeArgs);
-    if (options.sideEffect == null) sideEffect = regEffect;
-    if (options.idempotent == null) idempotent = regIdempotent;
+    const [regEffect, regIdempotent] = registry.classify(toolName, safeArgs)
+    if (options.sideEffect == null) sideEffect = regEffect
+    if (options.idempotent == null) idempotent = regIdempotent
   }
 
   // Extract convenience fields (handle both snake_case and camelCase keys)
-  if (toolName === "Bash") {
-    bashCommand = (safeArgs.command as string) ?? "";
+  if (toolName === 'Bash') {
+    bashCommand = (safeArgs.command as string) ?? ''
     // BashClassifier wins over registry but NOT over explicit caller options
     if (options.sideEffect == null) {
-      sideEffect = BashClassifier.classify(bashCommand);
+      sideEffect = BashClassifier.classify(bashCommand)
     }
-  } else if (
-    toolName === "Read" ||
-    toolName === "Glob" ||
-    toolName === "Grep"
-  ) {
+  } else if (toolName === 'Read' || toolName === 'Glob' || toolName === 'Grep') {
     filePath =
       (safeArgs.file_path as string) ??
       (safeArgs.filePath as string) ??
       (safeArgs.path as string) ??
-      null;
-  } else if (toolName === "Write" || toolName === "Edit") {
+      null
+  } else if (toolName === 'Write' || toolName === 'Edit') {
     filePath =
       (safeArgs.file_path as string) ??
       (safeArgs.filePath as string) ??
       (safeArgs.path as string) ??
-      null;
+      null
   }
 
   const envelope: ToolEnvelope = {
     toolName,
     args: safeArgs,
     callId: options.callId ?? randomUUID(),
-    runId: options.runId ?? "",
+    runId: options.runId ?? '',
     callIndex: options.callIndex ?? 0,
     parentCallId: options.parentCallId ?? null,
     sideEffect,
     idempotent,
-    environment: options.environment ?? "production",
+    environment: options.environment ?? 'production',
     timestamp: options.timestamp ?? new Date(),
-    caller: options.caller ?? "",
+    caller: options.caller ?? '',
     toolUseId: options.toolUseId ?? null,
     principal: safePrincipal,
     bashCommand,
     filePath,
     metadata: safeMetadata,
-  };
+  }
 
-  return deepFreeze(envelope);
+  return deepFreeze(envelope)
 }

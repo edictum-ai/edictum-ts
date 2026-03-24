@@ -1,7 +1,7 @@
 /** Pre/Post Conditions — contract types for tool governance. */
 
-import type { ToolEnvelope } from "./envelope.js";
-import type { Session } from "./session.js";
+import type { ToolEnvelope } from './envelope.js'
+import type { Session } from './session.js'
 
 // ---------------------------------------------------------------------------
 // Verdict
@@ -9,9 +9,9 @@ import type { Session } from "./session.js";
 
 /** Outcome of a single contract check. */
 export interface Verdict {
-  readonly passed: boolean;
-  readonly message: string | null;
-  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly passed: boolean
+  readonly message: string | null
+  readonly metadata: Readonly<Record<string, unknown>>
 }
 
 /** Factory methods for Verdict. */
@@ -20,7 +20,7 @@ export const Verdict = {
    * Contract passed — tool call is acceptable.
    */
   pass_(): Verdict {
-    return Object.freeze({ passed: true, message: null, metadata: Object.freeze({}) });
+    return Object.freeze({ passed: true, message: null, metadata: Object.freeze({}) })
   },
 
   /**
@@ -29,15 +29,14 @@ export const Verdict = {
    * Make it SPECIFIC and INSTRUCTIVE — the agent uses it to self-correct.
    */
   fail(message: string, metadata: Record<string, unknown> = {}): Verdict {
-    const truncated =
-      message.length > 500 ? message.slice(0, 497) + "..." : message;
+    const truncated = message.length > 500 ? message.slice(0, 497) + '...' : message
     return Object.freeze({
       passed: false,
       message: truncated,
       metadata: Object.freeze({ ...metadata }),
-    });
+    })
   },
-};
+}
 
 // ---------------------------------------------------------------------------
 // Contract interfaces — plain objects, not decorators
@@ -45,10 +44,10 @@ export const Verdict = {
 
 /** Before execution. Safe to deny — tool hasn't run yet. */
 export interface Precondition {
-  readonly contractType?: "pre";
-  readonly tool: string;
-  readonly check: (envelope: ToolEnvelope) => Verdict | Promise<Verdict>;
-  readonly when?: ((envelope: ToolEnvelope) => boolean) | null;
+  readonly contractType?: 'pre'
+  readonly tool: string
+  readonly check: (envelope: ToolEnvelope) => Verdict | Promise<Verdict>
+  readonly when?: ((envelope: ToolEnvelope) => boolean) | null
 }
 
 /**
@@ -58,13 +57,10 @@ export interface Precondition {
  * On failure for write/irreversible: warn only, NO retry coaching.
  */
 export interface Postcondition {
-  readonly contractType: "post";
-  readonly tool: string;
-  readonly check: (
-    envelope: ToolEnvelope,
-    response: unknown,
-  ) => Verdict | Promise<Verdict>;
-  readonly when?: ((envelope: ToolEnvelope) => boolean) | null;
+  readonly contractType: 'post'
+  readonly tool: string
+  readonly check: (envelope: ToolEnvelope, response: unknown) => Verdict | Promise<Verdict>
+  readonly when?: ((envelope: ToolEnvelope) => boolean) | null
 }
 
 /**
@@ -86,5 +82,5 @@ export interface Postcondition {
  * ```
  */
 export interface SessionContract {
-  readonly check: (session: Session) => Verdict | Promise<Verdict>;
+  readonly check: (session: Session) => Verdict | Promise<Verdict>
 }

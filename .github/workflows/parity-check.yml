@@ -6,14 +6,14 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 4 * * 1'  # Weekly Monday 4am UTC
+    - cron: '0 4 * * 1' # Weekly Monday 4am UTC
 
 permissions:
   contents: read
 
 jobs:
   behavioral-fixtures:
-    if: false  # TODO: enable when fixture runner is implemented
+    if: false # TODO: enable when fixture runner is implemented
     runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -28,8 +28,8 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
-          cache: "pnpm"
+          node-version: '22'
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
 

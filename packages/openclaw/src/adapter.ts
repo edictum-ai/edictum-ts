@@ -3,9 +3,9 @@
 // NOTE: 500+ lines — approved due to adapter pattern requiring single-class cohesion (matches vercel-ai/claude-sdk)
 
 // Node global — project omits @types/node; only used for eviction warning.
-declare const console: { warn(...args: unknown[]): void };
+declare const console: { warn(...args: unknown[]): void }
 
-import type { Principal, ToolEnvelope, AuditAction as AuditActionType } from "@edictum/core";
+import type { Principal, ToolEnvelope, AuditAction as AuditActionType } from '@edictum/core'
 import {
   ApprovalStatus,
   AuditAction,
@@ -14,8 +14,8 @@ import {
   EdictumConfigError,
   GovernancePipeline,
   Session,
-} from "@edictum/core";
-import type { Edictum } from "@edictum/core";
+} from '@edictum/core'
+import type { Edictum } from '@edictum/core'
 
 import type {
   AfterToolCallEvent,
@@ -24,8 +24,8 @@ import type {
   Finding,
   PostCallResult,
   ToolHookContext,
-} from "./types.js";
-import { buildFindings, summarizeResult } from "./helpers.js";
+} from './types.js'
+import { buildFindings, summarizeResult } from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,10 +36,10 @@ import { buildFindings, summarizeResult } from "./helpers.js";
  * When exceeded, the oldest entry is evicted to prevent unbounded memory growth.
  * Matches the cap used in @edictum/server's ApprovalBackend.
  */
-const MAX_PENDING = 10_000;
+const MAX_PENDING = 10_000
 
 /** Control character regex — reused for both sessionId and callId validation. */
-const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/
 
 // ---------------------------------------------------------------------------
 // Options
@@ -47,13 +47,13 @@ const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
 
 export interface OpenClawAdapterOptions {
   /** Stable session ID. Defaults to guard.sessionId. */
-  readonly sessionId?: string;
+  readonly sessionId?: string
 
   /**
    * Static principal attached to every envelope.
    * Overridden by principalResolver if both are set.
    */
-  readonly principal?: Principal;
+  readonly principal?: Principal
 
   /**
    * Resolve principal dynamically per tool call.
@@ -63,17 +63,17 @@ export interface OpenClawAdapterOptions {
     toolName: string,
     toolInput: Record<string, unknown>,
     ctx: ToolHookContext,
-  ) => Principal;
+  ) => Principal
 
   /** Called on every denial. Errors are silently caught. */
   readonly onDeny?: (
     envelope: Readonly<ToolEnvelope>,
     reason: string,
     source: string | null,
-  ) => void;
+  ) => void
 
   /** Called on every allow. Errors are silently caught. */
-  readonly onAllow?: (envelope: Readonly<ToolEnvelope>) => void;
+  readonly onAllow?: (envelope: Readonly<ToolEnvelope>) => void
 
   /**
    * Called when a postcondition produces findings.
@@ -82,13 +82,13 @@ export interface OpenClawAdapterOptions {
   readonly onPostconditionWarn?: (
     envelope: Readonly<ToolEnvelope>,
     findings: readonly Finding[],
-  ) => void;
+  ) => void
 
   /**
    * Determine whether a tool execution was successful.
    * Default: true unless the after_tool_call event has an error field.
    */
-  readonly successCheck?: (toolName: string, result: unknown) => boolean;
+  readonly successCheck?: (toolName: string, result: unknown) => boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -96,8 +96,8 @@ export interface OpenClawAdapterOptions {
 // ---------------------------------------------------------------------------
 
 interface PendingCall {
-  readonly envelope: Readonly<ToolEnvelope>;
-  readonly startMs: number;
+  readonly envelope: Readonly<ToolEnvelope>
+  readonly startMs: number
 }
 
 // ---------------------------------------------------------------------------
@@ -105,12 +105,12 @@ interface PendingCall {
 // ---------------------------------------------------------------------------
 
 export class EdictumOpenClawAdapter {
-  private readonly _guard: Edictum;
-  private readonly _pipeline: GovernancePipeline;
-  private readonly _session: Session;
-  private readonly _sessionId: string;
-  private _callIndex = 0;
-  private readonly _pending = new Map<string, PendingCall>();
+  private readonly _guard: Edictum
+  private readonly _pipeline: GovernancePipeline
+  private readonly _session: Session
+  private readonly _sessionId: string
+  private _callIndex = 0
+  private readonly _pending = new Map<string, PendingCall>()
 
   // Callbacks
   /**
@@ -118,60 +118,45 @@ export class EdictumOpenClawAdapter {
    * Can be updated at runtime via `setPrincipal()`. When a `principalResolver`
    * is configured, it takes priority and this field is ignored.
    */
-  private _principal: Principal | null;
+  private _principal: Principal | null
   private readonly _principalResolver:
-    | ((
-        toolName: string,
-        toolInput: Record<string, unknown>,
-        ctx: ToolHookContext,
-      ) => Principal)
-    | null;
+    | ((toolName: string, toolInput: Record<string, unknown>, ctx: ToolHookContext) => Principal)
+    | null
   private readonly _onDeny:
-    | ((
-        envelope: Readonly<ToolEnvelope>,
-        reason: string,
-        source: string | null,
-      ) => void)
-    | null;
-  private readonly _onAllow:
-    | ((envelope: Readonly<ToolEnvelope>) => void)
-    | null;
+    | ((envelope: Readonly<ToolEnvelope>, reason: string, source: string | null) => void)
+    | null
+  private readonly _onAllow: ((envelope: Readonly<ToolEnvelope>) => void) | null
   private readonly _onPostconditionWarn:
-    | ((
-        envelope: Readonly<ToolEnvelope>,
-        findings: readonly Finding[],
-      ) => void)
-    | null;
-  private readonly _successCheck:
-    | ((toolName: string, result: unknown) => boolean)
-    | null;
+    | ((envelope: Readonly<ToolEnvelope>, findings: readonly Finding[]) => void)
+    | null
+  private readonly _successCheck: ((toolName: string, result: unknown) => boolean) | null
 
   constructor(guard: Edictum, options: OpenClawAdapterOptions = {}) {
-    this._guard = guard;
-    this._pipeline = new GovernancePipeline(guard);
+    this._guard = guard
+    this._pipeline = new GovernancePipeline(guard)
 
-    const sessionId = options.sessionId ?? guard.sessionId;
+    const sessionId = options.sessionId ?? guard.sessionId
     // Length cap (#52) + control character check. Same precautionary cap as callId.
     if (sessionId.length > 1000) {
-      throw new EdictumConfigError("sessionId exceeds maximum length");
+      throw new EdictumConfigError('sessionId exceeds maximum length')
     }
     if (CONTROL_CHAR_RE.test(sessionId)) {
-      throw new EdictumConfigError("sessionId contains control characters");
+      throw new EdictumConfigError('sessionId contains control characters')
     }
-    this._sessionId = sessionId;
-    this._session = new Session(this._sessionId, guard.backend);
+    this._sessionId = sessionId
+    this._session = new Session(this._sessionId, guard.backend)
 
-    this._principal = options.principal ?? null;
-    this._principalResolver = options.principalResolver ?? null;
-    this._onDeny = options.onDeny ?? null;
-    this._onAllow = options.onAllow ?? null;
-    this._onPostconditionWarn = options.onPostconditionWarn ?? null;
-    this._successCheck = options.successCheck ?? null;
+    this._principal = options.principal ?? null
+    this._principalResolver = options.principalResolver ?? null
+    this._onDeny = options.onDeny ?? null
+    this._onAllow = options.onAllow ?? null
+    this._onPostconditionWarn = options.onPostconditionWarn ?? null
+    this._successCheck = options.successCheck ?? null
   }
 
   /** The session ID used by this adapter instance. */
   get sessionId(): string {
-    return this._sessionId;
+    return this._sessionId
   }
 
   /**
@@ -184,7 +169,7 @@ export class EdictumOpenClawAdapter {
    * `pre()` call is in-flight, or accept the race.
    */
   setPrincipal(principal: Principal): void {
-    this._principal = principal;
+    this._principal = principal
   }
 
   // -------------------------------------------------------------------------
@@ -214,18 +199,18 @@ export class EdictumOpenClawAdapter {
             callId,
             toolName,
             action: AuditAction.CALL_DENIED,
-            reason: "Invalid callId",
+            reason: 'Invalid callId',
             mode: this._guard.mode,
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Audit errors must never block tool execution
       }
-      return "Invalid callId";
+      return 'Invalid callId'
     }
 
-    const principalResult = this._resolvePrincipal(toolName, toolInput, ctx);
+    const principalResult = this._resolvePrincipal(toolName, toolInput, ctx)
     if (principalResult.error) {
       // No envelope exists yet because principal resolution failed before
       // createEnvelope(). We cannot call _safeDeny (requires an envelope),
@@ -239,18 +224,18 @@ export class EdictumOpenClawAdapter {
             callId,
             toolName,
             action: AuditAction.CALL_DENIED,
-            reason: "Principal resolution failed",
+            reason: 'Principal resolution failed',
             mode: this._guard.mode,
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Audit errors must never block tool execution
       }
-      return "Principal resolution failed";
+      return 'Principal resolution failed'
     }
-    const principal = principalResult.value;
-    let envelope: ReturnType<typeof createEnvelope>;
+    const principal = principalResult.value
+    let envelope: ReturnType<typeof createEnvelope>
     try {
       envelope = createEnvelope(toolName, toolInput, {
         callId,
@@ -265,7 +250,7 @@ export class EdictumOpenClawAdapter {
           openclawSessionId: ctx.sessionId ?? null,
         },
         registry: this._guard.toolRegistry,
-      });
+      })
     } catch {
       // createEnvelope throws EdictumConfigError for invalid toolName (control chars, etc.)
       // Return denial string per pre()'s API contract — do not propagate.
@@ -277,130 +262,114 @@ export class EdictumOpenClawAdapter {
             callId,
             toolName,
             action: AuditAction.CALL_DENIED,
-            reason: "Invalid toolName",
+            reason: 'Invalid toolName',
             mode: this._guard.mode,
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Audit errors must never block
       }
-      return "Invalid toolName";
+      return 'Invalid toolName'
     }
 
-    await this._session.incrementAttempts();
-    const decision = await this._pipeline.preExecute(envelope, this._session);
+    await this._session.incrementAttempts()
+    const decision = await this._pipeline.preExecute(envelope, this._session)
 
     // --- Pending approval (same pattern as vercel-ai adapter) ---
-    if (decision.action === "pending_approval") {
+    if (decision.action === 'pending_approval') {
       // Matches vercel-ai/claude-sdk pattern — _approvalBackend is internal but stable
-      const approvalBackend = this._guard._approvalBackend;
+      const approvalBackend = this._guard._approvalBackend
 
       if (!approvalBackend) {
-        const reason =
-          decision.reason ?? "Approval required but no approval backend configured.";
-        this._safeDeny(envelope, reason, decision.decisionSource);
-        await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED);
-        return reason;
+        const reason = decision.reason ?? 'Approval required but no approval backend configured.'
+        this._safeDeny(envelope, reason, decision.decisionSource)
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED)
+        return reason
       }
 
       try {
         const principalDict = envelope.principal
           ? ({ ...envelope.principal } as Record<string, unknown>)
-          : null;
+          : null
 
         const approvalRequest = await approvalBackend.requestApproval(
           envelope.toolName,
           envelope.args as Record<string, unknown>,
-          decision.approvalMessage ?? decision.reason ?? "Approval required.",
+          decision.approvalMessage ?? decision.reason ?? 'Approval required.',
           {
             timeout: decision.approvalTimeout,
             timeoutEffect: decision.approvalTimeoutEffect,
             principal: principalDict,
           },
-        );
+        )
 
-        await this._emitAuditPre(
-          envelope,
-          decision,
-          AuditAction.CALL_APPROVAL_REQUESTED,
-        );
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_REQUESTED)
 
         const approvalDecision = await approvalBackend.waitForDecision(
           approvalRequest.approvalId,
           decision.approvalTimeout,
-        );
+        )
 
-        let approved = false;
+        let approved = false
         if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT);
-          if (decision.approvalTimeoutEffect === "allow") {
-            approved = true;
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT)
+          if (decision.approvalTimeoutEffect === 'allow') {
+            approved = true
           }
         } else if (!approvalDecision.approved) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED);
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED)
         } else {
-          approved = true;
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED);
+          approved = true
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED)
         }
 
         if (approved) {
-          this._safeAllow(envelope);
-          this._trackPending(callId, { envelope, startMs: Date.now() });
-          return null;
+          this._safeAllow(envelope)
+          this._trackPending(callId, { envelope, startMs: Date.now() })
+          return null
         }
 
-        const denyReason = approvalDecision.reason ?? decision.reason ?? "Approval denied.";
-        this._safeDeny(envelope, denyReason, decision.decisionSource);
+        const denyReason = approvalDecision.reason ?? decision.reason ?? 'Approval denied.'
+        this._safeDeny(envelope, denyReason, decision.decisionSource)
         // CALL_APPROVAL_DENIED or CALL_APPROVAL_TIMEOUT already emitted above —
         // do not double-emit CALL_DENIED to avoid double-counting in audit analysis.
-        return denyReason;
+        return denyReason
       } catch {
         // Approval backend failure -> deny (not timeout — distinguish infra errors from real timeouts)
-        const errorReason = "Approval backend error";
-        this._safeDeny(envelope, errorReason, decision.decisionSource);
-        await this._emitAuditPre(
-          envelope,
-          decision,
-          AuditAction.CALL_DENIED,
-        );
-        return errorReason;
+        const errorReason = 'Approval backend error'
+        this._safeDeny(envelope, errorReason, decision.decisionSource)
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED)
+        return errorReason
       }
     }
 
     // --- Deny ---
-    if (decision.action === "deny") {
+    if (decision.action === 'deny') {
       // Observe mode: convert deny → allow with CALL_WOULD_DENY audit
-      if (
-        this._guard.mode === "observe" ||
-        decision.observed
-      ) {
-        await this._emitAuditPre(
-          envelope,
-          decision,
-          AuditAction.CALL_WOULD_DENY,
-        );
-        this._safeAllow(envelope);
-        this._trackPending(callId, { envelope, startMs: Date.now() });
-        await this._emitObserveResults(envelope, decision);
-        return null;
+      if (this._guard.mode === 'observe' || decision.observed) {
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_WOULD_DENY)
+        this._safeAllow(envelope)
+        this._trackPending(callId, { envelope, startMs: Date.now() })
+        await this._emitObserveResults(envelope, decision)
+        return null
       }
 
-      const reason = decision.reason ?? "Denied by contract.";
-      this._safeDeny(envelope, reason, decision.decisionSource);
-      await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED);
-      return reason;
+      const reason = decision.reason ?? 'Denied by contract.'
+      this._safeDeny(envelope, reason, decision.decisionSource)
+      await this._emitAuditPre(envelope, decision, AuditAction.CALL_DENIED)
+      return reason
     }
 
     // --- Allow ---
-    await this._emitAuditPre(envelope, decision, AuditAction.CALL_ALLOWED);
-    this._safeAllow(envelope);
-    this._trackPending(callId, { envelope, startMs: Date.now() });
+    await this._emitAuditPre(envelope, decision, AuditAction.CALL_ALLOWED)
+    this._safeAllow(envelope)
+    this._trackPending(callId, { envelope, startMs: Date.now() })
 
     // Observe-mode audits — emit individual events for observe_alongside contracts
-    await this._emitObserveResults(envelope, decision);
+    await this._emitObserveResults(envelope, decision)
 
-    return null;
+    return null
   }
 
   // -------------------------------------------------------------------------
@@ -416,42 +385,32 @@ export class EdictumOpenClawAdapter {
     toolResponse: unknown,
     afterEvent: AfterToolCallEvent,
   ): Promise<PostCallResult> {
-    const pending = this._pending.get(callId);
+    const pending = this._pending.get(callId)
     if (!pending) {
       return {
         result: toolResponse,
         postconditionsPassed: true,
         findings: [],
         outputSuppressed: false,
-      };
+      }
     }
-    this._pending.delete(callId);
+    this._pending.delete(callId)
 
-    const { envelope, startMs } = pending;
-    const durationMs = afterEvent.durationMs ?? Date.now() - startMs;
-    const toolSuccess = this._checkToolSuccess(
-      afterEvent.toolName,
-      toolResponse,
-      afterEvent.error,
-    );
+    const { envelope, startMs } = pending
+    const durationMs = afterEvent.durationMs ?? Date.now() - startMs
+    const toolSuccess = this._checkToolSuccess(afterEvent.toolName, toolResponse, afterEvent.error)
 
-    const postDecision = await this._pipeline.postExecute(
-      envelope,
-      toolResponse,
-      toolSuccess,
-    );
+    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
 
-    await this._session.recordExecution(envelope.toolName, toolSuccess);
+    await this._session.recordExecution(envelope.toolName, toolSuccess)
 
     // Emit audit
     const [attemptCount, executionCount] = await Promise.all([
       this._session.attemptCount(),
       this._session.executionCount(),
-    ]);
+    ])
 
-    const action = toolSuccess
-      ? AuditAction.CALL_EXECUTED
-      : AuditAction.CALL_FAILED;
+    const action = toolSuccess ? AuditAction.CALL_EXECUTED : AuditAction.CALL_FAILED
 
     try {
       await this._guard.auditSink.emit(
@@ -464,9 +423,7 @@ export class EdictumOpenClawAdapter {
           toolArgs: { ...envelope.args },
           sideEffect: envelope.sideEffect,
           environment: envelope.environment,
-          principal: envelope.principal
-            ? { ...envelope.principal }
-            : null,
+          principal: envelope.principal ? { ...envelope.principal } : null,
           action,
           decisionSource: null,
           decisionName: null,
@@ -484,28 +441,28 @@ export class EdictumOpenClawAdapter {
           policyVersion: this._guard.policyVersion,
           policyError: postDecision.policyError,
         }),
-      );
+      )
     } catch {
       // Audit errors must never block tool execution
     }
 
-    const findings = buildFindings(postDecision);
+    const findings = buildFindings(postDecision)
     if (findings.length > 0) {
-      this._safePostconditionWarn(envelope, findings);
+      this._safePostconditionWarn(envelope, findings)
     }
 
     const result = postDecision.outputSuppressed
-      ? "[OUTPUT SUPPRESSED BY EDICTUM]"
+      ? '[OUTPUT SUPPRESSED BY EDICTUM]'
       : postDecision.redactedResponse !== undefined
         ? postDecision.redactedResponse
-        : toolResponse;
+        : toolResponse
 
     return {
       result,
       postconditionsPassed: postDecision.postconditionsPassed,
       findings,
       outputSuppressed: postDecision.outputSuppressed,
-    };
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -520,12 +477,11 @@ export class EdictumOpenClawAdapter {
     event: BeforeToolCallEvent,
     ctx: ToolHookContext,
   ): Promise<BeforeToolCallResult | undefined> {
-    const callId =
-      event.toolCallId ?? ctx.toolCallId ?? `ec_${Date.now()}_${this._callIndex}`;
+    const callId = event.toolCallId ?? ctx.toolCallId ?? `ec_${Date.now()}_${this._callIndex}`
 
-    let reason: string | null;
+    let reason: string | null
     try {
-      reason = await this.pre(event.toolName, event.params, callId, ctx);
+      reason = await this.pre(event.toolName, event.params, callId, ctx)
     } catch {
       // Any unhandled error in pre() must deny, not propagate.
       // Propagating to OpenClaw risks fail-open if the plugin host
@@ -538,21 +494,21 @@ export class EdictumOpenClawAdapter {
             callId,
             toolName: event.toolName,
             action: AuditAction.CALL_DENIED,
-            reason: "Governance error — call denied for safety",
+            reason: 'Governance error — call denied for safety',
             mode: this._guard.mode,
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Audit errors must never block
       }
       // NOTE: `block`/`blockReason` forced by OpenClaw plugin API contract.
-      return { block: true, blockReason: "Governance error — call denied for safety" };
+      return { block: true, blockReason: 'Governance error — call denied for safety' }
     }
 
     if (reason !== null) {
       // NOTE: `block`/`blockReason` forced by OpenClaw plugin API contract.
-      return { block: true, blockReason: reason };
+      return { block: true, blockReason: reason }
     }
     // Allow: return nothing (OpenClaw treats undefined as allow)
   }
@@ -569,16 +525,12 @@ export class EdictumOpenClawAdapter {
    * data back into the response stream. A future OpenClaw `tool_result_persist`
    * hook (or equivalent) would be needed to support response mutation.
    */
-  async handleAfterToolCall(
-    event: AfterToolCallEvent,
-    ctx: ToolHookContext,
-  ): Promise<void> {
-    const callId =
-      event.toolCallId ?? ctx.toolCallId ?? this._findPendingByToolName(event.toolName);
+  async handleAfterToolCall(event: AfterToolCallEvent, ctx: ToolHookContext): Promise<void> {
+    const callId = event.toolCallId ?? ctx.toolCallId ?? this._findPendingByToolName(event.toolName)
 
-    if (callId === null) return;
+    if (callId === null) return
 
-    await this.post(callId, event.result, event);
+    await this.post(callId, event.result, event)
   }
 
   // -------------------------------------------------------------------------
@@ -596,34 +548,30 @@ export class EdictumOpenClawAdapter {
   ): { value: Principal | null; error: false } | { value: null; error: true } {
     if (this._principalResolver) {
       try {
-        return { value: this._principalResolver(toolName, toolInput, ctx), error: false };
+        return { value: this._principalResolver(toolName, toolInput, ctx), error: false }
       } catch {
         // A throwing resolver must never crash the adapter — signal error
         // so the caller can deny with "Principal resolution failed".
-        return { value: null, error: true };
+        return { value: null, error: true }
       }
     }
-    return { value: this._principal, error: false };
+    return { value: this._principal, error: false }
   }
 
   /**
    * Determine if the tool call succeeded. If the successCheck throws,
    * default to failure (false) rather than crashing post().
    */
-  private _checkToolSuccess(
-    toolName: string,
-    result: unknown,
-    error?: string,
-  ): boolean {
+  private _checkToolSuccess(toolName: string, result: unknown, error?: string): boolean {
     if (this._successCheck) {
       try {
-        return this._successCheck(toolName, result);
+        return this._successCheck(toolName, result)
       } catch {
         // A throwing successCheck must never crash post() — treat as failure
-        return false;
+        return false
       }
     }
-    return !error;
+    return !error
   }
 
   /**
@@ -638,10 +586,10 @@ export class EdictumOpenClawAdapter {
   private _findPendingByToolName(toolName: string): string | null {
     for (const [callId, pending] of this._pending) {
       if (pending.envelope.toolName === toolName) {
-        return callId;
+        return callId
       }
     }
-    return null;
+    return null
   }
 
   /**
@@ -652,14 +600,12 @@ export class EdictumOpenClawAdapter {
     envelope: Readonly<ToolEnvelope>,
     decision: { observeResults?: Record<string, unknown>[] },
   ): Promise<void> {
-    const results = decision.observeResults;
-    if (!results || results.length === 0) return;
+    const results = decision.observeResults
+    if (!results || results.length === 0) return
 
     for (const sr of results) {
       try {
-        const observeAction = sr["passed"]
-          ? AuditAction.CALL_ALLOWED
-          : AuditAction.CALL_WOULD_DENY;
+        const observeAction = sr['passed'] ? AuditAction.CALL_ALLOWED : AuditAction.CALL_WOULD_DENY
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
@@ -673,13 +619,13 @@ export class EdictumOpenClawAdapter {
             principal: envelope.principal
               ? ({ ...envelope.principal } as Record<string, unknown>)
               : null,
-            decisionSource: (sr["source"] as string) ?? null,
-            decisionName: (sr["name"] as string) ?? null,
-            reason: (sr["message"] as string) ?? null,
-            mode: "observe",
+            decisionSource: (sr['source'] as string) ?? null,
+            decisionName: (sr['name'] as string) ?? null,
+            reason: (sr['message'] as string) ?? null,
+            mode: 'observe',
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Observe audit errors must not block tool execution — continue
       }
@@ -700,12 +646,12 @@ export class EdictumOpenClawAdapter {
    */
   private _trackPending(callId: string, pending: PendingCall): void {
     if (this._pending.size >= MAX_PENDING) {
-      const oldest = this._pending.keys().next().value;
+      const oldest = this._pending.keys().next().value
       if (oldest !== undefined) {
-        this._pending.delete(oldest);
+        this._pending.delete(oldest)
         console.warn(
           `[edictum/openclaw] MAX_PENDING (${MAX_PENDING}) reached — evicted oldest pending call: ${oldest}`,
-        );
+        )
       }
     }
     if (this._pending.has(callId)) {
@@ -717,18 +663,14 @@ export class EdictumOpenClawAdapter {
       // - The original call was already audited as CALL_ALLOWED
       console.warn(
         `[edictum/openclaw] callId collision: ${callId} already pending — overwriting previous entry (postconditions for original call will not run)`,
-      );
+      )
     }
-    this._pending.set(callId, pending);
+    this._pending.set(callId, pending)
   }
 
-  private _safeDeny(
-    envelope: Readonly<ToolEnvelope>,
-    reason: string,
-    source: string | null,
-  ): void {
+  private _safeDeny(envelope: Readonly<ToolEnvelope>, reason: string, source: string | null): void {
     try {
-      this._onDeny?.(envelope, reason, source);
+      this._onDeny?.(envelope, reason, source)
     } catch {
       // Callback errors must never propagate
     }
@@ -736,7 +678,7 @@ export class EdictumOpenClawAdapter {
 
   private _safeAllow(envelope: Readonly<ToolEnvelope>): void {
     try {
-      this._onAllow?.(envelope);
+      this._onAllow?.(envelope)
     } catch {
       // Callback errors must never propagate
     }
@@ -747,7 +689,7 @@ export class EdictumOpenClawAdapter {
     findings: readonly Finding[],
   ): void {
     try {
-      this._onPostconditionWarn?.(envelope, findings);
+      this._onPostconditionWarn?.(envelope, findings)
     } catch {
       // Callback errors must never propagate
     }
@@ -756,13 +698,13 @@ export class EdictumOpenClawAdapter {
   private async _emitAuditPre(
     envelope: Readonly<ToolEnvelope>,
     decision: {
-      reason: string | null;
-      decisionSource: string | null;
-      decisionName: string | null;
-      hooksEvaluated: Record<string, unknown>[];
-      contractsEvaluated: Record<string, unknown>[];
-      policyError: boolean;
-      observeResults?: Record<string, unknown>[];
+      reason: string | null
+      decisionSource: string | null
+      decisionName: string | null
+      hooksEvaluated: Record<string, unknown>[]
+      contractsEvaluated: Record<string, unknown>[]
+      policyError: boolean
+      observeResults?: Record<string, unknown>[]
     },
     action: AuditActionType,
   ): Promise<void> {
@@ -770,7 +712,7 @@ export class EdictumOpenClawAdapter {
       const [attemptCount, executionCount] = await Promise.all([
         this._session.attemptCount(),
         this._session.executionCount(),
-      ]);
+      ])
 
       await this._guard.auditSink.emit(
         createAuditEvent({
@@ -782,9 +724,7 @@ export class EdictumOpenClawAdapter {
           toolArgs: { ...envelope.args },
           sideEffect: envelope.sideEffect,
           environment: envelope.environment,
-          principal: envelope.principal
-            ? { ...envelope.principal }
-            : null,
+          principal: envelope.principal ? { ...envelope.principal } : null,
           action,
           decisionSource: decision.decisionSource,
           decisionName: decision.decisionName,
@@ -802,7 +742,7 @@ export class EdictumOpenClawAdapter {
           policyVersion: this._guard.policyVersion,
           policyError: decision.policyError,
         }),
-      );
+      )
     } catch {
       // Audit errors must never block tool execution
     }

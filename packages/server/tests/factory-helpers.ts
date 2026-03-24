@@ -2,7 +2,7 @@
  * Shared test fixtures and helpers for createServerGuard() tests.
  */
 
-import { vi } from "vitest";
+import { vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -25,7 +25,7 @@ contracts:
     then:
       effect: deny
       message: "Cannot run rm -rf"
-`;
+`
 
 export const TEST_YAML_OBSERVE = `
 apiVersion: edictum/v1
@@ -44,37 +44,37 @@ contracts:
     then:
       effect: deny
       message: "logged"
-`;
+`
 
-export const TEST_YAML_B64 = Buffer.from(TEST_YAML).toString("base64");
-export const TEST_YAML_OBSERVE_B64 = Buffer.from(TEST_YAML_OBSERVE).toString("base64");
+export const TEST_YAML_B64 = Buffer.from(TEST_YAML).toString('base64')
+export const TEST_YAML_OBSERVE_B64 = Buffer.from(TEST_YAML_OBSERVE).toString('base64')
 
 export const BASE_OPTS = {
-  url: "http://localhost:8000",
-  apiKey: "test-key",
-  agentId: "test-agent",
-} as const;
+  url: 'http://localhost:8000',
+  apiKey: 'test-key',
+  agentId: 'test-agent',
+} as const
 
 // ---------------------------------------------------------------------------
 // Mock fetch helpers
 // ---------------------------------------------------------------------------
 
-export type FetchFn = typeof globalThis.fetch;
+export type FetchFn = typeof globalThis.fetch
 
 export function mockJson(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
-  });
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
 export function mockSse(events: Array<{ event: string; data: string }>): Response {
-  const lines = events.map((e) => `event:${e.event}\ndata:${e.data}\n\n`).join("");
-  return new Response(lines, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  const lines = events.map((e) => `event:${e.event}\ndata:${e.data}\n\n`).join('')
+  return new Response(lines, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
 }
 
 export function extractUrl(input: string | URL | Request): string {
-  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 }
 
 /** Standard mock that serves bundle + empty SSE + session endpoints. */
@@ -82,16 +82,16 @@ export function setupFullMock(
   mockFetch: ReturnType<typeof vi.fn<FetchFn>>,
   bundleResponse?: Record<string, unknown>,
 ): void {
-  const bundle = bundleResponse ?? { yaml_bytes: TEST_YAML_B64 };
+  const bundle = bundleResponse ?? { yaml_bytes: TEST_YAML_B64 }
   mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-    const url = extractUrl(input);
-    if (url.includes("/api/v1/bundles/")) return mockJson(bundle);
-    if (url.includes("/api/v1/stream")) return mockSse([]);
-    if (url.includes("/api/v1/sessions/") && init?.method === "POST") return mockJson({ value: 1 });
-    if (url.includes("/api/v1/sessions/")) return mockJson({ value: null });
-    if (url.includes("/api/v1/events")) return mockJson({ ok: true });
-    return mockJson({ error: "not found" }, 404);
-  });
+    const url = extractUrl(input)
+    if (url.includes('/api/v1/bundles/')) return mockJson(bundle)
+    if (url.includes('/api/v1/stream')) return mockSse([])
+    if (url.includes('/api/v1/sessions/') && init?.method === 'POST') return mockJson({ value: 1 })
+    if (url.includes('/api/v1/sessions/')) return mockJson({ value: null })
+    if (url.includes('/api/v1/events')) return mockJson({ ok: true })
+    return mockJson({ error: 'not found' }, 404)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -99,15 +99,20 @@ export function setupFullMock(
 // ---------------------------------------------------------------------------
 
 export function createMockFetch(): {
-  mockFetch: ReturnType<typeof vi.fn<FetchFn>>;
-  install: () => void;
-  restore: () => void;
+  mockFetch: ReturnType<typeof vi.fn<FetchFn>>
+  install: () => void
+  restore: () => void
 } {
-  let originalFetch: FetchFn;
-  const mockFetch = vi.fn<FetchFn>();
+  let originalFetch: FetchFn
+  const mockFetch = vi.fn<FetchFn>()
   return {
     mockFetch,
-    install: () => { originalFetch = globalThis.fetch; globalThis.fetch = mockFetch; },
-    restore: () => { globalThis.fetch = originalFetch; },
-  };
+    install: () => {
+      originalFetch = globalThis.fetch
+      globalThis.fetch = mockFetch
+    },
+    restore: () => {
+      globalThis.fetch = originalFetch
+    },
+  }
 }

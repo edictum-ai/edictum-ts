@@ -1,13 +1,13 @@
 /** Approval protocol for human-in-the-loop tool call authorization. */
 
-import { randomUUID } from "node:crypto";
-import * as readline from "node:readline";
+import { randomUUID } from 'node:crypto'
+import * as readline from 'node:readline'
 
-import { RedactionPolicy } from "./redaction.js";
+import { RedactionPolicy } from './redaction.js'
 
 /** Strip ANSI escape sequences and control characters from terminal output. */
 function sanitizeForTerminal(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
+  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
 }
 
 // ---------------------------------------------------------------------------
@@ -15,14 +15,13 @@ function sanitizeForTerminal(s: string): string {
 // ---------------------------------------------------------------------------
 
 export const ApprovalStatus = {
-  PENDING: "pending",
-  APPROVED: "approved",
-  DENIED: "denied",
-  TIMEOUT: "timeout",
-} as const;
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  DENIED: 'denied',
+  TIMEOUT: 'timeout',
+} as const
 
-export type ApprovalStatus =
-  (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
+export type ApprovalStatus = (typeof ApprovalStatus)[keyof typeof ApprovalStatus]
 
 // ---------------------------------------------------------------------------
 // ApprovalRequest — frozen data object
@@ -30,19 +29,19 @@ export type ApprovalStatus =
 
 /** A request for human approval of a tool call. */
 export interface ApprovalRequest {
-  readonly approvalId: string;
-  readonly toolName: string;
-  readonly toolArgs: Readonly<Record<string, unknown>>;
-  readonly message: string;
-  readonly timeout: number; // seconds
-  readonly timeoutEffect: string; // "deny" | "allow"
-  readonly principal: Readonly<Record<string, unknown>> | null;
-  readonly metadata: Readonly<Record<string, unknown>>;
-  readonly createdAt: Date;
+  readonly approvalId: string
+  readonly toolName: string
+  readonly toolArgs: Readonly<Record<string, unknown>>
+  readonly message: string
+  readonly timeout: number // seconds
+  readonly timeoutEffect: string // "deny" | "allow"
+  readonly principal: Readonly<Record<string, unknown>> | null
+  readonly metadata: Readonly<Record<string, unknown>>
+  readonly createdAt: Date
 }
 
 function createApprovalRequest(
-  fields: Omit<ApprovalRequest, "createdAt"> & { createdAt?: Date },
+  fields: Omit<ApprovalRequest, 'createdAt'> & { createdAt?: Date },
 ): ApprovalRequest {
   const request: ApprovalRequest = {
     approvalId: fields.approvalId,
@@ -51,14 +50,11 @@ function createApprovalRequest(
     message: fields.message,
     timeout: fields.timeout,
     timeoutEffect: fields.timeoutEffect,
-    principal:
-      fields.principal !== null
-        ? Object.freeze({ ...fields.principal })
-        : null,
+    principal: fields.principal !== null ? Object.freeze({ ...fields.principal }) : null,
     metadata: Object.freeze({ ...fields.metadata }),
     createdAt: fields.createdAt ?? new Date(),
-  };
-  return Object.freeze(request);
+  }
+  return Object.freeze(request)
 }
 
 // ---------------------------------------------------------------------------
@@ -67,11 +63,11 @@ function createApprovalRequest(
 
 /** The result of a human approval decision. */
 export interface ApprovalDecision {
-  readonly approved: boolean;
-  readonly approver: string | null;
-  readonly reason: string | null;
-  readonly status: ApprovalStatus;
-  readonly timestamp: Date;
+  readonly approved: boolean
+  readonly approver: string | null
+  readonly reason: string | null
+  readonly status: ApprovalStatus
+  readonly timestamp: Date
 }
 
 function createApprovalDecision(
@@ -83,8 +79,8 @@ function createApprovalDecision(
     reason: fields.reason ?? null,
     status: fields.status ?? ApprovalStatus.PENDING,
     timestamp: fields.timestamp ?? new Date(),
-  };
-  return Object.freeze(decision);
+  }
+  return Object.freeze(decision)
 }
 
 // ---------------------------------------------------------------------------
@@ -98,17 +94,14 @@ export interface ApprovalBackend {
     toolArgs: Record<string, unknown>,
     message: string,
     options?: {
-      timeout?: number;
-      timeoutEffect?: string;
-      principal?: Record<string, unknown> | null;
-      metadata?: Record<string, unknown> | null;
+      timeout?: number
+      timeoutEffect?: string
+      principal?: Record<string, unknown> | null
+      metadata?: Record<string, unknown> | null
     },
-  ): Promise<ApprovalRequest>;
+  ): Promise<ApprovalRequest>
 
-  waitForDecision(
-    approvalId: string,
-    timeout?: number | null,
-  ): Promise<ApprovalDecision>;
+  waitForDecision(approvalId: string, timeout?: number | null): Promise<ApprovalDecision>
 }
 
 // ---------------------------------------------------------------------------
@@ -121,95 +114,84 @@ export interface ApprovalBackend {
  * Prompts on stdout, reads from stdin. Blocks until response or timeout.
  */
 export class LocalApprovalBackend implements ApprovalBackend {
-  private readonly _pending: Map<string, ApprovalRequest> = new Map();
+  private readonly _pending: Map<string, ApprovalRequest> = new Map()
 
   async requestApproval(
     toolName: string,
     toolArgs: Record<string, unknown>,
     message: string,
     options?: {
-      timeout?: number;
-      timeoutEffect?: string;
-      principal?: Record<string, unknown> | null;
-      metadata?: Record<string, unknown> | null;
+      timeout?: number
+      timeoutEffect?: string
+      principal?: Record<string, unknown> | null
+      metadata?: Record<string, unknown> | null
     },
   ): Promise<ApprovalRequest> {
-    const approvalId = randomUUID();
+    const approvalId = randomUUID()
     const request = createApprovalRequest({
       approvalId,
       toolName,
       toolArgs,
       message,
       timeout: options?.timeout ?? 300,
-      timeoutEffect: options?.timeoutEffect ?? "deny",
+      timeoutEffect: options?.timeoutEffect ?? 'deny',
       principal: options?.principal ?? null,
       metadata: options?.metadata ?? {},
-    });
-    this._pending.set(approvalId, request);
+    })
+    this._pending.set(approvalId, request)
 
-    const redaction = new RedactionPolicy();
-    const safeArgs = redaction.redactArgs(toolArgs);
-    process.stdout.write(`[APPROVAL REQUIRED] ${sanitizeForTerminal(message)}\n`);
-    process.stdout.write(`  Tool: ${sanitizeForTerminal(toolName)}\n`);
-    process.stdout.write(`  Args: ${sanitizeForTerminal(JSON.stringify(safeArgs))}\n`);
-    process.stdout.write(`  ID:   ${approvalId}\n`);
+    const redaction = new RedactionPolicy()
+    const safeArgs = redaction.redactArgs(toolArgs)
+    process.stdout.write(`[APPROVAL REQUIRED] ${sanitizeForTerminal(message)}\n`)
+    process.stdout.write(`  Tool: ${sanitizeForTerminal(toolName)}\n`)
+    process.stdout.write(`  Args: ${sanitizeForTerminal(JSON.stringify(safeArgs))}\n`)
+    process.stdout.write(`  ID:   ${approvalId}\n`)
 
-    return request;
+    return request
   }
 
-  async waitForDecision(
-    approvalId: string,
-    timeout?: number | null,
-  ): Promise<ApprovalDecision> {
-    const request = this._pending.get(approvalId);
-    const effectiveTimeout =
-      timeout ?? (request ? request.timeout : 300);
+  async waitForDecision(approvalId: string, timeout?: number | null): Promise<ApprovalDecision> {
+    const request = this._pending.get(approvalId)
+    const effectiveTimeout = timeout ?? (request ? request.timeout : 300)
 
     try {
-      const response = await this._readStdin(approvalId, effectiveTimeout);
-      const approved = ["y", "yes", "approve"].includes(
-        response.trim().toLowerCase(),
-      );
-      const status = approved
-        ? ApprovalStatus.APPROVED
-        : ApprovalStatus.DENIED;
+      const response = await this._readStdin(approvalId, effectiveTimeout)
+      const approved = ['y', 'yes', 'approve'].includes(response.trim().toLowerCase())
+      const status = approved ? ApprovalStatus.APPROVED : ApprovalStatus.DENIED
       return createApprovalDecision({
         approved,
-        approver: "local",
+        approver: 'local',
         status,
-      });
+      })
     } catch {
       // Timeout
-      const timeoutEffect = request ? request.timeoutEffect : "deny";
-      const approved = timeoutEffect === "allow";
+      const timeoutEffect = request ? request.timeoutEffect : 'deny'
+      const approved = timeoutEffect === 'allow'
       return createApprovalDecision({
         approved,
         status: ApprovalStatus.TIMEOUT,
-      });
+      })
     }
   }
 
   /** Read a single line from stdin with a timeout. */
-  private _readStdin(
-    approvalId: string,
-    timeoutSeconds: number,
-  ): Promise<string> {
+  private _readStdin(approvalId: string, timeoutSeconds: number): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-      });
+      })
 
       const timer = setTimeout(() => {
-        rl.close();
-        reject(new Error("Approval timed out"));
-      }, timeoutSeconds * 1000);
+        rl.close()
+        reject(new Error('Approval timed out'))
+      }, timeoutSeconds * 1000)
 
       rl.question(`Approve? [y/N] (id: ${approvalId}): `, (answer) => {
-        clearTimeout(timer);
-        rl.close();
-        resolve(answer);
-      });
-    });
+        clearTimeout(timer)
+        rl.close()
+        resolve(answer)
+      })
+    })
   }
 }

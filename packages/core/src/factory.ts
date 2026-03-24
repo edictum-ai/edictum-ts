@@ -10,21 +10,21 @@
  * Guard.ts delegates to these via dynamic import to avoid circular deps.
  */
 
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto'
 
-import type { ApprovalBackend } from "./approval.js";
-import type { AuditSink } from "./audit.js";
-import { EdictumConfigError } from "./errors.js";
-import type { Principal, ToolEnvelope } from "./envelope.js";
-import { Edictum } from "./guard.js";
-import type { OperationLimits } from "./limits.js";
-import type { RedactionPolicy } from "./redaction.js";
-import type { StorageBackend } from "./storage.js";
-import { composeBundles } from "./yaml-engine/composer.js";
-import type { CompositionReport } from "./yaml-engine/composer.js";
-import { compileContracts } from "./yaml-engine/compiler.js";
-import type { CustomOperator, CustomSelector } from "./yaml-engine/evaluator.js";
-import { loadBundle, loadBundleString } from "./yaml-engine/loader.js";
+import type { ApprovalBackend } from './approval.js'
+import type { AuditSink } from './audit.js'
+import { EdictumConfigError } from './errors.js'
+import type { Principal, ToolEnvelope } from './envelope.js'
+import { Edictum } from './guard.js'
+import type { OperationLimits } from './limits.js'
+import type { RedactionPolicy } from './redaction.js'
+import type { StorageBackend } from './storage.js'
+import { composeBundles } from './yaml-engine/composer.js'
+import type { CompositionReport } from './yaml-engine/composer.js'
+import { compileContracts } from './yaml-engine/compiler.js'
+import type { CustomOperator, CustomSelector } from './yaml-engine/evaluator.js'
+import { loadBundle, loadBundleString } from './yaml-engine/loader.js'
 
 // ---------------------------------------------------------------------------
 // Shared options type
@@ -32,25 +32,25 @@ import { loadBundle, loadBundleString } from "./yaml-engine/loader.js";
 
 /** Options shared by fromYaml and fromYamlString. */
 export interface YamlFactoryOptions {
-  readonly mode?: "enforce" | "observe";
-  readonly tools?: Record<string, { side_effect?: string; idempotent?: boolean }>;
-  readonly auditSink?: AuditSink | AuditSink[];
-  readonly redaction?: RedactionPolicy;
-  readonly backend?: StorageBackend;
-  readonly environment?: string;
-  readonly onDeny?: (envelope: ToolEnvelope, reason: string, source: string | null) => void;
-  readonly onAllow?: (envelope: ToolEnvelope) => void;
-  readonly customOperators?: Record<string, CustomOperator>;
-  readonly customSelectors?: Record<string, CustomSelector>;
-  readonly successCheck?: (toolName: string, result: unknown) => boolean;
-  readonly principal?: Principal;
-  readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal;
-  readonly approvalBackend?: ApprovalBackend;
+  readonly mode?: 'enforce' | 'observe'
+  readonly tools?: Record<string, { side_effect?: string; idempotent?: boolean }>
+  readonly auditSink?: AuditSink | AuditSink[]
+  readonly redaction?: RedactionPolicy
+  readonly backend?: StorageBackend
+  readonly environment?: string
+  readonly onDeny?: (envelope: ToolEnvelope, reason: string, source: string | null) => void
+  readonly onAllow?: (envelope: ToolEnvelope) => void
+  readonly customOperators?: Record<string, CustomOperator>
+  readonly customSelectors?: Record<string, CustomSelector>
+  readonly successCheck?: (toolName: string, result: unknown) => boolean
+  readonly principal?: Principal
+  readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
+  readonly approvalBackend?: ApprovalBackend
 }
 
 /** Options for fromYaml, extending base with returnReport. */
 export interface FromYamlOptions extends YamlFactoryOptions {
-  readonly returnReport?: boolean;
+  readonly returnReport?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -74,60 +74,61 @@ export function fromYaml(
   ...args: [...string[], FromYamlOptions] | string[]
 ): Edictum | [Edictum, CompositionReport] {
   // Separate paths from trailing options object
-  let paths: string[];
-  let options: FromYamlOptions;
+  let paths: string[]
+  let options: FromYamlOptions
 
-  const last = args[args.length - 1];
-  if (typeof last === "object" && last !== null && !Array.isArray(last)) {
-    paths = args.slice(0, -1) as string[];
-    options = last as FromYamlOptions;
+  const last = args[args.length - 1]
+  if (typeof last === 'object' && last !== null && !Array.isArray(last)) {
+    paths = args.slice(0, -1) as string[]
+    options = last as FromYamlOptions
   } else {
-    paths = args as string[];
-    options = {};
+    paths = args as string[]
+    options = {}
   }
 
   if (paths.length === 0) {
-    throw new EdictumConfigError("fromYaml() requires at least one path");
+    throw new EdictumConfigError('fromYaml() requires at least one path')
   }
 
   // Load all bundles
-  const loaded: [Record<string, unknown>, { hex: string }][] = [];
+  const loaded: [Record<string, unknown>, { hex: string }][] = []
   for (const p of paths) {
-    loaded.push(loadBundle(p));
+    loaded.push(loadBundle(p))
   }
 
-  let bundleData: Record<string, unknown>;
-  let policyVersion: string;
-  let report: CompositionReport;
+  let bundleData: Record<string, unknown>
+  let policyVersion: string
+  let report: CompositionReport
 
   if (loaded.length === 1) {
-    const entry = loaded[0] as [Record<string, unknown>, { hex: string }];
-    bundleData = entry[0];
-    policyVersion = entry[1].hex;
-    report = { overriddenContracts: [], observeContracts: [] };
+    const entry = loaded[0] as [Record<string, unknown>, { hex: string }]
+    bundleData = entry[0]
+    policyVersion = entry[1].hex
+    report = { overriddenContracts: [], observeContracts: [] }
   } else {
-    const bundleTuples: [Record<string, unknown>, string][] = loaded.map(
-      ([data], i) => [data, paths[i] as string],
-    );
-    const composed = composeBundles(...bundleTuples);
-    bundleData = composed.bundle;
-    report = composed.report;
-    policyVersion = createHash("sha256")
-      .update(loaded.map(([, h]) => h.hex).join(":"))
-      .digest("hex");
+    const bundleTuples: [Record<string, unknown>, string][] = loaded.map(([data], i) => [
+      data,
+      paths[i] as string,
+    ])
+    const composed = composeBundles(...bundleTuples)
+    bundleData = composed.bundle
+    report = composed.report
+    policyVersion = createHash('sha256')
+      .update(loaded.map(([, h]) => h.hex).join(':'))
+      .digest('hex')
   }
 
   const compiled = compileContracts(bundleData, {
     customOperators: options.customOperators ?? null,
     customSelectors: options.customSelectors ?? null,
-  });
+  })
 
-  const guard = _buildGuard(compiled, policyVersion, options);
+  const guard = _buildGuard(compiled, policyVersion, options)
 
   if (options.returnReport) {
-    return [guard, report];
+    return [guard, report]
   }
-  return guard;
+  return guard
 }
 
 // ---------------------------------------------------------------------------
@@ -145,15 +146,15 @@ export function fromYamlString(
   content: string | Uint8Array,
   options: YamlFactoryOptions = {},
 ): Edictum {
-  const [bundleData, bundleHash] = loadBundleString(content);
-  const policyVersion = bundleHash.hex;
+  const [bundleData, bundleHash] = loadBundleString(content)
+  const policyVersion = bundleHash.hex
 
   const compiled = compileContracts(bundleData, {
     customOperators: options.customOperators ?? null,
     customSelectors: options.customSelectors ?? null,
-  });
+  })
 
-  return _buildGuard(compiled, policyVersion, options);
+  return _buildGuard(compiled, policyVersion, options)
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +163,8 @@ export function fromYamlString(
 
 /** Options for reload(). */
 export interface ReloadOptions {
-  readonly customOperators?: Record<string, CustomOperator>;
-  readonly customSelectors?: Record<string, CustomSelector>;
+  readonly customOperators?: Record<string, CustomOperator>
+  readonly customSelectors?: Record<string, CustomSelector>
 }
 
 /**
@@ -174,23 +175,19 @@ export interface ReloadOptions {
  * started before reload() see the old state; evaluations after
  * see the new state.
  */
-export function reload(
-  guard: Edictum,
-  yamlContent: string,
-  options: ReloadOptions = {},
-): void {
-  const [bundleData, bundleHash] = loadBundleString(yamlContent);
+export function reload(guard: Edictum, yamlContent: string, options: ReloadOptions = {}): void {
+  const [bundleData, bundleHash] = loadBundleString(yamlContent)
   const compiled = compileContracts(bundleData, {
     customOperators: options.customOperators ?? null,
     customSelectors: options.customSelectors ?? null,
-  });
+  })
 
   const allContracts = [
     ...compiled.preconditions,
     ...compiled.postconditions,
     ...compiled.sessionContracts,
     ...compiled.sandboxContracts,
-  ] as unknown[];
+  ] as unknown[]
 
   // Classify into enforce/observe lists via the same logic the constructor uses.
   // We build a temporary Edictum to leverage _classifyContracts, then steal its state.
@@ -198,10 +195,10 @@ export function reload(
     contracts: allContracts as never[],
     limits: compiled.limits,
     policyVersion: bundleHash.hex,
-  });
+  })
 
   // Atomic state swap via package-internal methods
-  guard._replaceState(temp._getState());
+  guard._replaceState(temp._getState())
 }
 
 // ---------------------------------------------------------------------------
@@ -210,40 +207,40 @@ export function reload(
 
 function _buildGuard(
   compiled: {
-    preconditions: readonly unknown[];
-    postconditions: readonly unknown[];
-    sessionContracts: readonly unknown[];
-    sandboxContracts: readonly unknown[];
-    limits: OperationLimits;
-    defaultMode: string;
-    tools: Readonly<Record<string, Record<string, unknown>>>;
+    preconditions: readonly unknown[]
+    postconditions: readonly unknown[]
+    sessionContracts: readonly unknown[]
+    sandboxContracts: readonly unknown[]
+    limits: OperationLimits
+    defaultMode: string
+    tools: Readonly<Record<string, Record<string, unknown>>>
   },
   policyVersion: string,
   options: YamlFactoryOptions,
 ): Edictum {
-  const effectiveMode = options.mode ?? compiled.defaultMode;
+  const effectiveMode = options.mode ?? compiled.defaultMode
 
   const allContracts = [
     ...compiled.preconditions,
     ...compiled.postconditions,
     ...compiled.sessionContracts,
     ...compiled.sandboxContracts,
-  ];
+  ]
 
   // Merge YAML tools with parameter tools (parameter wins on conflict)
-  const mergedTools: Record<string, { side_effect?: string; idempotent?: boolean }> = {};
+  const mergedTools: Record<string, { side_effect?: string; idempotent?: boolean }> = {}
   for (const [name, cfg] of Object.entries(compiled.tools)) {
-    mergedTools[name] = cfg as { side_effect?: string; idempotent?: boolean };
+    mergedTools[name] = cfg as { side_effect?: string; idempotent?: boolean }
   }
   if (options.tools) {
     for (const [name, cfg] of Object.entries(options.tools)) {
-      mergedTools[name] = cfg;
+      mergedTools[name] = cfg
     }
   }
 
   return new Edictum({
-    environment: options.environment ?? "production",
-    mode: effectiveMode as "enforce" | "observe",
+    environment: options.environment ?? 'production',
+    mode: effectiveMode as 'enforce' | 'observe',
     limits: compiled.limits,
     tools: Object.keys(mergedTools).length > 0 ? mergedTools : undefined,
     contracts: allContracts as never[],
@@ -257,5 +254,5 @@ function _buildGuard(
     principal: options.principal,
     principalResolver: options.principalResolver,
     approvalBackend: options.approvalBackend,
-  });
+  })
 }

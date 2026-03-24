@@ -19,12 +19,12 @@
 <details>
 <summary>Review details</summary>
 
-| | |
-|---|---|
-| **Files reviewed** | {file_count} |
-| **Checks applied** | {checks_applied} |
-| **Issues found** | {issue_count} |
-| **Criteria sources** | `CLAUDE.md` |
+|                      |                  |
+| -------------------- | ---------------- |
+| **Files reviewed**   | {file_count}     |
+| **Checks applied**   | {checks_applied} |
+| **Issues found**     | {issue_count}    |
+| **Criteria sources** | `CLAUDE.md`      |
 
 ### Files
 

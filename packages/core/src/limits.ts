@@ -10,13 +10,13 @@
  * Both are checked. Whichever fires first wins.
  */
 export interface OperationLimits {
-  readonly maxAttempts: number;
-  readonly maxToolCalls: number;
-  readonly maxCallsPerTool: Readonly<Record<string, number>>;
+  readonly maxAttempts: number
+  readonly maxToolCalls: number
+  readonly maxCallsPerTool: Readonly<Record<string, number>>
 }
 
 export const DEFAULT_LIMITS: OperationLimits = Object.freeze({
   maxAttempts: 500,
   maxToolCalls: 200,
   maxCallsPerTool: Object.freeze({}),
-});
+})

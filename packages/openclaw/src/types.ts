@@ -7,10 +7,10 @@
  * @see OpenClaw src/plugins/types.ts PluginHookBeforeToolCallEvent
  */
 export interface BeforeToolCallEvent {
-  readonly toolName: string;
-  readonly params: Record<string, unknown>;
-  readonly runId?: string;
-  readonly toolCallId?: string;
+  readonly toolName: string
+  readonly params: Record<string, unknown>
+  readonly runId?: string
+  readonly toolCallId?: string
 }
 
 /**
@@ -23,9 +23,9 @@ export interface BeforeToolCallEvent {
  * @see OpenClaw src/plugins/types.ts PluginHookBeforeToolCallResult
  */
 export interface BeforeToolCallResult {
-  params?: Record<string, unknown>;
-  block?: boolean;
-  blockReason?: string;
+  params?: Record<string, unknown>
+  block?: boolean
+  blockReason?: string
 }
 
 /**
@@ -33,13 +33,13 @@ export interface BeforeToolCallResult {
  * @see OpenClaw src/plugins/types.ts PluginHookAfterToolCallEvent
  */
 export interface AfterToolCallEvent {
-  readonly toolName: string;
-  readonly params: Record<string, unknown>;
-  readonly runId?: string;
-  readonly toolCallId?: string;
-  readonly result?: unknown;
-  readonly error?: string;
-  readonly durationMs?: number;
+  readonly toolName: string
+  readonly params: Record<string, unknown>
+  readonly runId?: string
+  readonly toolCallId?: string
+  readonly result?: unknown
+  readonly error?: string
+  readonly durationMs?: number
 }
 
 /**
@@ -47,12 +47,12 @@ export interface AfterToolCallEvent {
  * @see OpenClaw src/plugins/types.ts PluginHookToolContext
  */
 export interface ToolHookContext {
-  readonly agentId?: string;
-  readonly sessionKey?: string;
-  readonly sessionId?: string;
-  readonly runId?: string;
-  readonly toolName: string;
-  readonly toolCallId?: string;
+  readonly agentId?: string
+  readonly sessionKey?: string
+  readonly sessionId?: string
+  readonly runId?: string
+  readonly toolName: string
+  readonly toolCallId?: string
 }
 
 /**
@@ -60,9 +60,9 @@ export interface ToolHookContext {
  * @see OpenClaw src/plugins/types.ts PluginHookSessionContext
  */
 export interface SessionHookContext {
-  readonly agentId?: string;
-  readonly sessionId: string;
-  readonly sessionKey?: string;
+  readonly agentId?: string
+  readonly sessionId: string
+  readonly sessionKey?: string
 }
 
 /**
@@ -71,33 +71,29 @@ export interface SessionHookContext {
  * @see OpenClaw src/plugins/types.ts OpenClawPluginApi
  */
 export interface OpenClawPluginApi {
-  readonly id: string;
-  readonly name: string;
-  readonly config: Record<string, unknown>;
-  readonly pluginConfig?: Record<string, unknown>;
-  on(
-    hookName: string,
-    handler: (...args: unknown[]) => unknown,
-    opts?: { priority?: number },
-  ): void;
+  readonly id: string
+  readonly name: string
+  readonly config: Record<string, unknown>
+  readonly pluginConfig?: Record<string, unknown>
+  on(hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }): void
 }
 
 /**
  * Finding from a postcondition evaluation.
  */
 export interface Finding {
-  readonly contractId: string | null;
-  readonly message: string;
-  readonly tags: readonly string[];
-  readonly severity: string;
+  readonly contractId: string | null
+  readonly message: string
+  readonly tags: readonly string[]
+  readonly severity: string
 }
 
 /**
  * Result from post-execution governance.
  */
 export interface PostCallResult {
-  readonly result: unknown;
-  readonly postconditionsPassed: boolean;
-  readonly findings: readonly Finding[];
-  readonly outputSuppressed: boolean;
+  readonly result: unknown
+  readonly postconditionsPassed: boolean
+  readonly findings: readonly Finding[]
+  readonly outputSuppressed: boolean
 }

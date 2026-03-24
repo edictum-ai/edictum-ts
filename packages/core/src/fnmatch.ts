@@ -13,30 +13,29 @@
  * Input capped at 10,000 characters to prevent regex DoS.
  */
 export function fnmatch(name: string, pattern: string): boolean {
-  if (pattern === "*") return true;
-  if (!pattern.includes("*") && !pattern.includes("?")) {
-    return name === pattern;
+  if (pattern === '*') return true
+  if (!pattern.includes('*') && !pattern.includes('?')) {
+    return name === pattern
   }
 
   // Cap input length for regex DoS prevention
-  const safeName = name.length > 10_000 ? name.slice(0, 10_000) : name;
-  const safePattern =
-    pattern.length > 10_000 ? pattern.slice(0, 10_000) : pattern;
+  const safeName = name.length > 10_000 ? name.slice(0, 10_000) : name
+  const safePattern = pattern.length > 10_000 ? pattern.slice(0, 10_000) : pattern
 
   // Convert glob to regex: escape regex chars, then replace glob wildcards
-  let regex = "";
+  let regex = ''
   for (let i = 0; i < safePattern.length; i++) {
-    const ch = safePattern[i] ?? "";
-    if (ch === "*") {
-      regex += ".*";
-    } else if (ch === "?") {
-      regex += ".";
-    } else if (".+^${}()|[]\\".includes(ch)) {
-      regex += "\\" + ch;
+    const ch = safePattern[i] ?? ''
+    if (ch === '*') {
+      regex += '.*'
+    } else if (ch === '?') {
+      regex += '.'
+    } else if ('.+^${}()|[]\\'.includes(ch)) {
+      regex += '\\' + ch
     } else {
-      regex += ch;
+      regex += ch
     }
   }
 
-  return new RegExp("^" + regex + "$").test(safeName);
+  return new RegExp('^' + regex + '$').test(safeName)
 }

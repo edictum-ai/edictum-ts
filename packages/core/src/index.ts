@@ -1,9 +1,9 @@
 /** Edictum — Runtime contract enforcement for AI agent tool calls. */
 
-export const VERSION = "0.1.0";
+export const VERSION = '0.1.0'
 
 // Errors
-export { EdictumConfigError, EdictumDenied, EdictumToolError } from "./errors.js";
+export { EdictumConfigError, EdictumDenied, EdictumToolError } from './errors.js'
 
 // Envelope & Classification
 export {
@@ -14,40 +14,33 @@ export {
   SideEffect,
   ToolRegistry,
   _validateToolName,
-} from "./envelope.js";
-export type { CreateEnvelopeOptions, Principal, ToolEnvelope } from "./envelope.js";
+} from './envelope.js'
+export type { CreateEnvelopeOptions, Principal, ToolEnvelope } from './envelope.js'
 
 // Contracts
-export { Verdict } from "./contracts.js";
-export type { Precondition, Postcondition, SessionContract } from "./contracts.js";
+export { Verdict } from './contracts.js'
+export type { Precondition, Postcondition, SessionContract } from './contracts.js'
 
 // Hooks
-export { HookDecision, HookResult } from "./hooks.js";
+export { HookDecision, HookResult } from './hooks.js'
 
 // Limits
-export { DEFAULT_LIMITS } from "./limits.js";
-export type { OperationLimits } from "./limits.js";
+export { DEFAULT_LIMITS } from './limits.js'
+export type { OperationLimits } from './limits.js'
 
 // Types (internal, but exported for adapter authors)
-export type { HookRegistration, ToolConfig } from "./types.js";
+export type { HookRegistration, ToolConfig } from './types.js'
 
 // Storage
-export { MemoryBackend } from "./storage.js";
-export type { StorageBackend } from "./storage.js";
+export { MemoryBackend } from './storage.js'
+export type { StorageBackend } from './storage.js'
 
 // Session
-export { Session } from "./session.js";
+export { Session } from './session.js'
 
 // Approval
-export {
-  ApprovalStatus,
-  LocalApprovalBackend,
-} from "./approval.js";
-export type {
-  ApprovalBackend,
-  ApprovalDecision,
-  ApprovalRequest,
-} from "./approval.js";
+export { ApprovalStatus, LocalApprovalBackend } from './approval.js'
+export type { ApprovalBackend, ApprovalDecision, ApprovalRequest } from './approval.js'
 
 // Audit
 export {
@@ -58,24 +51,19 @@ export {
   FileAuditSink,
   MarkEvictedError,
   StdoutAuditSink,
-} from "./audit.js";
-export type { AuditEvent, AuditSink } from "./audit.js";
+} from './audit.js'
+export type { AuditEvent, AuditSink } from './audit.js'
 
 // Redaction
-export { RedactionPolicy } from "./redaction.js";
+export { RedactionPolicy } from './redaction.js'
 
 // Evaluation
-export { createContractResult, createEvaluationResult } from "./evaluation.js";
-export type { ContractResult, EvaluationResult } from "./evaluation.js";
+export { createContractResult, createEvaluationResult } from './evaluation.js'
+export type { ContractResult, EvaluationResult } from './evaluation.js'
 
 // Findings
-export {
-  buildFindings,
-  classifyFinding,
-  createFinding,
-  createPostCallResult,
-} from "./findings.js";
-export type { Finding, PostCallResult, PostDecisionLike } from "./findings.js";
+export { buildFindings, classifyFinding, createFinding, createPostCallResult } from './findings.js'
+export type { Finding, PostCallResult, PostDecisionLike } from './findings.js'
 
 // Internal contract types (for adapter and YAML engine authors)
 export type {
@@ -85,33 +73,33 @@ export type {
   InternalPostcondition,
   InternalSessionContract,
   InternalSandboxContract,
-} from "./internal-contracts.js";
+} from './internal-contracts.js'
 
 // Compiled state
-export { createCompiledState } from "./compiled-state.js";
-export type { CompiledState } from "./compiled-state.js";
+export { createCompiledState } from './compiled-state.js'
+export type { CompiledState } from './compiled-state.js'
 
 // Pipeline
-export { GovernancePipeline, createPreDecision, createPostDecision } from "./pipeline.js";
-export type { PreDecision, PostDecision } from "./pipeline.js";
+export { GovernancePipeline, createPreDecision, createPostDecision } from './pipeline.js'
+export type { PreDecision, PostDecision } from './pipeline.js'
 
 // Guard
-export { Edictum } from "./guard.js";
-export type { EdictumOptions } from "./guard.js";
+export { Edictum } from './guard.js'
+export type { EdictumOptions } from './guard.js'
 
 // Runner (framework-agnostic tool execution)
-export { defaultSuccessCheck, run } from "./runner.js";
-export type { RunOptions } from "./runner.js";
+export { defaultSuccessCheck, run } from './runner.js'
+export type { RunOptions } from './runner.js'
 
 // Dry-run evaluation
-export type { BatchCall, EvaluateOptions } from "./dry-run.js";
+export type { BatchCall, EvaluateOptions } from './dry-run.js'
 
 // Fnmatch
-export { fnmatch } from "./fnmatch.js";
+export { fnmatch } from './fnmatch.js'
 
 // YAML Factory
-export { fromYaml, fromYamlString, reload } from "./factory.js";
-export type { YamlFactoryOptions, FromYamlOptions, ReloadOptions } from "./factory.js";
+export { fromYaml, fromYamlString, reload } from './factory.js'
+export type { YamlFactoryOptions, FromYamlOptions, ReloadOptions } from './factory.js'
 
 // YAML Engine (public API)
 export {
@@ -120,11 +108,8 @@ export {
   BUILTIN_OPERATOR_NAMES,
   BUILTIN_SELECTOR_PREFIXES,
   MAX_REGEX_INPUT,
-} from "./yaml-engine/index.js";
-export type {
-  CustomOperator,
-  CustomSelector,
-} from "./yaml-engine/index.js";
+} from './yaml-engine/index.js'
+export type { CustomOperator, CustomSelector } from './yaml-engine/index.js'
 export {
   compileContracts,
   loadBundle,
@@ -134,7 +119,7 @@ export {
   composeBundles,
   expandMessage,
   validateOperators,
-} from "./yaml-engine/index.js";
+} from './yaml-engine/index.js'
 export type {
   CompiledBundle,
   CompileOptions,
@@ -144,4 +129,4 @@ export type {
   CompositionOverride,
   ObserveContract,
   EvaluateOptions as ExpressionEvaluateOptions,
-} from "./yaml-engine/index.js";
+} from './yaml-engine/index.js'

@@ -8,21 +8,18 @@
  * → audit) is a single cohesive transaction that would be harder to follow if split.
  */
 
-import type { Edictum } from "./guard.js";
-import type { AuditAction } from "./audit.js";
-import type { Principal, ToolEnvelope } from "./envelope.js";
-import type { PreDecision } from "./pipeline.js";
-import type { Session } from "./session.js";
+import type { Edictum } from './guard.js'
+import type { AuditAction } from './audit.js'
+import type { Principal, ToolEnvelope } from './envelope.js'
+import type { PreDecision } from './pipeline.js'
+import type { Session } from './session.js'
 
-import { ApprovalStatus } from "./approval.js";
-import {
-  AuditAction as AA,
-  createAuditEvent,
-} from "./audit.js";
-import { createEnvelope } from "./envelope.js";
-import { EdictumDenied, EdictumToolError } from "./errors.js";
-import { GovernancePipeline } from "./pipeline.js";
-import { Session as SessionClass } from "./session.js";
+import { ApprovalStatus } from './approval.js'
+import { AuditAction as AA, createAuditEvent } from './audit.js'
+import { createEnvelope } from './envelope.js'
+import { EdictumDenied, EdictumToolError } from './errors.js'
+import { GovernancePipeline } from './pipeline.js'
+import { Session as SessionClass } from './session.js'
 
 // ---------------------------------------------------------------------------
 // defaultSuccessCheck
@@ -37,26 +34,23 @@ import { Session as SessionClass } from "./session.js";
  * - string starting with "error:" or "fatal:" (case-insensitive) is failure
  * - everything else is success
  */
-export function defaultSuccessCheck(
-  _toolName: string,
-  result: unknown,
-): boolean {
+export function defaultSuccessCheck(_toolName: string, result: unknown): boolean {
   if (result == null) {
-    return true;
+    return true
   }
-  if (typeof result === "object" && !Array.isArray(result)) {
-    const dict = result as Record<string, unknown>;
-    if (dict["is_error"]) {
-      return false;
+  if (typeof result === 'object' && !Array.isArray(result)) {
+    const dict = result as Record<string, unknown>
+    if (dict['is_error']) {
+      return false
     }
   }
-  if (typeof result === "string") {
-    const lower = result.slice(0, 7).toLowerCase();
-    if (lower.startsWith("error:") || lower.startsWith("fatal:")) {
-      return false;
+  if (typeof result === 'string') {
+    const lower = result.slice(0, 7).toLowerCase()
+    if (lower.startsWith('error:') || lower.startsWith('fatal:')) {
+      return false
     }
   }
-  return true;
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -65,9 +59,9 @@ export function defaultSuccessCheck(
 
 /** Options for the run() function beyond the required positional args. */
 export interface RunOptions {
-  readonly sessionId?: string;
-  readonly environment?: string;
-  readonly principal?: Principal;
+  readonly sessionId?: string
+  readonly environment?: string
+  readonly principal?: Principal
 }
 
 // ---------------------------------------------------------------------------
@@ -86,15 +80,10 @@ async function _emitRunPreAudit(
     runId: envelope.runId,
     callId: envelope.callId,
     toolName: envelope.toolName,
-    toolArgs: guard.redaction.redactArgs(envelope.args) as Record<
-      string,
-      unknown
-    >,
+    toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
     sideEffect: envelope.sideEffect,
     environment: envelope.environment,
-    principal: envelope.principal
-      ? ({ ...envelope.principal } as Record<string, unknown>)
-      : null,
+    principal: envelope.principal ? ({ ...envelope.principal } as Record<string, unknown>) : null,
     decisionSource: pre.decisionSource,
     decisionName: pre.decisionName,
     reason: pre.reason,
@@ -105,8 +94,8 @@ async function _emitRunPreAudit(
     mode: guard.mode,
     policyVersion: guard.policyVersion,
     policyError: pre.policyError,
-  });
-  await guard.auditSink.emit(event);
+  })
+  await guard.auditSink.emit(event)
   // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, event)
 }
 
@@ -125,24 +114,22 @@ export async function run(
   guard: Edictum,
   toolName: string,
   args: Record<string, unknown>,
-  toolCallable: (
-    args: Record<string, unknown>,
-  ) => unknown | Promise<unknown>,
+  toolCallable: (args: Record<string, unknown>) => unknown | Promise<unknown>,
   options?: RunOptions,
 ): Promise<unknown> {
-  const sessionId = options?.sessionId ?? guard.sessionId;
-  const session = new SessionClass(sessionId, guard.backend);
-  const pipeline = new GovernancePipeline(guard);
+  const sessionId = options?.sessionId ?? guard.sessionId
+  const session = new SessionClass(sessionId, guard.backend)
+  const pipeline = new GovernancePipeline(guard)
 
   // Allow per-call environment override; fall back to guard-level default
-  const env = options?.environment ?? guard.environment;
+  const env = options?.environment ?? guard.environment
 
   // Resolve principal: per-call resolver > static > options
-  let principal = options?.principal ?? undefined;
+  let principal = options?.principal ?? undefined
   if (principal === undefined) {
-    const resolved = guard._resolvePrincipal(toolName, args);
+    const resolved = guard._resolvePrincipal(toolName, args)
     if (resolved != null) {
-      principal = resolved;
+      principal = resolved
     }
   }
 
@@ -151,10 +138,10 @@ export async function run(
     environment: env,
     registry: guard.toolRegistry,
     principal: principal ?? null,
-  });
+  })
 
   // Increment attempts
-  await session.incrementAttempts();
+  await session.incrementAttempts()
 
   // TODO: Phase 3 — start OTel span
   // const span = guard.telemetry.startToolSpan(envelope);
@@ -166,85 +153,60 @@ export async function run(
     // }
 
     // Pre-execute
-    const pre = await pipeline.preExecute(envelope, session);
+    const pre = await pipeline.preExecute(envelope, session)
 
     // Handle pending_approval: request approval from backend
-    if (pre.action === "pending_approval") {
+    if (pre.action === 'pending_approval') {
       if (guard._approvalBackend == null) {
         // TODO: Phase 3 — span.setError(...)
         throw new EdictumDenied(
           `Approval required but no approval backend configured: ${pre.reason}`,
           pre.decisionSource,
           pre.decisionName,
-        );
+        )
       }
 
       const principalDict = envelope.principal
         ? ({ ...envelope.principal } as Record<string, unknown>)
-        : null;
+        : null
 
-      const approvalRequest =
-        await guard._approvalBackend.requestApproval(
-          envelope.toolName,
-          envelope.args as Record<string, unknown>,
-          pre.approvalMessage ?? pre.reason ?? "",
-          {
-            timeout: pre.approvalTimeout,
-            timeoutEffect: pre.approvalTimeoutEffect,
-            principal: principalDict,
-          },
-        );
+      const approvalRequest = await guard._approvalBackend.requestApproval(
+        envelope.toolName,
+        envelope.args as Record<string, unknown>,
+        pre.approvalMessage ?? pre.reason ?? '',
+        {
+          timeout: pre.approvalTimeout,
+          timeoutEffect: pre.approvalTimeoutEffect,
+          principal: principalDict,
+        },
+      )
 
-      await _emitRunPreAudit(
-        guard,
-        envelope,
-        session,
-        AA.CALL_APPROVAL_REQUESTED,
-        pre,
-      );
+      await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_REQUESTED, pre)
 
       const decision = await guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
         pre.approvalTimeout,
-      );
+      )
 
       // Resolve approval: approved, denied, or timeout (with timeout_effect)
-      let approved = false;
+      let approved = false
       if (decision.status === ApprovalStatus.TIMEOUT) {
-        await _emitRunPreAudit(
-          guard,
-          envelope,
-          session,
-          AA.CALL_APPROVAL_TIMEOUT,
-          pre,
-        );
-        if (pre.approvalTimeoutEffect === "allow") {
-          approved = true;
+        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_TIMEOUT, pre)
+        if (pre.approvalTimeoutEffect === 'allow') {
+          approved = true
         }
       } else if (!decision.approved) {
-        await _emitRunPreAudit(
-          guard,
-          envelope,
-          session,
-          AA.CALL_APPROVAL_DENIED,
-          pre,
-        );
+        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_DENIED, pre)
       } else {
-        approved = true;
-        await _emitRunPreAudit(
-          guard,
-          envelope,
-          session,
-          AA.CALL_APPROVAL_GRANTED,
-          pre,
-        );
+        approved = true
+        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_GRANTED, pre)
       }
 
       if (approved) {
         // TODO: Phase 3 — guard.telemetry.recordAllowed(envelope)
         if (guard._onAllow) {
           try {
-            guard._onAllow(envelope);
+            guard._onAllow(envelope)
           } catch {
             // on_allow callback raised — swallow
           }
@@ -253,94 +215,80 @@ export async function run(
         // Skip the normal pre-execution audit/callback logic below —
         // approval-granted path handles its own audit and callbacks.
       } else {
-        const denyReason = decision.reason ?? pre.reason ?? "";
+        const denyReason = decision.reason ?? pre.reason ?? ''
         // TODO: Phase 3 — guard.telemetry.recordDenial(envelope, denyReason)
         if (guard._onDeny) {
           try {
-            guard._onDeny(envelope, denyReason, pre.decisionName);
+            guard._onDeny(envelope, denyReason, pre.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
         }
         // TODO: Phase 3 — span error attributes
         throw new EdictumDenied(
-          decision.reason ?? pre.reason ?? "denied",
+          decision.reason ?? pre.reason ?? 'denied',
           pre.decisionSource,
           pre.decisionName,
-        );
+        )
       }
     }
 
     // Determine if this is a real deny or just per-contract observed denials
-    const realDeny = pre.action === "deny" && !pre.observed;
+    const realDeny = pre.action === 'deny' && !pre.observed
 
     // Skip pre-execution audit for approval-granted path (already handled above)
-    if (pre.action === "pending_approval") {
+    if (pre.action === 'pending_approval') {
       // Fall through directly to tool execution
     } else if (realDeny) {
-      const auditAction =
-        guard.mode === "observe" ? AA.CALL_WOULD_DENY : AA.CALL_DENIED;
-      await _emitRunPreAudit(guard, envelope, session, auditAction, pre);
+      const auditAction = guard.mode === 'observe' ? AA.CALL_WOULD_DENY : AA.CALL_DENIED
+      await _emitRunPreAudit(guard, envelope, session, auditAction, pre)
       // TODO: Phase 3 — guard.telemetry.recordDenial(envelope, pre.reason)
 
-      if (guard.mode === "enforce") {
+      if (guard.mode === 'enforce') {
         if (guard._onDeny) {
           try {
-            guard._onDeny(envelope, pre.reason ?? "", pre.decisionName);
+            guard._onDeny(envelope, pre.reason ?? '', pre.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
         }
         // TODO: Phase 3 — span error attributes
-        throw new EdictumDenied(
-          pre.reason ?? "denied",
-          pre.decisionSource,
-          pre.decisionName,
-        );
+        throw new EdictumDenied(pre.reason ?? 'denied', pre.decisionSource, pre.decisionName)
       }
       // observe mode: fall through to execute
       // TODO: Phase 3 — span.setAttribute("governance.action", "would_deny")
     } else {
       // Emit CALL_WOULD_DENY for any per-contract observed denials
       for (const cr of pre.contractsEvaluated) {
-        if (cr["observed"] && !cr["passed"]) {
+        if (cr['observed'] && !cr['passed']) {
           const observedEvent = createAuditEvent({
             action: AA.CALL_WOULD_DENY,
             runId: envelope.runId,
             callId: envelope.callId,
             toolName: envelope.toolName,
-            toolArgs: guard.redaction.redactArgs(envelope.args) as Record<
-              string,
-              unknown
-            >,
+            toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
             sideEffect: envelope.sideEffect,
             environment: envelope.environment,
             principal: envelope.principal
               ? ({ ...envelope.principal } as Record<string, unknown>)
               : null,
-            decisionSource: "precondition",
-            decisionName: cr["name"] as string,
-            reason: cr["message"] as string | null,
-            mode: "observe",
+            decisionSource: 'precondition',
+            decisionName: cr['name'] as string,
+            reason: cr['message'] as string | null,
+            mode: 'observe',
             policyVersion: guard.policyVersion,
             policyError: pre.policyError,
-          });
-          await guard.auditSink.emit(observedEvent);
+          })
+          await guard.auditSink.emit(observedEvent)
           // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, observedEvent)
         }
       }
 
-      await _emitRunPreAudit(
-        guard,
-        envelope,
-        session,
-        AA.CALL_ALLOWED,
-        pre,
-      );
+      await _emitRunPreAudit(guard, envelope, session, AA.CALL_ALLOWED, pre)
       // TODO: Phase 3 — guard.telemetry.recordAllowed(envelope)
       if (guard._onAllow) {
         try {
-          guard._onAllow(envelope);
+          guard._onAllow(envelope)
         } catch {
           // on_allow callback raised — swallow
         }
@@ -350,80 +298,68 @@ export async function run(
 
     // Emit observe-mode audit events (never affect the real decision)
     for (const sr of pre.observeResults) {
-      const observeAction = sr["passed"]
-        ? AA.CALL_ALLOWED
-        : AA.CALL_WOULD_DENY;
+      const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
       const observeEvent = createAuditEvent({
         action: observeAction,
         runId: envelope.runId,
         callId: envelope.callId,
         toolName: envelope.toolName,
-        toolArgs: guard.redaction.redactArgs(envelope.args) as Record<
-          string,
-          unknown
-        >,
+        toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
         sideEffect: envelope.sideEffect,
         environment: envelope.environment,
         principal: envelope.principal
           ? ({ ...envelope.principal } as Record<string, unknown>)
           : null,
-        decisionSource: sr["source"] as string | null,
-        decisionName: sr["name"] as string | null,
-        reason: sr["message"] as string | null,
-        mode: "observe",
+        decisionSource: sr['source'] as string | null,
+        decisionName: sr['name'] as string | null,
+        reason: sr['message'] as string | null,
+        mode: 'observe',
         policyVersion: guard.policyVersion,
-      });
-      await guard.auditSink.emit(observeEvent);
+      })
+      await guard.auditSink.emit(observeEvent)
       // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, observeEvent)
     }
 
     // Execute tool
-    let result: unknown;
-    let toolSuccess: boolean;
+    let result: unknown
+    let toolSuccess: boolean
     try {
       // Use the frozen envelope.args snapshot — prevents TOCTOU between
       // governance evaluation and tool execution
-      result = toolCallable(envelope.args as Record<string, unknown>);
+      result = toolCallable(envelope.args as Record<string, unknown>)
       // Await if the callable returns a promise
       if (
         result != null &&
-        typeof result === "object" &&
-        typeof (result as Promise<unknown>).then === "function"
+        typeof result === 'object' &&
+        typeof (result as Promise<unknown>).then === 'function'
       ) {
-        result = await (result as Promise<unknown>);
+        result = await (result as Promise<unknown>)
       }
       if (guard._successCheck) {
-        toolSuccess = guard._successCheck(toolName, result);
+        toolSuccess = guard._successCheck(toolName, result)
       } else {
-        toolSuccess = defaultSuccessCheck(toolName, result);
+        toolSuccess = defaultSuccessCheck(toolName, result)
       }
     } catch (e: unknown) {
-      result = String(e);
-      toolSuccess = false;
+      result = String(e)
+      toolSuccess = false
     }
 
     // Post-execute
-    const post = await pipeline.postExecute(envelope, result, toolSuccess);
-    await session.recordExecution(toolName, toolSuccess);
+    const post = await pipeline.postExecute(envelope, result, toolSuccess)
+    await session.recordExecution(toolName, toolSuccess)
 
     // Emit post-execute audit
-    const postAction = toolSuccess
-      ? AA.CALL_EXECUTED
-      : AA.CALL_FAILED;
+    const postAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
     const postEvent = createAuditEvent({
       action: postAction,
       runId: envelope.runId,
       callId: envelope.callId,
       toolName: envelope.toolName,
-      toolArgs: guard.redaction.redactArgs(envelope.args) as Record<
-        string,
-        unknown
-      >,
+      toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
       sideEffect: envelope.sideEffect,
       environment: envelope.environment,
-      principal: envelope.principal
-        ? ({ ...envelope.principal } as Record<string, unknown>)
-        : null,
+      principal: envelope.principal ? ({ ...envelope.principal } as Record<string, unknown>) : null,
       toolSuccess,
       postconditionsPassed: post.postconditionsPassed,
       contractsEvaluated: post.contractsEvaluated,
@@ -432,18 +368,18 @@ export async function run(
       mode: guard.mode,
       policyVersion: guard.policyVersion,
       policyError: post.policyError,
-    });
-    await guard.auditSink.emit(postEvent);
+    })
+    await guard.auditSink.emit(postEvent)
     // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, postEvent)
 
     // TODO: Phase 3 — span tool_success / postconditions_passed attributes
     // TODO: Phase 3 — span OK/error status
 
     if (!toolSuccess) {
-      throw new EdictumToolError(String(result));
+      throw new EdictumToolError(String(result))
     }
 
-    return post.redactedResponse != null ? post.redactedResponse : result;
+    return post.redactedResponse != null ? post.redactedResponse : result
   } finally {
     // TODO: Phase 3 — span.end()
   }

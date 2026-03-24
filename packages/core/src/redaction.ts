@@ -1,6 +1,6 @@
 /** Redaction policy for sensitive data in audit events. */
 
-import { EdictumConfigError } from "./errors.js";
+import { EdictumConfigError } from './errors.js'
 
 // ---------------------------------------------------------------------------
 // RedactionPolicy
@@ -14,37 +14,32 @@ import { EdictumConfigError } from "./errors.js";
  */
 export class RedactionPolicy {
   static readonly DEFAULT_SENSITIVE_KEYS: ReadonlySet<string> = new Set([
-    "password",
-    "secret",
-    "token",
-    "api_key",
-    "apikey",
-    "api-key",
-    "authorization",
-    "auth",
-    "credentials",
-    "private_key",
-    "privatekey",
-    "access_token",
-    "refresh_token",
-    "client_secret",
-    "connection_string",
-    "database_url",
-    "db_password",
-    "ssh_key",
-    "passphrase",
-  ]);
+    'password',
+    'secret',
+    'token',
+    'api_key',
+    'apikey',
+    'api-key',
+    'authorization',
+    'auth',
+    'credentials',
+    'private_key',
+    'privatekey',
+    'access_token',
+    'refresh_token',
+    'client_secret',
+    'connection_string',
+    'database_url',
+    'db_password',
+    'ssh_key',
+    'passphrase',
+  ])
 
-  static readonly BASH_REDACTION_PATTERNS: ReadonlyArray<
-    readonly [string, string]
-  > = [
-    [
-      String.raw`(export\s+\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*=)\S+`,
-      "$1[REDACTED]",
-    ],
-    [String.raw`((?:^|\s)-p\s*|--password[= ])\S+`, "$1[REDACTED]"],
-    [String.raw`(://\w+:)\S+(@)`, "$1[REDACTED]$2"],
-  ];
+  static readonly BASH_REDACTION_PATTERNS: ReadonlyArray<readonly [string, string]> = [
+    [String.raw`(export\s+\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*=)\S+`, '$1[REDACTED]'],
+    [String.raw`((?:^|\s)-p\s*|--password[= ])\S+`, '$1[REDACTED]'],
+    [String.raw`(://\w+:)\S+(@)`, '$1[REDACTED]$2'],
+  ]
 
   static readonly SECRET_VALUE_PATTERNS: ReadonlyArray<string> = [
     String.raw`^(sk-[a-zA-Z0-9]{20,})`,
@@ -52,17 +47,17 @@ export class RedactionPolicy {
     String.raw`^(eyJ[a-zA-Z0-9_-]{20,}\.)`,
     String.raw`^(ghp_[a-zA-Z0-9]{36})`,
     String.raw`^(xox[bpas]-[a-zA-Z0-9-]{10,})`,
-  ];
+  ]
 
-  static readonly MAX_PAYLOAD_SIZE = 32_768;
-  static readonly MAX_REGEX_INPUT = 10_000;
-  static readonly MAX_PATTERN_LENGTH = 10_000;
+  static readonly MAX_PAYLOAD_SIZE = 32_768
+  static readonly MAX_REGEX_INPUT = 10_000
+  static readonly MAX_PATTERN_LENGTH = 10_000
 
-  private readonly _keys: ReadonlySet<string>;
-  private readonly _patterns: ReadonlyArray<readonly [string, string]>;
-  private readonly _compiledPatterns: ReadonlyArray<readonly [RegExp, string]>;
-  private readonly _compiledSecretPatterns: ReadonlyArray<RegExp>;
-  private readonly _detectValues: boolean;
+  private readonly _keys: ReadonlySet<string>
+  private readonly _patterns: ReadonlyArray<readonly [string, string]>
+  private readonly _compiledPatterns: ReadonlyArray<readonly [RegExp, string]>
+  private readonly _compiledSecretPatterns: ReadonlyArray<RegExp>
+  private readonly _detectValues: boolean
 
   constructor(
     sensitiveKeys?: ReadonlySet<string> | null,
@@ -71,49 +66,40 @@ export class RedactionPolicy {
   ) {
     const baseKeys = sensitiveKeys
       ? new Set([...RedactionPolicy.DEFAULT_SENSITIVE_KEYS, ...sensitiveKeys])
-      : new Set(RedactionPolicy.DEFAULT_SENSITIVE_KEYS);
-    this._keys = new Set([...baseKeys].map((k) => k.toLowerCase()));
+      : new Set(RedactionPolicy.DEFAULT_SENSITIVE_KEYS)
+    this._keys = new Set([...baseKeys].map((k) => k.toLowerCase()))
     if (customPatterns) {
       for (const [pattern] of customPatterns) {
         if (pattern.length > RedactionPolicy.MAX_PATTERN_LENGTH) {
           throw new EdictumConfigError(
             `Custom redaction pattern exceeds ${RedactionPolicy.MAX_PATTERN_LENGTH} characters`,
-          );
+          )
         }
       }
     }
-    this._patterns = [
-      ...(customPatterns ?? []),
-      ...RedactionPolicy.BASH_REDACTION_PATTERNS,
-    ];
+    this._patterns = [...(customPatterns ?? []), ...RedactionPolicy.BASH_REDACTION_PATTERNS]
     this._compiledPatterns = this._patterns.map(
-      ([pattern, replacement]) => [new RegExp(pattern, "g"), replacement] as const,
-    );
-    this._compiledSecretPatterns = RedactionPolicy.SECRET_VALUE_PATTERNS.map(
-      (p) => new RegExp(p),
-    );
-    this._detectValues = detectSecretValues;
+      ([pattern, replacement]) => [new RegExp(pattern, 'g'), replacement] as const,
+    )
+    this._compiledSecretPatterns = RedactionPolicy.SECRET_VALUE_PATTERNS.map((p) => new RegExp(p))
+    this._detectValues = detectSecretValues
   }
 
   /** Recursively redact sensitive data from tool arguments. */
   redactArgs(args: unknown): unknown {
-    if (args !== null && typeof args === "object" && !Array.isArray(args)) {
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(
-        args as Record<string, unknown>,
-      )) {
-        result[key] = this._isSensitiveKey(key)
-          ? "[REDACTED]"
-          : this.redactArgs(value);
+    if (args !== null && typeof args === 'object' && !Array.isArray(args)) {
+      const result: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+        result[key] = this._isSensitiveKey(key) ? '[REDACTED]' : this.redactArgs(value)
       }
-      return result;
+      return result
     }
     if (Array.isArray(args)) {
-      return args.map((item) => this.redactArgs(item));
+      return args.map((item) => this.redactArgs(item))
     }
-    if (typeof args === "string") {
+    if (typeof args === 'string') {
       if (this._detectValues && this._looksLikeSecret(args)) {
-        return "[REDACTED]";
+        return '[REDACTED]'
       }
       // Apply bash redaction patterns to catch credentials in shell commands.
       // Gated on _detectValues so detectSecretValues=false suppresses bash
@@ -124,98 +110,103 @@ export class RedactionPolicy {
         const capped =
           args.length > RedactionPolicy.MAX_REGEX_INPUT
             ? args.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
-            : args;
-        let redacted = capped;
+            : args
+        let redacted = capped
         for (const [pattern, replacement] of this._compiledPatterns) {
-          pattern.lastIndex = 0;
-          redacted = redacted.replace(pattern, replacement);
+          pattern.lastIndex = 0
+          redacted = redacted.replace(pattern, replacement)
         }
         if (redacted.length > 1000) {
-          return redacted.slice(0, 997) + "...";
+          return redacted.slice(0, 997) + '...'
         }
-        return redacted;
+        return redacted
       }
       if (args.length > 1000) {
-        return args.slice(0, 997) + "...";
+        return args.slice(0, 997) + '...'
       }
-      return args;
+      return args
     }
-    return args;
+    return args
   }
 
   /** Check if a key name indicates sensitive data. */
   _isSensitiveKey(key: string): boolean {
-    const k = key.toLowerCase();
-    if (this._keys.has(k)) return true;
+    const k = key.toLowerCase()
+    if (this._keys.has(k)) return true
     // Normalize camelCase → snake_case for set lookup (e.g. databaseUrl → database_url)
-    const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
-    if (normalized !== k && this._keys.has(normalized)) return true;
+    const normalized = key.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()
+    if (normalized !== k && this._keys.has(normalized)) return true
     // Split on _ , - , and camelCase boundaries (e.g. accessToken → [access, token])
     // to catch both snake_case and camelCase field names common in JS/TS.
-    const parts = normalized.split(/[_\-]/);
-    return parts.some((part) =>
-      part === "token" ||
-      part === "key" ||
-      part === "secret" ||
-      part === "password" ||
-      part === "credential",
-    );
+    const parts = normalized.split(/[_\-]/)
+    return parts.some(
+      (part) =>
+        part === 'token' ||
+        part === 'key' ||
+        part === 'secret' ||
+        part === 'password' ||
+        part === 'credential',
+    )
   }
 
   /** Check if a string value looks like a known secret format. */
   _looksLikeSecret(value: string): boolean {
-    const capped = value.length > RedactionPolicy.MAX_REGEX_INPUT
-      ? value.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
-      : value;
+    const capped =
+      value.length > RedactionPolicy.MAX_REGEX_INPUT
+        ? value.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+        : value
     for (const regex of this._compiledSecretPatterns) {
       if (regex.test(capped)) {
-        return true;
+        return true
       }
     }
-    return false;
+    return false
   }
 
   /** Apply redaction patterns to a bash command string. */
   redactBashCommand(command: string): string {
-    const capped = command.length > RedactionPolicy.MAX_REGEX_INPUT
-      ? command.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
-      : command;
-    let result = capped;
+    const capped =
+      command.length > RedactionPolicy.MAX_REGEX_INPUT
+        ? command.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+        : command
+    let result = capped
     for (const [regex, replacement] of this._compiledPatterns) {
-      regex.lastIndex = 0;
-      result = result.replace(regex, replacement);
+      regex.lastIndex = 0
+      result = result.replace(regex, replacement)
     }
-    return result;
+    return result
   }
 
   /** Apply redaction patterns and truncate a result string. */
   redactResult(result: string, maxLength: number = 500): string {
-    const capped = result.length > RedactionPolicy.MAX_REGEX_INPUT
-      ? result.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
-      : result;
-    let redacted = capped;
+    const capped =
+      result.length > RedactionPolicy.MAX_REGEX_INPUT
+        ? result.slice(0, RedactionPolicy.MAX_REGEX_INPUT)
+        : result
+    let redacted = capped
     for (const [regex, replacement] of this._compiledPatterns) {
-      regex.lastIndex = 0;
-      redacted = redacted.replace(regex, replacement);
+      regex.lastIndex = 0
+      redacted = redacted.replace(regex, replacement)
     }
     if (redacted.length > maxLength) {
-      redacted = redacted.slice(0, maxLength - 3) + "...";
+      redacted = redacted.slice(0, maxLength - 3) + '...'
     }
-    return redacted;
+    return redacted
   }
 
   /** Cap total serialized size of audit payload. Returns a new object if truncated. */
   capPayload(data: Record<string, unknown>): Record<string, unknown> {
-    const serialized = JSON.stringify(data);
+    const serialized = JSON.stringify(data)
     if (serialized.length > RedactionPolicy.MAX_PAYLOAD_SIZE) {
-      const { resultSummary: _rs, toolArgs: _ta, ...rest } = data;
-      void _rs; void _ta;
+      const { resultSummary: _rs, toolArgs: _ta, ...rest } = data
+      void _rs
+      void _ta
       return {
         ...rest,
         _truncated: true,
-        toolArgs: { _redacted: "payload exceeded 32KB" },
-      };
+        toolArgs: { _redacted: 'payload exceeded 32KB' },
+      }
     }
-    return data;
+    return data
   }
 }

@@ -50,6 +50,7 @@ echo '<module>' | grep -qE '^[a-zA-Z0-9_-]+$' || {
 ```
 
 Then use the **Read tool** (not `cat` or Bash) to read the files:
+
 - `$EDICTUM_REPO/src/edictum/<module>.py`
 - `$EDICTUM_REPO/tests/test_behavior/test_<module>.py`
 
@@ -65,6 +66,7 @@ echo '<feature>' | grep -qE '^[a-zA-Z0-9_-]+$' || {
 ```
 
 Then use the **Read tool** (not `cat` or Bash) to read:
+
 - `$SCHEMAS_REPO/fixtures/behavioral/<feature>.json`
 - `$SCHEMAS_REPO/fixtures/adversarial/<feature>.json`
 

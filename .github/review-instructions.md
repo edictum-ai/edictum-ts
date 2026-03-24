@@ -21,14 +21,15 @@ Read `.github/review-template.md` and fill in the placeholders.
 Only include a section if it has content. Remove the placeholder entirely if empty.
 
 `{critical_section}` — if there are critical issues:
-```markdown
+
+````markdown
 ### 🔴 Critical
 
 > **These must be fixed before merging.**
 
-| # | File | Issue | Violates |
-|---|------|-------|----------|
-| 1 | `packages/core/src/foo.ts:42` | Description of issue | [CLAUDE.md — ONE RULE](CLAUDE.md) |
+| #   | File                          | Issue                | Violates                          |
+| --- | ----------------------------- | -------------------- | --------------------------------- |
+| 1   | `packages/core/src/foo.ts:42` | Description of issue | [CLAUDE.md — ONE RULE](CLAUDE.md) |
 
 <details>
 <summary>Details</summary>
@@ -38,20 +39,23 @@ Only include a section if it has content. Remove the placeholder entirely if emp
 Description of the issue with context.
 
 **Suggested fix:**
+
 ```typescript
 // suggestion here
 ```
+````
 
 </details>
 ```
 
 `{warnings_section}` — if there are warnings:
+
 ```markdown
 ### 🟡 Warnings
 
-| # | File | Issue | Violates |
-|---|------|-------|----------|
-| 1 | `packages/core/src/bar.ts:15` | Description | [CLAUDE.md — Terminology](CLAUDE.md) |
+| #   | File                          | Issue       | Violates                             |
+| --- | ----------------------------- | ----------- | ------------------------------------ |
+| 1   | `packages/core/src/bar.ts:15` | Description | [CLAUDE.md — Terminology](CLAUDE.md) |
 
 <details>
 <summary>Details</summary>
@@ -64,12 +68,13 @@ Description with context.
 ```
 
 `{suggestions_section}` — if there are suggestions:
+
 ```markdown
 ### 🔵 Suggestions
 
-| # | File | Suggestion |
-|---|------|------------|
-| 1 | `packages/core/src/baz.ts` | Description |
+| #   | File                       | Suggestion  |
+| --- | -------------------------- | ----------- |
+| 1   | `packages/core/src/baz.ts` | Description |
 
 <details>
 <summary>Details</summary>
@@ -82,15 +87,16 @@ Description.
 ```
 
 `{clean_section}` — only when status is `pass`:
+
 ```markdown
 ### ✅ Checks passed
 
-| Check | Status |
-|-------|--------|
+| Check         | Status   |
+| ------------- | -------- |
 | Core boundary | ✅ Clean |
-| Terminology | ✅ Clean |
-| Security | ✅ Clean |
-| ... | ... |
+| Terminology   | ✅ Clean |
+| Security      | ✅ Clean |
+| ...           | ...      |
 ```
 
 Only list checks that were actually applied (based on file types changed).
@@ -100,6 +106,7 @@ Only list checks that were actually applied (based on file types changed).
 `{file_count}`: Number of files reviewed.
 
 `{file_list}`: Markdown list of changed files with status:
+
 ```markdown
 - ✏️ `packages/core/src/pipeline.ts` (modified)
 - ✨ `.github/workflows/review.yml` (new)

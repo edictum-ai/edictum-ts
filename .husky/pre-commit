@@ -2,13 +2,21 @@
 
 echo "Running pre-commit checks..."
 
-# Typecheck
-echo "→ typecheck"
-pnpm -r build && pnpm -r typecheck || exit 1
+# Build
+echo "→ build"
+pnpm -r build || exit 1
 
 # Lint
 echo "→ lint"
 pnpm -r lint || exit 1
+
+# Format
+echo "→ format"
+pnpm format:check || exit 1
+
+# Typecheck
+echo "→ typecheck"
+pnpm -r typecheck || exit 1
 
 # Tests
 echo "→ test"

@@ -1,20 +1,18 @@
 // @edictum/openclaw — OpenClaw plugin factory
 // Returns a plugin definition that can be loaded by OpenClaw's plugin system.
 
-import type { Edictum } from "@edictum/core";
-import type { Principal } from "@edictum/core";
-import { createPrincipal } from "@edictum/core";
+import type { Edictum } from '@edictum/core'
+import type { Principal } from '@edictum/core'
+import { createPrincipal } from '@edictum/core'
 
-import { EdictumOpenClawAdapter } from "./adapter.js";
-import type {
-  OpenClawAdapterOptions,
-} from "./adapter.js";
+import { EdictumOpenClawAdapter } from './adapter.js'
+import type { OpenClawAdapterOptions } from './adapter.js'
 import type {
   AfterToolCallEvent,
   BeforeToolCallEvent,
   OpenClawPluginApi,
   ToolHookContext,
-} from "./types.js";
+} from './types.js'
 
 // ---------------------------------------------------------------------------
 // Plugin options
@@ -25,13 +23,13 @@ export interface EdictumPluginOptions extends OpenClawAdapterOptions {
    * Hook priority. Higher runs first.
    * Default: 999 — run before most other plugins.
    */
-  readonly priority?: number;
+  readonly priority?: number
 
   /**
    * Resolve OpenClaw sender context to an Edictum Principal.
    * Default: maps senderIsOwner to role "owner" vs "user".
    */
-  readonly principalFromContext?: (ctx: ToolHookContext) => Principal;
+  readonly principalFromContext?: (ctx: ToolHookContext) => Principal
 }
 
 // ---------------------------------------------------------------------------
@@ -58,61 +56,49 @@ export interface EdictumPluginOptions extends OpenClawAdapterOptions {
  * });
  * ```
  */
-export function createEdictumPlugin(
-  guard: Edictum,
-  options: EdictumPluginOptions = {},
-) {
-  const priority = options.priority ?? 999;
+export function createEdictumPlugin(guard: Edictum, options: EdictumPluginOptions = {}) {
+  const priority = options.priority ?? 999
 
   // Default principal resolver: map OpenClaw context to Edictum Principal.
   // Capture principalFromContext in a const so the closure cannot observe
   // a later mutation of `options`.
-  const capturedPrincipalFromContext = options.principalFromContext;
+  const capturedPrincipalFromContext = options.principalFromContext
   const principalResolver =
     options.principalResolver ??
     (capturedPrincipalFromContext
-      ? (
-          _toolName: string,
-          _toolInput: Record<string, unknown>,
-          ctx: ToolHookContext,
-        ) => capturedPrincipalFromContext(ctx)
-      : undefined);
+      ? (_toolName: string, _toolInput: Record<string, unknown>, ctx: ToolHookContext) =>
+          capturedPrincipalFromContext(ctx)
+      : undefined)
 
   return {
-    id: "edictum",
-    name: "Edictum Contract Enforcement",
+    id: 'edictum',
+    name: 'Edictum Contract Enforcement',
     description:
-      "Runtime contract enforcement for AI agent tool calls. Denies exfiltration, credential theft, destructive commands, and prompt injection.",
+      'Runtime contract enforcement for AI agent tool calls. Denies exfiltration, credential theft, destructive commands, and prompt injection.',
     register(api: OpenClawPluginApi) {
       const adapter = new EdictumOpenClawAdapter(guard, {
         ...options,
         principalResolver,
-      });
+      })
 
       // --- before_tool_call: evaluate preconditions + sandboxes + session ---
       api.on(
-        "before_tool_call",
+        'before_tool_call',
         async (event: unknown, ctx: unknown) =>
-          adapter.handleBeforeToolCall(
-            event as BeforeToolCallEvent,
-            ctx as ToolHookContext,
-          ),
+          adapter.handleBeforeToolCall(event as BeforeToolCallEvent, ctx as ToolHookContext),
         { priority },
-      );
+      )
 
       // --- after_tool_call: evaluate postconditions + emit audit ---
       api.on(
-        "after_tool_call",
+        'after_tool_call',
         async (event: unknown, ctx: unknown) => {
-          await adapter.handleAfterToolCall(
-            event as AfterToolCallEvent,
-            ctx as ToolHookContext,
-          );
+          await adapter.handleAfterToolCall(event as AfterToolCallEvent, ctx as ToolHookContext)
         },
         { priority },
-      );
+      )
     },
-  };
+  }
 }
 
 /**
@@ -131,5 +117,5 @@ export function defaultPrincipalFromContext(ctx: ToolHookContext): Principal {
       sessionId: ctx.sessionId ?? null,
       runId: ctx.runId ?? null,
     },
-  });
+  })
 }

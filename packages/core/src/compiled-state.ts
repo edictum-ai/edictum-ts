@@ -7,32 +7,30 @@
  * contracts.
  */
 
-import { deepFreeze } from "./envelope.js";
+import { deepFreeze } from './envelope.js'
 import type {
   InternalPrecondition,
   InternalPostcondition,
   InternalSessionContract,
   InternalSandboxContract,
-} from "./internal-contracts.js";
-import { DEFAULT_LIMITS } from "./limits.js";
-import type { OperationLimits } from "./limits.js";
+} from './internal-contracts.js'
+import { DEFAULT_LIMITS } from './limits.js'
+import type { OperationLimits } from './limits.js'
 
 export interface CompiledState {
-  readonly preconditions: readonly InternalPrecondition[];
-  readonly postconditions: readonly InternalPostcondition[];
-  readonly sessionContracts: readonly InternalSessionContract[];
-  readonly sandboxContracts: readonly InternalSandboxContract[];
-  readonly observePreconditions: readonly InternalPrecondition[];
-  readonly observePostconditions: readonly InternalPostcondition[];
-  readonly observeSessionContracts: readonly InternalSessionContract[];
-  readonly observeSandboxContracts: readonly InternalSandboxContract[];
-  readonly limits: OperationLimits;
-  readonly policyVersion: string | null;
+  readonly preconditions: readonly InternalPrecondition[]
+  readonly postconditions: readonly InternalPostcondition[]
+  readonly sessionContracts: readonly InternalSessionContract[]
+  readonly sandboxContracts: readonly InternalSandboxContract[]
+  readonly observePreconditions: readonly InternalPrecondition[]
+  readonly observePostconditions: readonly InternalPostcondition[]
+  readonly observeSessionContracts: readonly InternalSessionContract[]
+  readonly observeSandboxContracts: readonly InternalSandboxContract[]
+  readonly limits: OperationLimits
+  readonly policyVersion: string | null
 }
 
-export function createCompiledState(
-  partial: Partial<CompiledState> = {},
-): CompiledState {
+export function createCompiledState(partial: Partial<CompiledState> = {}): CompiledState {
   return deepFreeze({
     preconditions: partial.preconditions ?? [],
     postconditions: partial.postconditions ?? [],
@@ -44,5 +42,5 @@ export function createCompiledState(
     observeSandboxContracts: partial.observeSandboxContracts ?? [],
     limits: partial.limits ?? DEFAULT_LIMITS,
     policyVersion: partial.policyVersion ?? null,
-  });
+  })
 }

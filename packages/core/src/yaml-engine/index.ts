@@ -11,24 +11,19 @@ export {
   _resolveNested,
   PolicyError,
   resolveSelector,
-} from "./evaluator.js";
-export type {
-  CustomOperator,
-  CustomSelector,
-  EvaluateOptions,
-  Missing,
-} from "./evaluator.js";
+} from './evaluator.js'
+export type { CustomOperator, CustomSelector, EvaluateOptions, Missing } from './evaluator.js'
 
 // Operators
-export { OPERATORS } from "./operators.js";
-export type { OperatorFn } from "./operators.js";
+export { OPERATORS } from './operators.js'
+export type { OperatorFn } from './operators.js'
 
 // Selectors (direct access for advanced usage)
-export { resolveNested, coerceEnvValue } from "./selectors.js";
+export { resolveNested, coerceEnvValue } from './selectors.js'
 
 // Compiler
-export { compileContracts } from "./compiler.js";
-export type { CompiledBundle, CompileOptions } from "./compiler.js";
+export { compileContracts } from './compiler.js'
+export type { CompiledBundle, CompileOptions } from './compiler.js'
 
 // Compiler utilities
 export {
@@ -36,15 +31,10 @@ export {
   extractOutputPatterns,
   precompileRegexes,
   validateOperators,
-} from "./compiler-utils.js";
+} from './compiler-utils.js'
 
 // Contract compilation (direct access for advanced usage)
-export {
-  compilePre,
-  compilePost,
-  compileSession,
-  mergeSessionLimits,
-} from "./compile-contracts.js";
+export { compilePre, compilePost, compileSession, mergeSessionLimits } from './compile-contracts.js'
 
 // Loader
 export {
@@ -57,8 +47,8 @@ export {
   validateRegexes,
   validatePreSelectors,
   validateSandboxContracts,
-} from "./loader.js";
-export type { BundleHash } from "./loader.js";
+} from './loader.js'
+export type { BundleHash } from './loader.js'
 
 // Sandbox compiler
 export {
@@ -68,14 +58,14 @@ export {
   extractUrls,
   extractHostname,
   domainMatches,
-} from "./sandbox-compiler.js";
-export { compileSandbox } from "./sandbox-compile-fn.js";
+} from './sandbox-compiler.js'
+export { compileSandbox } from './sandbox-compile-fn.js'
 
 // Composer
-export { composeBundles } from "./composer.js";
+export { composeBundles } from './composer.js'
 export type {
   ComposedBundle,
   CompositionOverride,
   CompositionReport,
   ObserveContract,
-} from "./composer.js";
+} from './composer.js'
