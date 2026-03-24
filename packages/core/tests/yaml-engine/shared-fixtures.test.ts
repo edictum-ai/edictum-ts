@@ -88,7 +88,25 @@ function loadFixtureSuites(dir: string): FixtureSuite[] | null {
 
   return files.map((file) => {
     const content = readFileSync(join(dir, file), 'utf-8')
-    return yaml.load(content) as FixtureSuite
+
+    // CORE_SCHEMA blocks unsafe JS tags (!!js/function, !!js/regexp)
+    // while supporting all standard YAML types needed by fixtures.
+    let parsed: unknown
+    try {
+      parsed = yaml.load(content, { schema: yaml.CORE_SCHEMA })
+    } catch (e) {
+      throw new Error(`Failed to parse fixture file ${file}: ${String(e)}`)
+    }
+
+    if (
+      parsed == null ||
+      typeof parsed !== 'object' ||
+      !Array.isArray((parsed as Record<string, unknown>).fixtures)
+    ) {
+      throw new Error(`Fixture file ${file} is missing a 'fixtures' array`)
+    }
+
+    return parsed as FixtureSuite
   })
 }
 
@@ -111,12 +129,22 @@ const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
 if (suites) {
   describe('shared rejection fixtures (edictum-schemas)', () => {
     for (const suite of suites) {
+      if (!Array.isArray(suite.fixtures)) {
+        it(`${suite.suite ?? '(unnamed)'} — malformed fixture file`, () => {
+          throw new Error(`Suite "${suite.suite}" has no iterable fixtures array`)
+        })
+        continue
+      }
+
       describe(suite.suite, () => {
         for (const fixture of suite.fixtures) {
           it(`${fixture.id}: ${fixture.description}`, () => {
-            // Re-serialize the bundle to YAML so we exercise the full
-            // loadBundleString path (parse + validate).
             const bundleYaml = yaml.dump(fixture.bundle, { lineWidth: -1 })
+
+            if (!fixture.expected.rejected) {
+              expect(() => loadBundleString(bundleYaml)).not.toThrow()
+              return
+            }
 
             let threw = false
             let errorMessage = ''
@@ -131,6 +159,7 @@ if (suites) {
 
             expect(threw, `Expected fixture ${fixture.id} to throw, but it did not`).toBe(true)
 
+            // Empty string means no message constraint — skip substring check.
             if (fixture.expected.error_contains) {
               expect(
                 errorMessage.toLowerCase(),
