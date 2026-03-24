@@ -34,6 +34,13 @@
 import { EdictumConfigError } from '@edictum/core'
 import type { PushMetricExporter } from '@opentelemetry/sdk-metrics'
 
+/** Control char pattern — matches C0, DEL, C1, and Unicode line separators. */
+const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
+
+/** Strip control chars and cap length for resource attribute values. */
+const sanitize = (s: string, maxLen = 10_000): string =>
+  s.slice(0, maxLen).replace(new RegExp(CONTROL_CHAR_PATTERN.source, 'g'), '')
+
 /** Valid export protocols. */
 const VALID_PROTOCOLS = ['grpc', 'http', 'http/protobuf'] as const
 type OtelProtocol = (typeof VALID_PROTOCOLS)[number]
@@ -76,9 +83,22 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
     return
   }
 
-  // Env overrides
-  const actualService = (process.env['OTEL_SERVICE_NAME'] ?? serviceName).slice(0, 10_000)
+  // Env overrides — sanitize all string inputs
+  const actualService = sanitize(process.env['OTEL_SERVICE_NAME'] ?? serviceName)
   const actualEndpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint).slice(0, 10_000)
+
+  // Validate endpoint scheme — only http:// and https:// are safe
+  try {
+    const scheme = new URL(actualEndpoint).protocol
+    if (scheme !== 'http:' && scheme !== 'https:') {
+      throw new EdictumConfigError(
+        `Invalid OTel endpoint scheme: ${JSON.stringify(scheme)}. Must be http:// or https://`,
+      )
+    }
+  } catch (e) {
+    if (e instanceof EdictumConfigError) throw e
+    throw new EdictumConfigError(`Invalid OTel endpoint URL: ${JSON.stringify(actualEndpoint)}`)
+  }
   const rawProtocol = process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] ?? protocol
 
   // Validate protocol
@@ -119,12 +139,17 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
   // OTEL_RESOURCE_ATTRIBUTES (per OTel spec).
   const attrs: Record<string, string> = {}
   if (resourceAttributes) {
-    Object.assign(attrs, resourceAttributes)
+    // Sanitize caller-supplied attribute keys and values
+    for (const [k, v] of Object.entries(resourceAttributes)) {
+      const sk = sanitize(k, 1000)
+      if (!sk) continue
+      attrs[sk] = sanitize(v, 10_000)
+    }
   }
   // serviceName (or its env override) always wins over resourceAttributes
   attrs['service.name'] = actualService
   if (edictumVersion) {
-    attrs['edictum.version'] = edictumVersion
+    attrs['edictum.version'] = sanitize(edictumVersion)
   }
 
   // OTEL_RESOURCE_ATTRIBUTES — highest precedence for all keys EXCEPT
@@ -140,8 +165,7 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
         const v = pair.slice(eqIdx + 1).trim()
         if (!k) continue
         // Skip keys/values with control characters to prevent injection
-        const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
-        if (CONTROL_CHAR_RE.test(k) || CONTROL_CHAR_RE.test(v)) continue
+        if (CONTROL_CHAR_PATTERN.test(k) || CONTROL_CHAR_PATTERN.test(v)) continue
         // OTEL_SERVICE_NAME takes precedence per OTel spec
         if (k === 'service.name' && envServiceNameSet) continue
         attrs[k] = v

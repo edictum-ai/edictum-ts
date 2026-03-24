@@ -7,13 +7,31 @@
  * Install: npm install @edictum/otel @opentelemetry/api
  */
 
-import type { Counter, Meter, Tracer } from '@opentelemetry/api'
+import type { Attributes, Counter, Meter, Span, Tracer } from '@opentelemetry/api'
 import { SpanStatusCode, metrics, trace } from '@opentelemetry/api'
 
 import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
 
 /** Strip control chars and cap length for OTel attribute values. */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/g
+
+/** Wraps an OTel Span to satisfy TelemetrySpan without unsafe casts. */
+class OTelSpanWrapper implements TelemetrySpan {
+  constructor(private readonly _span: Span) {}
+
+  setAttribute(key: string, value: unknown): void {
+    this._span.setAttribute(key, value as string)
+  }
+  setStatus(status: { code: number; message?: string }): void {
+    this._span.setStatus(status)
+  }
+  addEvent(name: string, attributes?: Record<string, unknown>): void {
+    this._span.addEvent(name, attributes as Attributes | undefined)
+  }
+  end(): void {
+    this._span.end()
+  }
+}
 
 /** Cap and sanitize a tool name for use in span/metric attributes. */
 const sanitizeToolName = (name: string): string =>
@@ -54,10 +72,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
         'governance.run_id': sanitizeAttr(envelope.runId),
       },
     })
-    // OTel Span satisfies TelemetrySpan — setStatus signature is compatible
-    // because OTel's setStatus accepts { code, message? } which is exactly
-    // what TelemetrySpan declares.
-    return span as unknown as TelemetrySpan
+    return new OTelSpanWrapper(span)
   }
 
   /** Increment the denied counter for the given tool. */
