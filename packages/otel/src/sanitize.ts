@@ -11,9 +11,9 @@ export const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
 /** Pre-compiled global variant for .replace() — avoids new RegExp() on every sanitize() call. */
 const CONTROL_CHAR_GLOBAL = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/g
 
-/** Strip control chars and cap length for resource attribute values. */
+/** Strip control chars then cap length — output never exceeds maxLen. */
 export const sanitize = (s: string, maxLen = 10_000): string =>
-  s.slice(0, maxLen).replace(CONTROL_CHAR_GLOBAL, '')
+  s.replace(CONTROL_CHAR_GLOBAL, '').slice(0, maxLen)
 
 /** Valid export protocols. */
 export const VALID_PROTOCOLS = ['grpc', 'http', 'http/protobuf'] as const

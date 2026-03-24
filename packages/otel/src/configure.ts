@@ -1,19 +1,4 @@
-/**
- * configureOtel — one-call OTel setup for Edictum.
- *
- * Call once at startup. No-op if a TracerProvider is already registered
- * (unless `force` is true). Sets up TracerProvider + MeterProvider.
- *
- * Env var precedence: OTEL_SERVICE_NAME, OTEL_EXPORTER_OTLP_ENDPOINT,
- * OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_RESOURCE_ATTRIBUTES all override
- * their corresponding option arguments. OTEL_SERVICE_NAME always wins
- * over service.name in OTEL_RESOURCE_ATTRIBUTES (per OTel spec).
- *
- * TLS is inferred from the endpoint URL scheme (http:// vs https://).
- *
- * Required: @opentelemetry/api, /resources, /sdk-trace-base,
- * /sdk-metrics, plus exporter-trace-otlp-grpc or -http.
- */
+/** configureOtel — one-call OTel setup (TracerProvider + MeterProvider). */
 
 import { EdictumConfigError } from '@edictum/core'
 import type { PushMetricExporter } from '@opentelemetry/sdk-metrics'
@@ -61,7 +46,15 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
 
   // Env overrides — sanitize all string inputs
   const actualService = sanitize(process.env['OTEL_SERVICE_NAME'] ?? serviceName)
-  const actualEndpoint = sanitize(process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint)
+  const rawEndpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint).slice(0, 10_000)
+
+  // Reject endpoints with control chars — fail-closed rather than silently rewriting
+  if (CONTROL_CHAR_PATTERN.test(rawEndpoint)) {
+    throw new EdictumConfigError(
+      `OTel endpoint contains control characters: ${JSON.stringify(rawEndpoint.slice(0, 200))}`,
+    )
+  }
+  const actualEndpoint = rawEndpoint
 
   // Validate endpoint scheme — only http:// and https:// are safe
   try {
@@ -139,11 +132,9 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
     for (const pair of envAttrs.split(',')) {
       if (pair.includes('=')) {
         const eqIdx = pair.indexOf('=')
-        const k = pair.slice(0, eqIdx).trim()
-        const v = pair.slice(eqIdx + 1).trim()
+        const k = sanitize(pair.slice(0, eqIdx).trim(), 1000)
+        const v = sanitize(pair.slice(eqIdx + 1).trim(), 10_000)
         if (!k) continue
-        // Skip keys/values with control characters to prevent injection
-        if (CONTROL_CHAR_PATTERN.test(k) || CONTROL_CHAR_PATTERN.test(v)) continue
         // OTEL_SERVICE_NAME takes precedence per OTel spec
         if (k === 'service.name' && envServiceNameSet) continue
         attrs[k] = v

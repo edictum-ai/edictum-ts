@@ -122,25 +122,28 @@ describe('configureOtel env overrides', () => {
     trace.disable()
   })
 
-  it('skips OTEL_RESOURCE_ATTRIBUTES pairs with control characters in key', async () => {
+  it('strips control characters from OTEL_RESOURCE_ATTRIBUTES keys', async () => {
     process.env['OTEL_RESOURCE_ATTRIBUTES'] = 'good=value,bad\x00key=injected'
     await configureOtel()
 
     const attrs = getResourceAttributes()
     expect(attrs).not.toBeNull()
     expect(attrs!['good']).toBe('value')
+    // Control chars stripped from key, value preserved
+    expect(attrs!['badkey']).toBe('injected')
     expect(attrs!['bad\x00key']).toBeUndefined()
     trace.disable()
   })
 
-  it('skips OTEL_RESOURCE_ATTRIBUTES pairs with control characters in value', async () => {
+  it('strips control characters from OTEL_RESOURCE_ATTRIBUTES values', async () => {
     process.env['OTEL_RESOURCE_ATTRIBUTES'] = 'clean=ok,dirty=val\x1fue'
     await configureOtel()
 
     const attrs = getResourceAttributes()
     expect(attrs).not.toBeNull()
     expect(attrs!['clean']).toBe('ok')
-    expect(attrs!['dirty']).toBeUndefined()
+    // Control chars stripped from value
+    expect(attrs!['dirty']).toBe('value')
     trace.disable()
   })
 
@@ -152,6 +155,11 @@ describe('configureOtel env overrides', () => {
   it('throws EdictumConfigError when OTEL_EXPORTER_OTLP_ENDPOINT has non-http scheme', async () => {
     process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'ftp://evil.example.com'
     await expect(configureOtel()).rejects.toThrow('Invalid OTel endpoint')
+  })
+
+  it('throws EdictumConfigError when endpoint contains control characters', async () => {
+    process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'http://collector\x00:4317'
+    await expect(configureOtel()).rejects.toThrow('control characters')
   })
 
   it('strips control characters from serviceName parameter', async () => {
@@ -170,13 +178,15 @@ describe('configureOtel env overrides', () => {
     trace.disable()
   })
 
-  it('strips control characters from resourceAttributes values', async () => {
+  it('strips control characters from resourceAttributes keys and values', async () => {
     await configureOtel({
       resourceAttributes: { 'deploy\x00id': 'val\x1fue' },
     })
     const attrs = getResourceAttributes()
     expect(attrs).not.toBeNull()
+    // Control chars stripped from both key and value
     expect(attrs!['deployid']).toBe('value')
+    expect(attrs!['deploy\x00id']).toBeUndefined()
     trace.disable()
   })
 })
