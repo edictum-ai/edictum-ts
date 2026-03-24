@@ -460,6 +460,48 @@ describe('null tool entry', () => {
   })
 })
 
+describe('tools as array rejected', () => {
+  test('tools as YAML sequence rejected', () => {
+    expectReject(bundle({ extra: 'tools:\n  - side_effect: read' }), /tools.*mapping|tools.*array/)
+  })
+})
+
+describe('expression not: null/array rejected', () => {
+  test('not: null rejected', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: not-null
+    type: pre
+    tool: "*"
+    when:
+      not: null
+    then:
+      effect: deny
+      message: "denied"`,
+      }),
+      /not/,
+    )
+  })
+
+  test('not: [] rejected', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  - id: not-array
+    type: pre
+    tool: "*"
+    when:
+      not: []
+    then:
+      effect: deny
+      message: "denied"`,
+      }),
+      /not/,
+    )
+  })
+})
+
 describe('expression depth limit', () => {
   test('deeply nested expression throws EdictumConfigError', () => {
     // Build a deeply nested expression object programmatically

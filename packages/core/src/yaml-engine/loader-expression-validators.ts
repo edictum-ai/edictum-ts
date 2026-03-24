@@ -42,6 +42,11 @@ function checkExprShape(expr: unknown, cid: string, depth = 0): void {
     return
   }
   if ('not' in e) {
+    if (e.not == null || typeof e.not !== 'object' || Array.isArray(e.not)) {
+      fail(
+        `contract '${cid}': 'not' requires an expression mapping (got ${e.not === null ? 'null' : Array.isArray(e.not) ? 'array' : typeof e.not})`,
+      )
+    }
     checkExprShape(e.not, cid, depth + 1)
     return
   }
@@ -49,6 +54,9 @@ function checkExprShape(expr: unknown, cid: string, depth = 0): void {
   // Leaf: validate operator value types
   for (const v of Object.values(e)) {
     if (v == null || typeof v !== 'object') continue
+    if (Array.isArray(v)) {
+      fail(`contract '${cid}': selector value must be an operator mapping, not an array`)
+    }
     const op = v as Record<string, unknown>
     for (const [name, val] of Object.entries(op)) {
       if (NUMERIC_OPS.has(name) && typeof val !== 'number') {

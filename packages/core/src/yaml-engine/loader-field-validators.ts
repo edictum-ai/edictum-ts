@@ -76,9 +76,12 @@ export function validateContractFields(data: Record<string, unknown>): void {
   if (contracts.length === 0) fail('contracts must contain at least 1 item')
 
   // --- tools side_effect enum ---
-  if (data.tools != null && typeof data.tools === 'object') {
+  if (data.tools != null) {
+    if (typeof data.tools !== 'object' || Array.isArray(data.tools)) {
+      fail("'tools' must be a mapping of tool names to descriptors, not an array")
+    }
     for (const [tn, td] of Object.entries(data.tools as Record<string, unknown>)) {
-      if (td == null || typeof td !== 'object') {
+      if (td == null || typeof td !== 'object' || Array.isArray(td)) {
         fail(`tools.${tn} must be an object with a 'side_effect' field`)
       }
       const se = (td as Record<string, unknown>).side_effect
@@ -121,7 +124,9 @@ function validatePrePost(c: Record<string, unknown>, t: string, cid: string): vo
       `${t} contract '${cid}' requires 'when' to be a mapping (got ${Array.isArray(c.when) ? 'array' : typeof c.when})`,
     )
   }
-  if (c.then == null || typeof c.then !== 'object') fail(`${t} contract '${cid}' requires 'then'`)
+  if (c.then == null || typeof c.then !== 'object' || Array.isArray(c.then)) {
+    fail(`${t} contract '${cid}' requires 'then' to be a mapping`)
+  }
 
   const then = c.then as Record<string, unknown>
   if (then.effect == null) fail(`${t} contract '${cid}' requires 'then.effect'`)
@@ -142,8 +147,8 @@ function validatePrePost(c: Record<string, unknown>, t: string, cid: string): vo
 // ---------------------------------------------------------------------------
 
 function validateSession(c: Record<string, unknown>, cid: string): void {
-  if (c.limits == null || typeof c.limits !== 'object') {
-    fail(`session contract '${cid}' requires 'limits'`)
+  if (c.limits == null || typeof c.limits !== 'object' || Array.isArray(c.limits)) {
+    fail(`session contract '${cid}' requires 'limits' to be a mapping`)
   }
   const lim = c.limits as Record<string, unknown>
   if (!('max_tool_calls' in lim) && !('max_attempts' in lim) && !('max_calls_per_tool' in lim)) {
@@ -152,8 +157,9 @@ function validateSession(c: Record<string, unknown>, cid: string): void {
     )
   }
 
-  if (c.then == null || typeof c.then !== 'object')
-    fail(`session contract '${cid}' requires 'then'`)
+  if (c.then == null || typeof c.then !== 'object' || Array.isArray(c.then)) {
+    fail(`session contract '${cid}' requires 'then' to be a mapping`)
+  }
   const then = c.then as Record<string, unknown>
   if (then.effect !== 'deny') {
     fail(`session contract '${cid}': effect must be 'deny', got '${String(then.effect)}'`)
