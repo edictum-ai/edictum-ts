@@ -631,10 +631,13 @@ describe('asCallbacks', () => {
       }),
     ).rejects.toThrow(EdictumDenied)
 
-    // Audit event must be emitted even on the early-fail path
-    const events = sink.filter(AuditAction.CALL_ALLOWED)
-    expect(events.length).toBe(1)
-    expect(events[0]?.toolName).toBe('MyTool')
+    // CALL_DENIED audit event must be emitted on the fail-closed path
+    const denied = sink.filter(AuditAction.CALL_DENIED)
+    expect(denied.length).toBe(1)
+    expect(denied[0]?.toolName).toBe('MyTool')
+
+    // on_deny callback must fire exactly once
+    expect(denyFn).toHaveBeenCalledTimes(1)
   })
 
   it('handles error events in onToolCallFinish', async () => {

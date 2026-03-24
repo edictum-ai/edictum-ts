@@ -163,12 +163,51 @@ export class VercelAIAdapter {
       experimental_onToolCallStart: async (event: OnToolCallStartEvent): Promise<void> => {
         const { toolCallId, toolName } = event.toolCall
         // Fail closed: deny if neither input (v6) nor args (v5) is present.
-        // Route through _pre so audit, on_deny callback, and session tracking all fire.
+        // Emit audit + fire on_deny directly (cannot route through _pre — it would
+        // emit CALL_ALLOWED when no contracts deny the empty-args envelope).
         if (event.toolCall.input === undefined && event.toolCall.args === undefined) {
-          await this._pre(toolName, {}, toolCallId)
-          throw new EdictumDenied(
-            'DENIED: Cannot determine tool arguments — neither input nor args present in event',
+          const reason = 'Cannot determine tool arguments — neither input nor args present in event'
+          await this._session.incrementAttempts()
+          const envelope = createEnvelope(
+            toolName,
+            {},
+            {
+              runId: this._sessionId,
+              callIndex: this._callIndex,
+              toolUseId: toolCallId,
+              environment: this._guard.environment,
+              registry: this._guard.toolRegistry,
+              principal: this._resolvePrincipal(toolName, {}),
+            },
           )
+          this._callIndex += 1
+          await this._guard.auditSink.emit(
+            createAuditEvent({
+              action: AA.CALL_DENIED,
+              runId: envelope.runId,
+              callId: envelope.callId,
+              callIndex: envelope.callIndex,
+              toolName: envelope.toolName,
+              toolArgs: {},
+              sideEffect: envelope.sideEffect,
+              environment: envelope.environment,
+              principal: envelope.principal
+                ? ({ ...envelope.principal } as Record<string, unknown>)
+                : null,
+              decisionSource: 'adapter',
+              reason,
+              mode: this._guard.mode,
+              policyVersion: this._guard.policyVersion,
+            }),
+          )
+          if (this._guard._onDeny) {
+            try {
+              this._guard._onDeny(envelope, reason, null)
+            } catch {
+              // on_deny callback errors are swallowed
+            }
+          }
+          throw new EdictumDenied(`DENIED: ${reason}`)
         }
         // Safe: the guard above ensures at least one is defined
         const args = (event.toolCall.input ?? event.toolCall.args) as Record<string, unknown>
