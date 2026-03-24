@@ -26,10 +26,10 @@
 export { GovernanceTelemetry } from "./telemetry.js";
 
 // No-op fallback
-export { NoOpSpan, NoOpTelemetry, NoOpTracer } from "./noop.js";
+export { NoOpSpan, NoOpTelemetry } from "./noop.js";
 
 // Runtime detection + factory
-export { createTelemetry, hasOtel } from "./detect.js";
+export { createTelemetry, hasOtel, _resetHasOtelCache } from "./detect.js";
 
 // Setup helper
 export { configureOtel } from "./configure.js";

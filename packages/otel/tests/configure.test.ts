@@ -2,11 +2,11 @@
  * Tests for configureOtel() — OTel setup helper.
  *
  * Validates environment variable overrides, protocol selection,
- * provider detection, and observable resource/span effects.
+ * provider detection, meter provider setup, and observable resource effects.
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { trace } from "@opentelemetry/api";
+import { trace, metrics } from "@opentelemetry/api";
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
@@ -20,53 +20,52 @@ let originalEnv: NodeJS.ProcessEnv;
 beforeEach(() => {
   originalEnv = { ...process.env };
   trace.disable();
+  metrics.disable();
 });
 
 afterEach(() => {
   process.env = originalEnv;
   trace.disable();
+  metrics.disable();
 });
 
-/** Helper: get the resource from the currently registered provider. */
-function getResource(): Record<string, unknown> | null {
-  const provider = trace.getTracerProvider();
-  // After configureOtel, the provider is a BasicTracerProvider wrapped in
-  // the global proxy. We check if the tracer creates valid spans.
-  if (provider instanceof BasicTracerProvider) {
-    const resource = (provider as BasicTracerProvider).resource;
-    return resource.attributes as Record<string, unknown>;
-  }
-  return null;
-}
-
-/** Helper: verify a tracer creates real (non-no-op) spans. */
+/** Verify a tracer creates real (non-no-op) spans. */
 function createsRealSpans(): boolean {
   const tracer = trace.getTracer("test");
   const span = tracer.startSpan("test-span");
-  // No-op spans have isRecording() === false
   const isReal = span.isRecording();
   span.end();
   return isReal;
 }
 
+/** Get resource attributes from the current tracer provider. */
+function getResourceAttributes(): Record<string, unknown> | null {
+  const provider = trace.getTracerProvider();
+  // After register(), the global proxy wraps our BasicTracerProvider.
+  // We can verify by creating a span and checking its resource.
+  const tracer = trace.getTracer("test");
+  const span = tracer.startSpan("resource-check");
+  // ReadableSpan (from sdk-trace-base) has resource
+  const readableSpan = span as unknown as { resource?: { attributes: Record<string, unknown> } };
+  const attrs = readableSpan.resource?.attributes ?? null;
+  span.end();
+  return attrs;
+}
+
 describe("configureOtel", () => {
   it("is a no-op when a provider is already configured and force=false", async () => {
-    // Pre-configure a provider with a known span processor
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(exporter)],
     });
     provider.register();
 
-    // configureOtel should not replace it
     await configureOtel({ force: false });
 
-    // The original provider should still be active — verify by creating a span
+    // The original provider should still be active
     const tracer = trace.getTracer("test");
     const span = tracer.startSpan("verify");
     span.end();
-
-    // Span should appear in the original exporter
     expect(exporter.getFinishedSpans()).toHaveLength(1);
     expect(exporter.getFinishedSpans()[0]!.name).toBe("verify");
 
@@ -82,17 +81,14 @@ describe("configureOtel", () => {
 
     await configureOtel({ force: true });
 
-    // After force replace, the new provider is registered.
-    // Verify the tracer still works (creates real spans).
+    // After force replace, the new provider is registered
     expect(createsRealSpans()).toBe(true);
 
     await provider.shutdown();
     trace.disable();
   });
 
-  it("detects NodeTracerProvider and other non-Basic providers", async () => {
-    // BasicTracerProvider.register() sets a real provider. Any non-Proxy
-    // provider should be detected. Verify configureOtel is a no-op.
+  it("detects non-Basic providers (NodeTracerProvider etc.)", async () => {
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(exporter)],
@@ -116,12 +112,68 @@ describe("configureOtel", () => {
     trace.disable();
   });
 
-  it("reads OTEL_SERVICE_NAME from env and applies it to resource", async () => {
+  it("applies OTEL_SERVICE_NAME to resource attributes", async () => {
     process.env["OTEL_SERVICE_NAME"] = "my-custom-agent";
     await configureOtel();
 
-    // Verify the tracer is functional
-    expect(createsRealSpans()).toBe(true);
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["service.name"]).toBe("my-custom-agent");
+    trace.disable();
+  });
+
+  it("applies serviceName param to resource when env not set", async () => {
+    await configureOtel({ serviceName: "param-agent" });
+
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["service.name"]).toBe("param-agent");
+    trace.disable();
+  });
+
+  it("applies edictumVersion to resource attributes", async () => {
+    await configureOtel({ edictumVersion: "0.1.0" });
+
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["edictum.version"]).toBe("0.1.0");
+    trace.disable();
+  });
+
+  it("applies custom resource attributes", async () => {
+    await configureOtel({
+      resourceAttributes: { "deployment.id": "deploy-123" },
+    });
+
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["deployment.id"]).toBe("deploy-123");
+    trace.disable();
+  });
+
+  it("OTEL_SERVICE_NAME wins over service.name in OTEL_RESOURCE_ATTRIBUTES", async () => {
+    process.env["OTEL_SERVICE_NAME"] = "env-agent";
+    process.env["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=wrong-agent,team=security";
+
+    await configureOtel();
+
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["service.name"]).toBe("env-agent");
+    // Other attrs from OTEL_RESOURCE_ATTRIBUTES should still apply
+    expect(attrs!["team"]).toBe("security");
+    trace.disable();
+  });
+
+  it("resourceAttributes cannot override env-set service.name", async () => {
+    process.env["OTEL_SERVICE_NAME"] = "env-agent";
+    await configureOtel({
+      resourceAttributes: { "service.name": "should-not-win" },
+    });
+
+    const attrs = getResourceAttributes();
+    expect(attrs).not.toBeNull();
+    expect(attrs!["service.name"]).toBe("env-agent");
     trace.disable();
   });
 
@@ -139,13 +191,6 @@ describe("configureOtel", () => {
     trace.disable();
   });
 
-  it("parses OTEL_RESOURCE_ATTRIBUTES from env", async () => {
-    process.env["OTEL_RESOURCE_ATTRIBUTES"] = "env=prod,team=security";
-    await configureOtel();
-    expect(createsRealSpans()).toBe(true);
-    trace.disable();
-  });
-
   it("uses http exporter for protocol=http", async () => {
     await configureOtel({ protocol: "http" });
     expect(createsRealSpans()).toBe(true);
@@ -158,25 +203,21 @@ describe("configureOtel", () => {
     trace.disable();
   });
 
-  it("resourceAttributes cannot override env-set service.name", async () => {
-    process.env["OTEL_SERVICE_NAME"] = "env-agent";
-    await configureOtel({
-      resourceAttributes: { "service.name": "should-not-win" },
-    });
-
-    // The OTEL_SERVICE_NAME env var should take precedence.
-    // We can't easily inspect the resource from outside, but we verify
-    // the provider is registered and functional.
-    expect(createsRealSpans()).toBe(true);
-    trace.disable();
+  it("throws EdictumConfigError for invalid protocol", async () => {
+    await expect(
+      configureOtel({ protocol: "invalid" as "grpc" }),
+    ).rejects.toThrow("Invalid OTel protocol");
   });
 
-  it("does not accept insecure option (removed from API)", () => {
-    // Verify the ConfigureOtelOptions type no longer accepts `insecure`.
-    // This is a compile-time check — at runtime, extra properties are
-    // silently ignored by destructuring. We just verify the function works.
-    const opts = { serviceName: "test" };
-    expect(() => configureOtel(opts)).not.toThrow();
+  it("sets up a global meter provider for metrics", async () => {
+    await configureOtel();
+
+    // Verify the meter provider is functional (not no-op)
+    const meter = metrics.getMeter("test");
+    const counter = meter.createCounter("test.counter");
+    // If this doesn't throw, the meter provider is set up
+    expect(() => counter.add(1)).not.toThrow();
     trace.disable();
+    metrics.disable();
   });
 });

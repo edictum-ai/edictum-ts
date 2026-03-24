@@ -12,6 +12,8 @@ export default defineConfig({
     "@opentelemetry/sdk-metrics",
     "@opentelemetry/exporter-trace-otlp-grpc",
     "@opentelemetry/exporter-trace-otlp-http",
+    "@opentelemetry/exporter-metrics-otlp-grpc",
+    "@opentelemetry/exporter-metrics-otlp-http",
     "@opentelemetry/resources",
     "@edictum/core",
   ],

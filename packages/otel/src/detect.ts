@@ -32,8 +32,20 @@ export function hasOtel(): boolean {
 }
 
 /**
+ * Reset the cached hasOtel() result. Intended for tests only.
+ * @internal
+ */
+export function _resetHasOtelCache(): void {
+  _hasOtel = null;
+}
+
+/**
  * Create a GovernanceTelemetry instance — real if OTel is available,
  * no-op otherwise. This is the recommended entry point.
+ *
+ * Only catches module-not-found errors (OTel not installed). All other
+ * errors propagate so bugs in GovernanceTelemetry are not silently
+ * swallowed.
  *
  * ```ts
  * import { createTelemetry } from "@edictum/otel";
@@ -43,10 +55,18 @@ export function hasOtel(): boolean {
  */
 export async function createTelemetry(): Promise<GovernanceTelemetryLike> {
   try {
-    // Dynamic import — fails gracefully if @opentelemetry/api is missing
     const { GovernanceTelemetry } = await import("./telemetry.js");
     return new GovernanceTelemetry();
-  } catch {
-    return new NoOpTelemetry();
+  } catch (err: unknown) {
+    // Only swallow module-not-found — OTel not installed.
+    // All other errors (constructor bugs, etc.) propagate.
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND"
+    ) {
+      return new NoOpTelemetry();
+    }
+    throw err;
   }
 }

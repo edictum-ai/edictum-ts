@@ -45,8 +45,12 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
 
   /** Start a span for a tool call evaluation. */
   startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan {
+    // Sanitize toolName for span name — strip control chars and newlines
+    // to prevent injection into trace backends. The validated name is only
+    // used in the span name; the raw value is preserved in the attribute.
+    const safeName = envelope.toolName.replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
     const span = this._tracer.startSpan(
-      `tool.execute ${envelope.toolName}`,
+      `tool.execute ${safeName}`,
       {
         attributes: {
           "tool.name": envelope.toolName,
