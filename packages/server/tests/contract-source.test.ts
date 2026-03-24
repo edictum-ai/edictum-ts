@@ -456,8 +456,8 @@ describe("SSE connection timeout isolation", () => {
     // Advance past the connection timeout window
     await vi.advanceTimersByTimeAsync(connectionTimeout * 3);
 
-    // Stream is still alive — deliver an event now
-    expect(streamController).not.toBeNull();
+    // Connection was established and stream survived the timeout window
+    expect(source.connected).toBe(true);
     if (!streamController) throw new Error("streamController must not be null");
     const encoder = new TextEncoder();
     const sseData =
@@ -470,6 +470,42 @@ describe("SSE connection timeout isolation", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual(bundle);
+  });
+
+  it("connection times out when fetch never resolves", { timeout: 5000 }, async () => {
+    // Exercises the connectAbort.abort() kill-path: fetch() never resolves,
+    // so the connectTimer fires and aborts via connectAbort.
+    const connectionTimeout = 100;
+
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          // Wire up abort so the promise rejects when the signal fires
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal) {
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            });
+          }
+        }),
+    );
+
+    const client = new EdictumServerClient({
+      baseUrl: "https://example.com",
+      apiKey: "test-key",
+      timeout: connectionTimeout,
+    });
+
+    const fetchPromise = client.rawFetch("/api/v1/stream", {}, {});
+
+    // Register the rejection handler BEFORE advancing timers to prevent
+    // Node from flagging the rejection as unhandled during timer execution.
+    const rejection = expect(fetchPromise).rejects.toThrow();
+
+    // Advance past the connection timeout — connectAbort.abort() should fire
+    await vi.advanceTimersByTimeAsync(connectionTimeout + 50);
+
+    await rejection;
   });
 });
 
