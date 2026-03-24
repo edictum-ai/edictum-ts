@@ -398,20 +398,28 @@ describe('constructor validation', () => {
 // ---------------------------------------------------------------------------
 
 describe("SSE connection timeout isolation", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn> | null = null;
+
   beforeEach(() => {
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    fetchSpy?.mockRestore();
+    fetchSpy = null;
   });
 
-  it("SSE stream survives beyond connection timeout", async () => {
-    // Exercises the real rawFetch connection timeout logic by mocking
-    // globalThis.fetch (not rawFetch). A real EdictumServerClient with a
-    // short timeout creates the connectAbort + setTimeout pair. If the
-    // timeout applied to the entire fetch (bug edictum#133), the stream
-    // would abort before the delayed event arrives.
+  it("SSE stream survives beyond connection timeout", { timeout: 5000 }, async () => {
+    // Exercises the real rawFetch connection-timeout logic by mocking
+    // globalThis.fetch (not rawFetch). The correct implementation clears the
+    // connectTimer once fetch() resolves, so advancing fake time past the
+    // timeout window does NOT abort the stream.
+    //
+    // NOTE: This test verifies the setTimeout/clearTimeout path in rawFetch.
+    // It does NOT detect a regression to AbortSignal.timeout(), because
+    // AbortSignal.timeout() is not controlled by vi.useFakeTimers().
+    // See edictum#133 for the original bug context.
     const bundle = { survived: true, revision_hash: "t1" };
     const connectionTimeout = 100; // ms — short timeout for testing
 
@@ -423,7 +431,7 @@ describe("SSE connection timeout isolation", () => {
     });
 
     // Mock globalThis.fetch so the real rawFetch connection timer logic runs
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(stream, {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
@@ -445,19 +453,16 @@ describe("SSE connection timeout isolation", () => {
       }
     })();
 
-    // Advance past the connection timeout — if rawFetch used
-    // AbortSignal.timeout() for the entire request, the stream
-    // would be aborted here
+    // Advance past the connection timeout window
     await vi.advanceTimersByTimeAsync(connectionTimeout * 3);
 
     // Stream is still alive — deliver an event now
     expect(streamController).not.toBeNull();
+    if (!streamController) throw new Error("streamController must not be null");
     const encoder = new TextEncoder();
     const sseData =
       `event: contract_update\ndata: ${JSON.stringify(bundle)}\n\n`;
-    (streamController as ReadableStreamDefaultController<Uint8Array>).enqueue(
-      encoder.encode(sseData),
-    );
+    streamController.enqueue(encoder.encode(sseData));
 
     // Let the event loop process the enqueued chunk
     await vi.advanceTimersByTimeAsync(10);
@@ -465,8 +470,6 @@ describe("SSE connection timeout isolation", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual(bundle);
-
-    fetchSpy.mockRestore();
   });
 });
 
