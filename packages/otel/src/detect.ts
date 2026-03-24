@@ -6,8 +6,14 @@
  * the appropriate telemetry instance (real or no-op).
  */
 
+import { createRequire } from "node:module";
+
 import type { GovernanceTelemetryLike } from "./types.js";
 import { NoOpTelemetry } from "./noop.js";
+
+// createRequire works in both ESM and CJS (tsup transforms import.meta.url
+// for CJS output). This avoids the ESM ReferenceError on bare `require`.
+const _require = createRequire(import.meta.url);
 
 let _hasOtel: boolean | null = null;
 
@@ -17,7 +23,7 @@ export function hasOtel(): boolean {
     return _hasOtel;
   }
   try {
-    require.resolve("@opentelemetry/api");
+    _require.resolve("@opentelemetry/api");
     _hasOtel = true;
   } catch {
     _hasOtel = false;

@@ -114,8 +114,7 @@ describe("GovernanceTelemetry", () => {
 
   it("recordDenial increments the denied counter", async () => {
     const telemetry = new GovernanceTelemetry();
-    telemetry.recordDenial(ENVELOPE, "denied");
-    telemetry.recordDenial(ENVELOPE, "denied again");
+    telemetry.recordDenial(ENVELOPE, "not allowed");
 
     const result = await metricReader.collect();
     const deniedMetric = result.resourceMetrics.scopeMetrics
@@ -125,8 +124,33 @@ describe("GovernanceTelemetry", () => {
     expect(deniedMetric).toBeDefined();
     const points = deniedMetric!.dataPoints;
     expect(points).toHaveLength(1);
-    // Counter with 2 adds
-    expect(points[0]!.value).toBe(2);
+    expect(points[0]!.value).toBe(1);
+  });
+
+  it("recordDenial includes denial.reason in metric attributes", async () => {
+    const telemetry = new GovernanceTelemetry();
+    telemetry.recordDenial(ENVELOPE, "rm -rf forbidden");
+
+    const result = await metricReader.collect();
+    const deniedMetric = result.resourceMetrics.scopeMetrics
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === "edictum.calls.denied");
+
+    const attrs = deniedMetric!.dataPoints[0]!.attributes;
+    expect(attrs["denial.reason"]).toBe("rm -rf forbidden");
+  });
+
+  it("recordDenial omits denial.reason when not provided", async () => {
+    const telemetry = new GovernanceTelemetry();
+    telemetry.recordDenial(ENVELOPE);
+
+    const result = await metricReader.collect();
+    const deniedMetric = result.resourceMetrics.scopeMetrics
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === "edictum.calls.denied");
+
+    const attrs = deniedMetric!.dataPoints[0]!.attributes;
+    expect(attrs["denial.reason"]).toBeUndefined();
   });
 
   it("recordAllowed increments the allowed counter", async () => {

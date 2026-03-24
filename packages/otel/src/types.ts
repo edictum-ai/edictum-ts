@@ -16,14 +16,18 @@ export interface TelemetryEnvelope {
 }
 
 /**
- * Opaque span handle returned by startToolSpan().
+ * Span handle returned by startToolSpan().
  *
- * Pass this back to setSpanError/setSpanOk — do not use it directly.
- * The real implementation returns an OTel Span; the no-op returns a
- * NoOpSpan. Both are compatible with this opaque type.
+ * Pass this back to setSpanError/setSpanOk. The real implementation
+ * returns an OTel Span; the no-op returns a NoOpSpan. Both satisfy
+ * this interface. Methods match the OTel Span subset we actually use.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TelemetrySpan {}
+export interface TelemetrySpan {
+  setAttribute(key: string, value: unknown): void;
+  setStatus(status: { code: number; message?: string }): void;
+  addEvent(name: string, attributes?: Record<string, unknown>): void;
+  end(): void;
+}
 
 /** Interface shared by GovernanceTelemetry and NoOpTelemetry. */
 export interface GovernanceTelemetryLike {

@@ -25,8 +25,8 @@ describe("NoOpSpan", () => {
 
   it("setStatus is a no-op", () => {
     const span = new NoOpSpan();
-    expect(() => span.setStatus("OK")).not.toThrow();
-    expect(() => span.setStatus("ERROR", "reason")).not.toThrow();
+    expect(() => span.setStatus({ code: 0 })).not.toThrow();
+    expect(() => span.setStatus({ code: 2, message: "reason" })).not.toThrow();
   });
 
   it("addEvent is a no-op", () => {

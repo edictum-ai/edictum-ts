@@ -10,7 +10,6 @@
 import type {
   Counter,
   Meter,
-  Span,
   Tracer,
 } from "@opentelemetry/api";
 import {
@@ -45,8 +44,8 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
   }
 
   /** Start a span for a tool call evaluation. */
-  startToolSpan(envelope: TelemetryEnvelope): Span {
-    return this._tracer.startSpan(
+  startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan {
+    const span = this._tracer.startSpan(
       `tool.execute ${envelope.toolName}`,
       {
         attributes: {
@@ -58,11 +57,21 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
         },
       },
     );
+    // OTel Span satisfies TelemetrySpan — setStatus signature is compatible
+    // because OTel's setStatus accepts { code, message? } which is exactly
+    // what TelemetrySpan declares.
+    return span as unknown as TelemetrySpan;
   }
 
   /** Increment the denied counter for the given tool. */
-  recordDenial(envelope: TelemetryEnvelope, _reason?: string): void {
-    this._deniedCounter.add(1, { "tool.name": envelope.toolName });
+  recordDenial(envelope: TelemetryEnvelope, reason?: string): void {
+    const attrs: Record<string, string> = {
+      "tool.name": envelope.toolName,
+    };
+    if (reason !== undefined) {
+      attrs["denial.reason"] = reason;
+    }
+    this._deniedCounter.add(1, attrs);
   }
 
   /** Increment the allowed counter for the given tool. */
@@ -72,15 +81,13 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
 
   /** Set span status to ERROR and end it. */
   setSpanError(span: TelemetrySpan, reason: string): void {
-    const s = span as Span;
-    s.setStatus({ code: SpanStatusCode.ERROR, message: reason });
-    s.end();
+    span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
+    span.end();
   }
 
   /** Set span status to OK and end it. */
   setSpanOk(span: TelemetrySpan): void {
-    const s = span as Span;
-    s.setStatus({ code: SpanStatusCode.OK });
-    s.end();
+    span.setStatus({ code: SpanStatusCode.OK });
+    span.end();
   }
 }

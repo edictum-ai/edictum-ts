@@ -16,7 +16,7 @@ export class NoOpSpan implements TelemetrySpan {
     /* no-op */
   }
 
-  setStatus(_status: unknown, _description?: string): void {
+  setStatus(_status: { code: number; message?: string }): void {
     /* no-op */
   }
 

@@ -9,9 +9,13 @@
  * - OTEL_EXPORTER_OTLP_ENDPOINT overrides `endpoint`
  * - OTEL_EXPORTER_OTLP_PROTOCOL overrides `protocol`
  * - OTEL_RESOURCE_ATTRIBUTES merged with `resourceAttributes`
+ *
+ * TLS is controlled by the endpoint URL scheme (http:// = plaintext,
+ * https:// = TLS). There is no separate `insecure` flag — unlike
+ * Python's gRPC exporter, the JS SDK infers TLS from the URL.
  */
 
-import { trace } from "@opentelemetry/api";
+import { ProxyTracerProvider, trace } from "@opentelemetry/api";
 import { Resource } from "@opentelemetry/resources";
 import {
   BasicTracerProvider,
@@ -31,14 +35,20 @@ export interface ConfigureOtelOptions {
   edictumVersion?: string;
   /** Override an existing provider. Default: false */
   force?: boolean;
-  /** Use plaintext for gRPC. Default: true. No effect on HTTP. */
-  insecure?: boolean;
 }
 
-/** Check whether a non-proxy TracerProvider is already set. */
+/**
+ * Check whether a real (non-proxy) TracerProvider is already set.
+ *
+ * ProxyTracerProvider is the default no-op delegate. Anything else means
+ * the host app (or a prior configureOtel call) has registered a provider.
+ */
 function isProviderConfigured(): boolean {
   const current = trace.getTracerProvider();
-  return current instanceof BasicTracerProvider;
+  // ProxyTracerProvider is the default no-op wrapper. Any other type —
+  // BasicTracerProvider, NodeTracerProvider, custom — means a real
+  // provider has been registered.
+  return !(current instanceof ProxyTracerProvider);
 }
 
 export async function configureOtel(
@@ -51,8 +61,6 @@ export async function configureOtel(
     resourceAttributes,
     edictumVersion,
     force = false,
-    // `insecure` is accepted for API parity with Python but has no effect
-    // in the JS OTel SDK — use http:// vs https:// in the endpoint instead.
   } = options;
 
   if (isProviderConfigured() && !force) {
@@ -76,17 +84,19 @@ export async function configureOtel(
     resolvedEndpoint = "http://localhost:4318/v1/traces";
   }
 
-  // Build resource attributes — env OTEL_RESOURCE_ATTRIBUTES merged last
-  const attrs: Record<string, string> = {
-    "service.name": actualService,
-  };
-  if (edictumVersion) {
-    attrs["edictum.version"] = edictumVersion;
-  }
+  // Build resource attributes.
+  // Precedence (last wins): resourceAttributes < serviceName/edictumVersion < env vars
+  const attrs: Record<string, string> = {};
   if (resourceAttributes) {
     Object.assign(attrs, resourceAttributes);
   }
+  // serviceName (or its env override) always wins over resourceAttributes
+  attrs["service.name"] = actualService;
+  if (edictumVersion) {
+    attrs["edictum.version"] = edictumVersion;
+  }
 
+  // OTEL_RESOURCE_ATTRIBUTES has highest precedence
   const envAttrs = process.env["OTEL_RESOURCE_ATTRIBUTES"] ?? "";
   if (envAttrs) {
     for (const pair of envAttrs.split(",")) {
@@ -108,10 +118,6 @@ export async function configureOtel(
     const { OTLPTraceExporter } = await import(
       "@opentelemetry/exporter-trace-otlp-grpc"
     );
-    // In the JS OTel SDK, the gRPC exporter infers TLS from the URL scheme:
-    // http:// = plaintext (insecure), https:// = TLS.
-    // The `insecure` option controls the Python exporter but has no direct
-    // equivalent here. If insecure=false, callers should use https:// in the endpoint.
     const exporter = new OTLPTraceExporter({
       url: resolvedEndpoint,
     });
