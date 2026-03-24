@@ -12,6 +12,7 @@ import {
 import { MeterProvider } from '@opentelemetry/sdk-metrics'
 
 import { GovernanceTelemetry } from '../src/telemetry.js'
+import type { TelemetryEnvelope } from '../src/types.js'
 import { TestMetricReader, ENVELOPE } from './test-helpers.js'
 
 // ---------------------------------------------------------------------------

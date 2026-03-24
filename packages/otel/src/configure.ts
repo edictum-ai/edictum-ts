@@ -13,11 +13,22 @@ export interface ConfigureOtelOptions {
   endpoint?: string
   /** Export protocol: "grpc" | "http" | "http/protobuf". Default: "grpc" */
   protocol?: OtelProtocol
-  /** Extra resource attributes merged into the Resource. */
+  /**
+   * Extra resource attributes merged into the Resource.
+   * Note: `service.name` in this map is ignored — use the `serviceName`
+   * option or `OTEL_SERVICE_NAME` env var to set the service name.
+   */
   resourceAttributes?: Record<string, string>
   /** Edictum version to include as `edictum.version` attribute. */
   edictumVersion?: string
-  /** Override an existing provider. Default: false */
+  /**
+   * Override an existing **TracerProvider**. Default: false.
+   *
+   * The MeterProvider is always registered regardless of this flag so that
+   * callers who pre-register tracing still receive Edictum metrics. If you
+   * manage your own MeterProvider, call `metrics.setGlobalMeterProvider()`
+   * after `configureOtel()` to restore it.
+   */
   force?: boolean
 }
 
