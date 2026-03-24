@@ -56,7 +56,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
   /** Increment the denied counter for the given tool. */
   recordDenial(envelope: TelemetryEnvelope, reason?: string): void {
     const attrs: Record<string, string> = {
-      'tool.name': envelope.toolName,
+      'tool.name': envelope.toolName.slice(0, 10_000),
     }
     if (reason !== undefined) {
       // Truncate to limit metric label cardinality — full reason belongs in spans
@@ -67,7 +67,7 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
 
   /** Increment the allowed counter for the given tool. */
   recordAllowed(envelope: TelemetryEnvelope): void {
-    this._allowedCounter.add(1, { 'tool.name': envelope.toolName })
+    this._allowedCounter.add(1, { 'tool.name': envelope.toolName.slice(0, 10_000) })
   }
 
   /** Set span status to ERROR and end it. */

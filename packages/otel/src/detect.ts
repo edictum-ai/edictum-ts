@@ -63,7 +63,9 @@ export async function createTelemetry(): Promise<GovernanceTelemetryLike> {
     if (
       err instanceof Error &&
       'code' in err &&
-      (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND'
+      new Set(['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND']).has(
+        (err as NodeJS.ErrnoException).code ?? '',
+      )
     ) {
       return new NoOpTelemetry()
     }

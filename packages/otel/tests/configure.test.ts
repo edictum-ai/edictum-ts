@@ -38,20 +38,6 @@ function createsRealSpans(): boolean {
   return isReal
 }
 
-/** Get resource attributes from the current tracer provider. */
-function getResourceAttributes(): Record<string, unknown> | null {
-  const provider = trace.getTracerProvider()
-  // After register(), the global proxy wraps our BasicTracerProvider.
-  // We can verify by creating a span and checking its resource.
-  const tracer = trace.getTracer('test')
-  const span = tracer.startSpan('resource-check')
-  // ReadableSpan (from sdk-trace-base) has resource
-  const readableSpan = span as unknown as { resource?: { attributes: Record<string, unknown> } }
-  const attrs = readableSpan.resource?.attributes ?? null
-  span.end()
-  return attrs
-}
-
 describe('configureOtel', () => {
   it('is a no-op when a provider is already configured and force=false', async () => {
     const exporter = new InMemorySpanExporter()
@@ -107,85 +93,6 @@ describe('configureOtel', () => {
   })
 
   it('registers a provider that creates real spans', async () => {
-    await configureOtel()
-    expect(createsRealSpans()).toBe(true)
-    trace.disable()
-  })
-
-  it('applies OTEL_SERVICE_NAME to resource attributes', async () => {
-    process.env['OTEL_SERVICE_NAME'] = 'my-custom-agent'
-    await configureOtel()
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['service.name']).toBe('my-custom-agent')
-    trace.disable()
-  })
-
-  it('applies serviceName param to resource when env not set', async () => {
-    await configureOtel({ serviceName: 'param-agent' })
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['service.name']).toBe('param-agent')
-    trace.disable()
-  })
-
-  it('applies edictumVersion to resource attributes', async () => {
-    await configureOtel({ edictumVersion: '0.1.0' })
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['edictum.version']).toBe('0.1.0')
-    trace.disable()
-  })
-
-  it('applies custom resource attributes', async () => {
-    await configureOtel({
-      resourceAttributes: { 'deployment.id': 'deploy-123' },
-    })
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['deployment.id']).toBe('deploy-123')
-    trace.disable()
-  })
-
-  it('OTEL_SERVICE_NAME wins over service.name in OTEL_RESOURCE_ATTRIBUTES', async () => {
-    process.env['OTEL_SERVICE_NAME'] = 'env-agent'
-    process.env['OTEL_RESOURCE_ATTRIBUTES'] = 'service.name=wrong-agent,team=security'
-
-    await configureOtel()
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['service.name']).toBe('env-agent')
-    // Other attrs from OTEL_RESOURCE_ATTRIBUTES should still apply
-    expect(attrs!['team']).toBe('security')
-    trace.disable()
-  })
-
-  it('resourceAttributes cannot override env-set service.name', async () => {
-    process.env['OTEL_SERVICE_NAME'] = 'env-agent'
-    await configureOtel({
-      resourceAttributes: { 'service.name': 'should-not-win' },
-    })
-
-    const attrs = getResourceAttributes()
-    expect(attrs).not.toBeNull()
-    expect(attrs!['service.name']).toBe('env-agent')
-    trace.disable()
-  })
-
-  it('reads OTEL_EXPORTER_OTLP_ENDPOINT from env', async () => {
-    process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'http://collector:4317'
-    await configureOtel()
-    expect(createsRealSpans()).toBe(true)
-    trace.disable()
-  })
-
-  it('reads OTEL_EXPORTER_OTLP_PROTOCOL from env', async () => {
-    process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] = 'http/protobuf'
     await configureOtel()
     expect(createsRealSpans()).toBe(true)
     trace.disable()

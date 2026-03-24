@@ -139,6 +139,9 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
         const k = pair.slice(0, eqIdx).trim()
         const v = pair.slice(eqIdx + 1).trim()
         if (!k) continue
+        // Skip keys/values with control characters to prevent injection
+        const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/
+        if (CONTROL_CHAR_RE.test(k) || CONTROL_CHAR_RE.test(v)) continue
         // OTEL_SERVICE_NAME takes precedence per OTel spec
         if (k === 'service.name' && envServiceNameSet) continue
         attrs[k] = v
