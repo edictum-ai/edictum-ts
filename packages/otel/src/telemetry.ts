@@ -11,16 +11,16 @@ import type { Attributes, Counter, Meter, Span, Tracer } from '@opentelemetry/ap
 import { SpanStatusCode, metrics, trace } from '@opentelemetry/api'
 
 import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
-
-/** Strip control chars and cap length for OTel attribute values. */
-const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/g
+import { sanitize } from './sanitize.js'
 
 /** Wraps an OTel Span to satisfy TelemetrySpan without unsafe casts. */
 class OTelSpanWrapper implements TelemetrySpan {
   constructor(private readonly _span: Span) {}
 
   setAttribute(key: string, value: unknown): void {
-    this._span.setAttribute(key, value as string)
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      this._span.setAttribute(key, value)
+    }
   }
   setStatus(status: { code: number; message?: string }): void {
     this._span.setStatus(status)
@@ -34,12 +34,10 @@ class OTelSpanWrapper implements TelemetrySpan {
 }
 
 /** Cap and sanitize a tool name for use in span/metric attributes. */
-const sanitizeToolName = (name: string): string =>
-  name.slice(0, 10_000).replace(CONTROL_CHAR_RE, '')
+const sanitizeToolName = (name: string): string => sanitize(name)
 
 /** Cap and sanitize a generic attribute value. */
-const sanitizeAttr = (value: string, maxLen = 10_000): string =>
-  value.slice(0, maxLen).replace(CONTROL_CHAR_RE, '')
+const sanitizeAttr = (value: string, maxLen = 10_000): string => sanitize(value, maxLen)
 
 export class GovernanceTelemetry implements GovernanceTelemetryLike {
   private readonly _tracer: Tracer

@@ -148,4 +148,9 @@ describe('configureOtel env overrides', () => {
     process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] = 'invalid'
     await expect(configureOtel()).rejects.toThrow('Invalid OTel protocol')
   })
+
+  it('throws EdictumConfigError when OTEL_EXPORTER_OTLP_ENDPOINT has non-http scheme', async () => {
+    process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] = 'ftp://evil.example.com'
+    await expect(configureOtel()).rejects.toThrow('Invalid OTel endpoint')
+  })
 })

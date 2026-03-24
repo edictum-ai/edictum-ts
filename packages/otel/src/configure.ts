@@ -1,49 +1,25 @@
 /**
  * configureOtel — one-call OTel setup for Edictum.
  *
- * Call once at startup. If a TracerProvider is already configured (e.g. by
- * the host application), this is a no-op unless `force` is true.
+ * Call once at startup. No-op if a TracerProvider is already registered
+ * (unless `force` is true). Sets up TracerProvider + MeterProvider.
  *
- * Sets up both a TracerProvider (for spans) and a MeterProvider (for
- * counters like edictum.calls.denied / edictum.calls.allowed).
+ * Env var precedence: OTEL_SERVICE_NAME, OTEL_EXPORTER_OTLP_ENDPOINT,
+ * OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_RESOURCE_ATTRIBUTES all override
+ * their corresponding option arguments. OTEL_SERVICE_NAME always wins
+ * over service.name in OTEL_RESOURCE_ATTRIBUTES (per OTel spec).
  *
- * Standard OTel env vars take precedence over arguments:
- * - OTEL_SERVICE_NAME overrides `serviceName`
- * - OTEL_EXPORTER_OTLP_ENDPOINT overrides `endpoint`
- * - OTEL_EXPORTER_OTLP_PROTOCOL overrides `protocol`
- * - OTEL_RESOURCE_ATTRIBUTES merged with `resourceAttributes`
- *   (but `OTEL_SERVICE_NAME` always wins over `service.name` in
- *   `OTEL_RESOURCE_ATTRIBUTES`, per the OTel spec)
+ * TLS is inferred from the endpoint URL scheme (http:// vs https://).
  *
- * TLS is controlled by the endpoint URL scheme (http:// = plaintext,
- * https:// = TLS). There is no separate `insecure` flag — unlike
- * Python's gRPC exporter, the JS SDK infers TLS from the URL.
- *
- * Required packages for configureOtel():
- *   @opentelemetry/api
- *   @opentelemetry/resources
- *   @opentelemetry/sdk-trace-base
- *   @opentelemetry/sdk-metrics
- *   @opentelemetry/exporter-trace-otlp-grpc (for protocol "grpc")
- *   @opentelemetry/exporter-trace-otlp-http (for protocol "http"/"http/protobuf")
- *
- * These are NOT required if you only use GovernanceTelemetry/createTelemetry
- * (which need only @opentelemetry/api).
+ * Required: @opentelemetry/api, /resources, /sdk-trace-base,
+ * /sdk-metrics, plus exporter-trace-otlp-grpc or -http.
  */
 
 import { EdictumConfigError } from '@edictum/core'
 import type { PushMetricExporter } from '@opentelemetry/sdk-metrics'
 
-/** Control char pattern — matches C0, DEL, C1, and Unicode line separators. */
-const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
-
-/** Strip control chars and cap length for resource attribute values. */
-const sanitize = (s: string, maxLen = 10_000): string =>
-  s.slice(0, maxLen).replace(new RegExp(CONTROL_CHAR_PATTERN.source, 'g'), '')
-
-/** Valid export protocols. */
-const VALID_PROTOCOLS = ['grpc', 'http', 'http/protobuf'] as const
-type OtelProtocol = (typeof VALID_PROTOCOLS)[number]
+import { CONTROL_CHAR_PATTERN, VALID_PROTOCOLS, sanitize } from './sanitize.js'
+import type { OtelProtocol } from './sanitize.js'
 
 export interface ConfigureOtelOptions {
   /** Service name reported in traces. Default: "edictum-agent" */
