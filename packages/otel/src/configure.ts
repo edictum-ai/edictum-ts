@@ -77,8 +77,8 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
   }
 
   // Env overrides
-  const actualService = process.env['OTEL_SERVICE_NAME'] ?? serviceName
-  const actualEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint
+  const actualService = (process.env['OTEL_SERVICE_NAME'] ?? serviceName).slice(0, 10_000)
+  const actualEndpoint = (process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint).slice(0, 10_000)
   const rawProtocol = process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] ?? protocol
 
   // Validate protocol
@@ -140,7 +140,7 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
         const v = pair.slice(eqIdx + 1).trim()
         if (!k) continue
         // Skip keys/values with control characters to prevent injection
-        const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/
+        const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
         if (CONTROL_CHAR_RE.test(k) || CONTROL_CHAR_RE.test(v)) continue
         // OTEL_SERVICE_NAME takes precedence per OTel spec
         if (k === 'service.name' && envServiceNameSet) continue

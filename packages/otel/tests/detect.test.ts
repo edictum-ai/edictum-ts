@@ -46,10 +46,8 @@ describe('createTelemetry', () => {
     expect(typeof telemetry.setSpanOk).toBe('function')
   })
 
-  it('propagates non-module-not-found errors', async () => {
-    // If GovernanceTelemetry constructor threw a TypeError, it should propagate
-    // We can't easily simulate this without mocking, but we verify the
-    // happy path returns a real instance (not a silent no-op)
+  it('returns real GovernanceTelemetry (not silently falling back)', async () => {
+    // Verify the factory returns a real instance, not a silent no-op.
     const telemetry = await createTelemetry()
     expect(telemetry).toBeInstanceOf(GovernanceTelemetry)
   })

@@ -12,6 +12,10 @@ import { SpanStatusCode, metrics, trace } from '@opentelemetry/api'
 
 import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
 
+/** Cap and sanitize a tool name for use in span/metric attributes. */
+const sanitizeToolName = (name: string): string =>
+  name.slice(0, 10_000).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
+
 export class GovernanceTelemetry implements GovernanceTelemetryLike {
   private readonly _tracer: Tracer
   private readonly _meter: Meter
@@ -31,16 +35,12 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
 
   /** Start a span for a tool call evaluation. */
   startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan {
-    // Sanitize toolName for span name — strip control chars and newlines
-    // to prevent injection into trace backends. The validated name is only
-    // used in the span name; the raw value is preserved in the attribute.
-    // Cap at 10,000 chars per CLAUDE.md regex DoS policy, then strip control chars
-    const safeName = envelope.toolName
-      .slice(0, 10_000)
-      .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
+    // Sanitize toolName for span name and attributes — strip control chars
+    // to prevent injection into trace backends.
+    const safeName = sanitizeToolName(envelope.toolName)
     const span = this._tracer.startSpan(`tool.execute ${safeName}`, {
       attributes: {
-        'tool.name': envelope.toolName.slice(0, 10_000),
+        'tool.name': safeName,
         'tool.side_effect': envelope.sideEffect,
         'tool.call_index': envelope.callIndex,
         'governance.environment': envelope.environment,
@@ -56,18 +56,18 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
   /** Increment the denied counter for the given tool. */
   recordDenial(envelope: TelemetryEnvelope, reason?: string): void {
     const attrs: Record<string, string> = {
-      'tool.name': envelope.toolName.slice(0, 10_000),
+      'tool.name': sanitizeToolName(envelope.toolName),
     }
     if (reason !== undefined) {
       // Truncate to limit metric label cardinality — full reason belongs in spans
-      attrs['denial.reason'] = reason.slice(0, 200)
+      attrs['denial.reason'] = reason.slice(0, 200).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, '')
     }
     this._deniedCounter.add(1, attrs)
   }
 
   /** Increment the allowed counter for the given tool. */
   recordAllowed(envelope: TelemetryEnvelope): void {
-    this._allowedCounter.add(1, { 'tool.name': envelope.toolName.slice(0, 10_000) })
+    this._allowedCounter.add(1, { 'tool.name': sanitizeToolName(envelope.toolName) })
   }
 
   /** Set span status to ERROR and end it. */
