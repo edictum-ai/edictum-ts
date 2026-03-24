@@ -37,12 +37,11 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
   const { Resource } = await import('@opentelemetry/resources')
   const { BasicTracerProvider, BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-base')
 
-  // Check if a real provider is already set
+  // Check if a real tracer provider is already set.
+  // Only the TracerProvider guard uses this — MeterProvider is always set up
+  // so that callers who pre-register tracing still get Edictum metrics.
   const current = trace.getTracerProvider()
-  const isConfigured = !(current instanceof ProxyTracerProvider)
-  if (isConfigured && !force) {
-    return
-  }
+  const tracerAlreadyConfigured = !(current instanceof ProxyTracerProvider)
 
   // Env overrides — sanitize all string inputs
   const actualService = sanitize(process.env['OTEL_SERVICE_NAME'] ?? serviceName)
@@ -144,24 +143,26 @@ export async function configureOtel(options: ConfigureOtelOptions = {}): Promise
 
   const resource = new Resource(attrs)
 
-  // --- Tracer Provider ---
-  const provider = new BasicTracerProvider({ resource })
+  // --- Tracer Provider (skip if already configured, unless force) ---
+  if (!tracerAlreadyConfigured || force) {
+    const provider = new BasicTracerProvider({ resource })
 
-  if (useGrpc) {
-    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-grpc')
-    const exporter = new OTLPTraceExporter({
-      url: resolvedEndpoint,
-    })
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter))
-  } else {
-    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
-    const exporter = new OTLPTraceExporter({
-      url: resolvedEndpoint,
-    })
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter))
+    if (useGrpc) {
+      const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-grpc')
+      const exporter = new OTLPTraceExporter({
+        url: resolvedEndpoint,
+      })
+      provider.addSpanProcessor(new BatchSpanProcessor(exporter))
+    } else {
+      const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
+      const exporter = new OTLPTraceExporter({
+        url: resolvedEndpoint,
+      })
+      provider.addSpanProcessor(new BatchSpanProcessor(exporter))
+    }
+
+    provider.register()
   }
-
-  provider.register()
 
   // --- Meter Provider ---
   const { MeterProvider, PeriodicExportingMetricReader } =

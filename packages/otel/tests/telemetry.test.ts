@@ -11,35 +11,11 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base'
-import { MeterProvider, MetricReader } from '@opentelemetry/sdk-metrics'
+import { MeterProvider } from '@opentelemetry/sdk-metrics'
 
 import { GovernanceTelemetry } from '../src/telemetry.js'
 import type { TelemetryEnvelope } from '../src/types.js'
-
-// ---------------------------------------------------------------------------
-// In-memory metric reader for test assertions
-// ---------------------------------------------------------------------------
-
-class TestMetricReader extends MetricReader {
-  protected onForceFlush(): Promise<void> {
-    return Promise.resolve()
-  }
-  protected onShutdown(): Promise<void> {
-    return Promise.resolve()
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-const ENVELOPE: TelemetryEnvelope = {
-  toolName: 'Bash',
-  sideEffect: 'irreversible',
-  callIndex: 0,
-  environment: 'test',
-  runId: 'run-123',
-}
+import { TestMetricReader, ENVELOPE } from './test-helpers.js'
 
 // ---------------------------------------------------------------------------
 // Tests

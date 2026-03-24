@@ -19,6 +19,7 @@ class OTelSpanWrapper implements TelemetrySpan {
 
   setAttribute(key: string, value: unknown): void {
     const safeKey = sanitize(key, 1000)
+    if (!safeKey) return // all-control-char key — drop silently
     if (typeof value === 'string') {
       this._span.setAttribute(safeKey, sanitize(value))
     } else if (typeof value === 'number' || typeof value === 'boolean') {
@@ -41,6 +42,7 @@ class OTelSpanWrapper implements TelemetrySpan {
     const safeAttrs: Record<string, string | number | boolean> = {}
     for (const [k, v] of Object.entries(attributes)) {
       const sk = sanitize(k, 1000)
+      if (!sk) continue // all-control-char key — drop silently
       if (typeof v === 'string') safeAttrs[sk] = sanitize(String(v))
       else if (typeof v === 'number' || typeof v === 'boolean') safeAttrs[sk] = v
     }

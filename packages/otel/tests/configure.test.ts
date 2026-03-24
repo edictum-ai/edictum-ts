@@ -39,7 +39,7 @@ function createsRealSpans(): boolean {
 }
 
 describe('configureOtel', () => {
-  it('is a no-op when a provider is already configured and force=false', async () => {
+  it('skips TracerProvider when already configured and force=false', async () => {
     const exporter = new InMemorySpanExporter()
     const provider = new BasicTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(exporter)],
@@ -48,7 +48,7 @@ describe('configureOtel', () => {
 
     await configureOtel({ force: false })
 
-    // The original provider should still be active
+    // The original tracer provider should still be active
     const tracer = trace.getTracer('test')
     const span = tracer.startSpan('verify')
     span.end()
@@ -56,6 +56,30 @@ describe('configureOtel', () => {
     expect(exporter.getFinishedSpans()[0]!.name).toBe('verify')
 
     await provider.shutdown()
+  })
+
+  it('sets up MeterProvider even when TracerProvider is pre-configured', async () => {
+    const exporter = new InMemorySpanExporter()
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    })
+    provider.register()
+
+    await configureOtel({ force: false })
+
+    // TracerProvider should be unchanged (original)
+    const tracer = trace.getTracer('test')
+    const span = tracer.startSpan('verify-tracer')
+    span.end()
+    expect(exporter.getFinishedSpans()).toHaveLength(1)
+
+    // MeterProvider must still be functional — not the no-op default
+    const meter = metrics.getMeter('test')
+    const counter = meter.createCounter('test.verify')
+    expect(() => counter.add(1)).not.toThrow()
+
+    await provider.shutdown()
+    metrics.disable()
   })
 
   it('replaces existing provider when force=true', async () => {

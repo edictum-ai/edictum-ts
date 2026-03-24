@@ -3,41 +3,16 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { trace, metrics, SpanStatusCode } from '@opentelemetry/api'
+import { trace, metrics } from '@opentelemetry/api'
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base'
-import { MeterProvider, MetricReader } from '@opentelemetry/sdk-metrics'
+import { MeterProvider } from '@opentelemetry/sdk-metrics'
 
 import { GovernanceTelemetry } from '../src/telemetry.js'
-import type { TelemetryEnvelope } from '../src/types.js'
-
-// ---------------------------------------------------------------------------
-// In-memory metric reader for test assertions
-// ---------------------------------------------------------------------------
-
-class TestMetricReader extends MetricReader {
-  protected onForceFlush(): Promise<void> {
-    return Promise.resolve()
-  }
-  protected onShutdown(): Promise<void> {
-    return Promise.resolve()
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-const ENVELOPE: TelemetryEnvelope = {
-  toolName: 'Bash',
-  sideEffect: 'irreversible',
-  callIndex: 0,
-  environment: 'test',
-  runId: 'run-123',
-}
+import { TestMetricReader, ENVELOPE } from './test-helpers.js'
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -161,5 +136,28 @@ describe('GovernanceTelemetry security', () => {
 
     const attrs = allowedMetric!.dataPoints[0]!.attributes
     expect((attrs['tool.name'] as string).length).toBe(10_000)
+  })
+
+  it('drops setAttribute when key is all control characters', () => {
+    const telemetry = new GovernanceTelemetry()
+    const span = telemetry.startToolSpan(ENVELOPE)
+    // All-control-char key sanitizes to empty string — must not produce an '' attribute
+    span.setAttribute('\x00\x1f\x7f', 'injected')
+    span.end()
+
+    const spans = spanExporter.getFinishedSpans()
+    expect(spans[0]!.attributes['']).toBeUndefined()
+  })
+
+  it('drops addEvent attribute when key is all control characters', () => {
+    const telemetry = new GovernanceTelemetry()
+    const span = telemetry.startToolSpan(ENVELOPE)
+    span.addEvent('test-event', { '\x00\x1f': 'injected', valid: 'kept' })
+    span.end()
+
+    const spans = spanExporter.getFinishedSpans()
+    const event = spans[0]!.events[0]!
+    expect(event.attributes!['']).toBeUndefined()
+    expect(event.attributes!['valid']).toBe('kept')
   })
 })
