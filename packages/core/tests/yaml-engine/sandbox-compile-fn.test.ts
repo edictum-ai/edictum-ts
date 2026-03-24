@@ -1,7 +1,7 @@
 /** Adversarial tests for compileSandbox — within/not_within/commands/domains boundaries. */
 
 import { describe, expect, test } from 'vitest'
-import { mkdtempSync, writeFileSync, symlinkSync, realpathSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -91,7 +91,6 @@ describe('compileSandbox — within', () => {
     // resolved /tmp/ to /private/tmp/ for the boundary but fell back to
     // path.resolve for the non-existent tool path, causing a prefix mismatch.
     const rawTmp = tmpdir()
-    const realTmp = realpathSync(rawTmp)
 
     // Only meaningful when tmpdir() is a symlink (macOS /tmp → /private/tmp)
     // but also works on Linux where rawTmp === realTmp (no symlink, no mismatch)

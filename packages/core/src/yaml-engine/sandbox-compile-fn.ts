@@ -11,47 +11,7 @@ import {
   domainMatches,
 } from './sandbox-compiler.js'
 
-import { realpathSync } from 'node:fs'
-import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:path'
-
-/**
- * Resolve a path like Python's os.path.realpath() — resolve symlinks on
- * existing path components even when the full path doesn't exist.
- *
- * Node's fs.realpathSync() throws ENOENT if the path doesn't exist,
- * whereas Python's os.path.realpath() resolves as much as it can.
- * This matters on macOS where /home/ → /System/Volumes/Data/home/:
- *
- * Before fix (broken on macOS):
- *   within: ["/home/"]  → realpathSync → "/System/Volumes/Data/home"  (dir exists)
- *   tool path "/home/user/file.txt" → realpathSync throws → path.resolve → "/home/user/file.txt"
- *   Result: prefix mismatch → false denial
- *
- * After fix (consistent):
- *   within: ["/home/"]  → _resolvePath → "/System/Volumes/Data/home"
- *   tool path "/home/user/file.txt" → _resolvePath → "/System/Volumes/Data/home/user/file.txt"
- *   Result: prefix matches → correct allow
- */
-function _resolvePath(p: string): string {
-  const resolved = pathResolve(p)
-  try {
-    return realpathSync(resolved)
-  } catch {
-    // Walk up to find deepest existing ancestor and resolve its symlinks
-    const parts = resolved.split(pathSep)
-    for (let i = parts.length - 1; i > 0; i--) {
-      const prefix = parts.slice(0, i).join(pathSep) || '/'
-      try {
-        const realPrefix = realpathSync(prefix)
-        const rest = parts.slice(i).join(pathSep)
-        return pathJoin(realPrefix, rest)
-      } catch {
-        continue
-      }
-    }
-    return resolved
-  }
-}
+import { resolvePath } from './resolve-path.js'
 
 /** Check if a path is within an allowed prefix. */
 function _pathWithin(filePath: string, prefix: string): boolean {
@@ -74,8 +34,8 @@ export function compileSandbox(
   const toolPatterns: string[] =
     'tools' in contract ? (contract.tools as string[]) : [contract.tool as string]
 
-  const within = ((contract.within ?? []) as string[]).map(_resolvePath)
-  const notWithin = ((contract.not_within ?? []) as string[]).map(_resolvePath)
+  const within = ((contract.within ?? []) as string[]).map(resolvePath)
+  const notWithin = ((contract.not_within ?? []) as string[]).map(resolvePath)
   const allows = (contract.allows ?? {}) as Record<string, unknown>
   const notAllows = (contract.not_allows ?? {}) as Record<string, unknown>
   const allowedCommands = (allows.commands ?? []) as string[]
