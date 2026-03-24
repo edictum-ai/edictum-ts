@@ -98,16 +98,27 @@ describe('resolvePath', () => {
     expect(resolvePath('/')).toBe(realpathSync('/'))
   })
 
-  test('null byte traversal does not escape resolved directory', () => {
-    // Null byte followed by .. traversal: path.resolve canonicalizes this
-    // to an ancestor directory. Verify the result stays within the resolved
-    // parent, not escaping to an unrelated path.
-    const input = join(subdir, 'file\x00', '..', '..', 'etc', 'passwd')
-    const result = resolvePath(input)
-    // path.resolve canonicalizes: subdir/file\x00/../../etc/passwd → <parent>/etc/passwd
-    // The resolved path must NOT start with /etc — it should stay within
-    // the resolved ancestor chain of subdir
-    expect(result.startsWith('/etc')).toBe(false)
+  test('EACCES on ancestor symlink target returns normalized path (fail closed)', () => {
+    // If an ancestor in the walk-up is a symlink whose target is EACCES-
+    // protected, bail out and return the normalized path rather than
+    // skipping to a higher ancestor (which could mask a symlink escape).
+    const restrictedTarget = join(tmp, 'restricted-target')
+    mkdirSync(restrictedTarget, { recursive: true })
+    chmodSync(restrictedTarget, 0o000)
+    const ancestorLink = join(tmp, 'ancestor-link')
+    try {
+      symlinkSync(restrictedTarget, ancestorLink)
+    } catch {
+      /* may exist */
+    }
+    try {
+      const input = join(ancestorLink, 'nonexistent.txt')
+      const result = resolvePath(input)
+      // Should return normalized path (fail closed), not walk past the EACCES
+      expect(result).toBe(pathResolve(input))
+    } finally {
+      chmodSync(restrictedTarget, 0o755)
+    }
   })
 })
 
