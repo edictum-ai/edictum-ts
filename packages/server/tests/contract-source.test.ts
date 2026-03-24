@@ -407,14 +407,14 @@ describe("SSE connection timeout isolation", () => {
   });
 
   it("SSE stream survives beyond connection timeout", async () => {
-    // Simulates an SSE stream that delivers an event AFTER the connection
-    // timeout would have fired. If the timeout applied to the entire fetch
-    // (bug edictum#133), this would abort the stream before the event arrives.
+    // Exercises the real rawFetch connection timeout logic by mocking
+    // globalThis.fetch (not rawFetch). A real EdictumServerClient with a
+    // short timeout creates the connectAbort + setTimeout pair. If the
+    // timeout applied to the entire fetch (bug edictum#133), the stream
+    // would abort before the delayed event arrives.
     const bundle = { survived: true, revision_hash: "t1" };
-    const client = mockClient();
     const connectionTimeout = 100; // ms — short timeout for testing
 
-    // Create a stream that delivers data after the connection timeout
     let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -422,35 +422,20 @@ describe("SSE connection timeout isolation", () => {
       },
     });
 
-    vi.mocked(client.rawFetch).mockImplementation(
-      async (_path, _params, options) => {
-        // Simulate the rawFetch behavior: connection timeout only applies
-        // to getting the response, not to streaming. The response is
-        // returned immediately (connection succeeds), but data arrives later.
-        //
-        // If rawFetch applied AbortSignal.timeout() to the entire fetch,
-        // the signal would abort the stream reader after `timeout` ms.
-        // The correct implementation clears the connection timer once
-        // headers arrive and only the caller's signal controls the stream.
-
-        // Store the signal so we can verify it's not aborted prematurely
-        const signal = options?.signal;
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            streamController?.close();
-          });
-        }
-
-        return new Response(stream, {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        });
-      },
+    // Mock globalThis.fetch so the real rawFetch connection timer logic runs
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
     );
 
-    const source = new ServerContractSource(client, {
-      reconnectDelay: connectionTimeout,
+    const client = new EdictumServerClient({
+      baseUrl: "https://example.com",
+      apiKey: "test-key",
+      timeout: connectionTimeout,
     });
+    const source = new ServerContractSource(client);
     const results: Record<string, unknown>[] = [];
 
     const watchPromise = (async () => {
@@ -460,14 +445,19 @@ describe("SSE connection timeout isolation", () => {
       }
     })();
 
-    // Advance past what would be the connection timeout
+    // Advance past the connection timeout — if rawFetch used
+    // AbortSignal.timeout() for the entire request, the stream
+    // would be aborted here
     await vi.advanceTimersByTimeAsync(connectionTimeout * 3);
 
     // Stream is still alive — deliver an event now
+    expect(streamController).not.toBeNull();
     const encoder = new TextEncoder();
     const sseData =
       `event: contract_update\ndata: ${JSON.stringify(bundle)}\n\n`;
-    streamController!.enqueue(encoder.encode(sseData));
+    (streamController as ReadableStreamDefaultController<Uint8Array>).enqueue(
+      encoder.encode(sseData),
+    );
 
     // Let the event loop process the enqueued chunk
     await vi.advanceTimersByTimeAsync(10);
@@ -475,6 +465,8 @@ describe("SSE connection timeout isolation", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual(bundle);
+
+    fetchSpy.mockRestore();
   });
 });
 
