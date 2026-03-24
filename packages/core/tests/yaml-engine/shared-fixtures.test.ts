@@ -2,11 +2,15 @@
  * Shared rejection fixture runner — validates the TS loader against the
  * cross-SDK rejection corpus maintained in edictum-schemas.
  *
- * Workspace assumption: edictum-schemas is a sibling checkout at
- * ../edictum-schemas relative to the edictum-ts repo root.
+ * Fixture discovery (first match wins):
+ *   1. EDICTUM_FIXTURES_DIR env var (direct path to rejection/ directory)
+ *   2. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo)
+ *   3. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
+ *   4. <repo-root>/../edictum-schemas/ (sibling checkout)
  *
- * Skips entirely when the sibling repo is absent (CI, fresh clones).
- * Runs locally when both repos are checked out side-by-side.
+ * Missing-fixture behavior:
+ *   - EDICTUM_CONFORMANCE_REQUIRED=1 → fail the test run
+ *   - Otherwise → skip the suite cleanly
  *
  * Each fixture provides a bundle that must be rejected by the loader, plus
  * an `error_contains` substring that the error message must include.
@@ -23,17 +27,40 @@ import { loadBundleString } from '../../src/yaml-engine/loader.js'
 import { EdictumConfigError } from '../../src/errors.js'
 
 // ---------------------------------------------------------------------------
-// Fixture resolution
+// Fixture discovery
 // ---------------------------------------------------------------------------
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = resolve(HERE, '..', '..', '..', '..')
+const REJECTION_SUBPATH = join('fixtures', 'rejection')
 
-/**
- * Sibling edictum-schemas repo relative to this test file.
- * Path: tests/yaml-engine/ → core/ → packages/ → edictum-ts/ → project/ → edictum-schemas/
- */
-const SCHEMAS_REPO = resolve(HERE, '..', '..', '..', '..', '..', 'edictum-schemas')
-const FIXTURES_DIR = join(SCHEMAS_REPO, 'fixtures', 'rejection')
+/** Resolve the rejection fixtures directory using the discovery order. */
+function resolveFixturesDir(): string | null {
+  // 1. Direct path via env var
+  const fixturesEnv = process.env.EDICTUM_FIXTURES_DIR
+  if (fixturesEnv && existsSync(fixturesEnv)) return fixturesEnv
+
+  // 2. Schemas repo root via env var
+  const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
+  if (schemasEnv) {
+    const candidate = join(schemasEnv, REJECTION_SUBPATH)
+    if (existsSync(candidate)) return candidate
+  }
+
+  // 3. Nested inside repo root (monorepo / vendored)
+  const nested = join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH)
+  if (existsSync(nested)) return nested
+
+  // 4. Sibling checkout
+  const sibling = resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH)
+  if (existsSync(sibling)) return sibling
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Fixture types and loader
+// ---------------------------------------------------------------------------
 
 interface Fixture {
   id: string
@@ -52,27 +79,34 @@ interface FixtureSuite {
   fixtures: Fixture[]
 }
 
-/** Load all .rejection.yaml files from the shared fixtures directory. */
-function loadFixtureSuites(): FixtureSuite[] | null {
-  if (!existsSync(FIXTURES_DIR)) return null
-
-  const files = readdirSync(FIXTURES_DIR)
+function loadFixtureSuites(dir: string): FixtureSuite[] | null {
+  const files = readdirSync(dir)
     .filter((f) => f.endsWith('.rejection.yaml'))
     .sort()
 
   if (files.length === 0) return null
 
   return files.map((file) => {
-    const content = readFileSync(join(FIXTURES_DIR, file), 'utf-8')
+    const content = readFileSync(join(dir, file), 'utf-8')
     return yaml.load(content) as FixtureSuite
   })
 }
 
 // ---------------------------------------------------------------------------
-// Runner — skips entirely when edictum-schemas is not a sibling checkout
+// Runner
 // ---------------------------------------------------------------------------
 
-const suites = loadFixtureSuites()
+const fixturesDir = resolveFixturesDir()
+const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
+
+if (!fixturesDir && conformanceRequired) {
+  throw new Error(
+    'EDICTUM_CONFORMANCE_REQUIRED=1 but no rejection fixtures found. ' +
+      'Set EDICTUM_FIXTURES_DIR or EDICTUM_SCHEMAS_DIR, or check out edictum-schemas as a sibling.',
+  )
+}
+
+const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
 
 describe.skipIf(suites == null)('shared rejection fixtures (edictum-schemas)', () => {
   for (const suite of suites!) {
