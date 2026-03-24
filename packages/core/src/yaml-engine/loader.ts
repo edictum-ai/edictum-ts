@@ -11,7 +11,8 @@ import {
   validatePreSelectors,
   validateSandboxContracts,
 } from './loader-validators.js'
-import { validateContractFields, validateExpressionShapes } from './loader-field-validators.js'
+import { validateContractFields } from './loader-field-validators.js'
+import { validateExpressionShapes } from './loader-expression-validators.js'
 
 // Re-export validators for direct access
 export {
@@ -21,7 +22,8 @@ export {
   validatePreSelectors,
   validateSandboxContracts,
 } from './loader-validators.js'
-export { validateContractFields, validateExpressionShapes } from './loader-field-validators.js'
+export { validateContractFields } from './loader-field-validators.js'
+export { validateExpressionShapes } from './loader-expression-validators.js'
 
 // ---------------------------------------------------------------------------
 // Constants

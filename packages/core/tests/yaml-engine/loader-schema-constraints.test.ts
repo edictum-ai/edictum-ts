@@ -401,6 +401,34 @@ describe('tool side_effect enum', () => {
       /side_effect/,
     )
   })
+
+  test('tool entry without side_effect rejected', () => {
+    expectReject(bundle({ extra: 'tools:\n  my_tool: {}' }), /side_effect/)
+  })
+})
+
+// =========================================================================
+// Adversarial: null/non-object contract elements
+// =========================================================================
+
+describe('null contract elements', () => {
+  test('null contract element throws EdictumConfigError', () => {
+    expectReject(
+      bundle({
+        contracts: `
+  -
+  - id: c1
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: 1 }
+    then:
+      effect: deny
+      message: "denied"`,
+      }),
+      /contract must be an object/,
+    )
+  })
 })
 
 // =========================================================================

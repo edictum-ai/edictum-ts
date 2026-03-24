@@ -28,10 +28,6 @@ const KNOWN_TOP_LEVEL = new Set([
 ])
 const METADATA_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/
 const MAX_MESSAGE_LENGTH = 500
-const NUMERIC_OPS = new Set(['gt', 'gte', 'lt', 'lte'])
-const STRING_OPS = new Set(['contains', 'starts_with', 'ends_with'])
-const ARRAY_MIN1_OPS = new Set(['in', 'not_in', 'contains_any', 'matches_any'])
-
 /** Throw EdictumConfigError with a "Schema validation failed:" prefix. */
 function fail(msg: string): never {
   throw new EdictumConfigError(`Schema validation failed: ${msg}`)
@@ -58,9 +54,11 @@ export function validateContractFields(data: Record<string, unknown>): void {
   }
   const meta = data.metadata as Record<string, unknown>
   if (meta.name == null || typeof meta.name !== 'string') fail('metadata.name is required')
-  if (!METADATA_NAME_RE.test(meta.name as string)) {
+  const metaName = meta.name as string
+  if (metaName.length > 10_000) fail('metadata.name exceeds maximum length')
+  if (!METADATA_NAME_RE.test(metaName)) {
     fail(
-      `metadata.name must be a lowercase slug (^[a-z0-9][a-z0-9._-]*$), got '${String(meta.name)}'`,
+      `metadata.name must be a lowercase slug (^[a-z0-9][a-z0-9._-]*$), got '${metaName.slice(0, 100)}'`,
     )
   }
 
@@ -93,6 +91,9 @@ export function validateContractFields(data: Record<string, unknown>): void {
 
   // --- Per-contract validation ---
   for (const c of contracts) {
+    if (c == null || typeof c !== 'object' || Array.isArray(c)) {
+      fail('every contract must be an object (got null or non-object array element)')
+    }
     if (c.id == null || typeof c.id !== 'string' || c.id.length === 0) {
       fail("every contract requires a non-empty 'id' string")
     }
@@ -178,57 +179,5 @@ function validateSandboxStructure(c: Record<string, unknown>, cid: string): void
 function validateMessageLength(msg: unknown, context: string): void {
   if (typeof msg === 'string' && msg.length > MAX_MESSAGE_LENGTH) {
     fail(`${context}: message exceeds ${MAX_MESSAGE_LENGTH} characters`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Expression shape validation (empty all/any, operator type constraints)
-// ---------------------------------------------------------------------------
-
-/** Validate expression tree shapes and operator value types. */
-export function validateExpressionShapes(data: Record<string, unknown>): void {
-  for (const c of (data.contracts ?? []) as Record<string, unknown>[]) {
-    if (c.when != null) checkExprShape(c.when, (c.id as string) ?? '?')
-  }
-}
-
-function checkExprShape(expr: unknown, cid: string): void {
-  if (expr == null || typeof expr !== 'object') return
-  const e = expr as Record<string, unknown>
-
-  if ('all' in e) {
-    const a = e.all
-    if (!Array.isArray(a) || a.length === 0)
-      fail(`contract '${cid}': 'all' requires a non-empty array`)
-    for (const s of a) checkExprShape(s, cid)
-    return
-  }
-  if ('any' in e) {
-    const a = e.any
-    if (!Array.isArray(a) || a.length === 0)
-      fail(`contract '${cid}': 'any' requires a non-empty array`)
-    for (const s of a) checkExprShape(s, cid)
-    return
-  }
-  if ('not' in e) {
-    checkExprShape(e.not, cid)
-    return
-  }
-
-  // Leaf: validate operator value types
-  for (const v of Object.values(e)) {
-    if (v == null || typeof v !== 'object') continue
-    const op = v as Record<string, unknown>
-    for (const [name, val] of Object.entries(op)) {
-      if (NUMERIC_OPS.has(name) && typeof val !== 'number') {
-        fail(`contract '${cid}': operator '${name}' requires a number, got ${typeof val}`)
-      }
-      if (STRING_OPS.has(name) && typeof val !== 'string') {
-        fail(`contract '${cid}': operator '${name}' requires a string, got ${typeof val}`)
-      }
-      if (ARRAY_MIN1_OPS.has(name) && (!Array.isArray(val) || val.length === 0)) {
-        fail(`contract '${cid}': operator '${name}' requires a non-empty array`)
-      }
-    }
   }
 }
