@@ -43,6 +43,8 @@ export {
   computeHash,
   MAX_BUNDLE_SIZE,
   validateSchema,
+  validateContractFields,
+  validateExpressionShapes,
   validateUniqueIds,
   validateRegexes,
   validatePreSelectors,
