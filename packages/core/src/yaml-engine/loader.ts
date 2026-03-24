@@ -11,6 +11,8 @@ import {
   validatePreSelectors,
   validateSandboxContracts,
 } from './loader-validators.js'
+import { validateContractFields } from './loader-field-validators.js'
+import { validateExpressionShapes } from './loader-expression-validators.js'
 
 // Re-export validators for direct access
 export {
@@ -20,6 +22,8 @@ export {
   validatePreSelectors,
   validateSandboxContracts,
 } from './loader-validators.js'
+export { validateContractFields } from './loader-field-validators.js'
+export { validateExpressionShapes } from './loader-expression-validators.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -81,7 +85,9 @@ function parseYaml(content: string): Record<string, unknown> {
 /** Run all bundle validations in sequence. */
 function validateBundle(data: Record<string, unknown>): void {
   validateSchema(data)
+  validateContractFields(data)
   validateUniqueIds(data)
+  validateExpressionShapes(data)
   validateRegexes(data)
   validatePreSelectors(data)
   validateSandboxContracts(data)

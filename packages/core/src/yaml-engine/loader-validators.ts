@@ -39,11 +39,23 @@ export function validateSchema(data: Record<string, unknown>): void {
 // returns, and other C0/C1 control chars could corrupt storage keys or logs.
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
 
-/** Validate a single contract ID for dangerous characters. */
+// JSON Schema: "pattern": "^[a-z0-9][a-z0-9_-]*$"
+const CONTRACT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
+
+/** Validate a single contract ID for dangerous characters and format. */
 function validateContractId(contractId: string): void {
+  if (contractId.length > 10_000) {
+    throw new EdictumConfigError('Contract id exceeds maximum length')
+  }
+  // Control chars checked first — more specific error than pattern mismatch.
   if (CONTROL_CHAR_RE.test(contractId)) {
     throw new EdictumConfigError(
       `Contract id contains control characters: '${contractId.replace(CONTROL_CHAR_RE, '\\x??')}'`,
+    )
+  }
+  if (!CONTRACT_ID_RE.test(contractId)) {
+    throw new EdictumConfigError(
+      `Contract id '${contractId}' must match pattern ^[a-z0-9][a-z0-9_-]*$`,
     )
   }
 }

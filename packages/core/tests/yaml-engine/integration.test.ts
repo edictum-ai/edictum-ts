@@ -427,7 +427,15 @@ metadata:
   name: different
 defaults:
   mode: enforce
-contracts: []
+contracts:
+  - id: placeholder
+    type: pre
+    tool: "*"
+    when:
+      args.x: { equals: "__never__" }
+    then:
+      effect: deny
+      message: "placeholder"
 `
     guard.reload(newBundle)
     expect(guard.policyVersion).not.toBe(oldVersion)
