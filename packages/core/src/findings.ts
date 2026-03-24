@@ -12,17 +12,17 @@
  * decide how to remediate.
  */
 export interface Finding {
-  readonly type: string;
-  readonly contractId: string;
-  readonly field: string;
-  readonly message: string;
-  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly type: string
+  readonly contractId: string
+  readonly field: string
+  readonly message: string
+  readonly metadata: Readonly<Record<string, unknown>>
 }
 
 /** Create a frozen Finding with defaults for metadata. */
 export function createFinding(
-  fields: Pick<Finding, "type" | "contractId" | "field" | "message"> &
-    Partial<Pick<Finding, "metadata">>,
+  fields: Pick<Finding, 'type' | 'contractId' | 'field' | 'message'> &
+    Partial<Pick<Finding, 'metadata'>>,
 ): Finding {
   return Object.freeze({
     type: fields.type,
@@ -30,7 +30,7 @@ export function createFinding(
     field: fields.field,
     message: fields.message,
     metadata: Object.freeze({ ...(fields.metadata ?? {}) }),
-  });
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -47,23 +47,22 @@ export function createFinding(
  * can then decide how to remediate (redact, replace, log, etc.).
  */
 export interface PostCallResult {
-  readonly result: unknown;
-  readonly postconditionsPassed: boolean;
-  readonly findings: readonly Finding[];
-  readonly outputSuppressed: boolean;
+  readonly result: unknown
+  readonly postconditionsPassed: boolean
+  readonly findings: readonly Finding[]
+  readonly outputSuppressed: boolean
 }
 
 /** Create a PostCallResult with defaults. */
 export function createPostCallResult(
-  fields: Pick<PostCallResult, "result"> &
-    Partial<Omit<PostCallResult, "result">>,
+  fields: Pick<PostCallResult, 'result'> & Partial<Omit<PostCallResult, 'result'>>,
 ): PostCallResult {
   return Object.freeze({
     result: fields.result,
     postconditionsPassed: fields.postconditionsPassed ?? true,
     findings: Object.freeze([...(fields.findings ?? [])]),
     outputSuppressed: fields.outputSuppressed ?? false,
-  });
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -75,41 +74,26 @@ export function createPostCallResult(
  *
  * Returns a standard finding type string.
  */
-export function classifyFinding(
-  contractId: string,
-  verdictMessage: string,
-): string {
-  const contractLower = contractId.toLowerCase();
-  const messageLower = (verdictMessage || "").toLowerCase();
+export function classifyFinding(contractId: string, verdictMessage: string): string {
+  const contractLower = contractId.toLowerCase()
+  const messageLower = (verdictMessage || '').toLowerCase()
 
-  const piiTerms = ["pii", "ssn", "patient", "name", "dob"];
-  if (
-    piiTerms.some(
-      (term) => contractLower.includes(term) || messageLower.includes(term),
-    )
-  ) {
-    return "pii_detected";
+  const piiTerms = ['pii', 'ssn', 'patient', 'name', 'dob']
+  if (piiTerms.some((term) => contractLower.includes(term) || messageLower.includes(term))) {
+    return 'pii_detected'
   }
 
-  const secretTerms = ["secret", "token", "key", "credential", "password"];
-  if (
-    secretTerms.some(
-      (term) => contractLower.includes(term) || messageLower.includes(term),
-    )
-  ) {
-    return "secret_detected";
+  const secretTerms = ['secret', 'token', 'key', 'credential', 'password']
+  if (secretTerms.some((term) => contractLower.includes(term) || messageLower.includes(term))) {
+    return 'secret_detected'
   }
 
-  const limitTerms = ["session", "limit", "max_calls", "budget"];
-  if (
-    limitTerms.some(
-      (term) => contractLower.includes(term) || messageLower.includes(term),
-    )
-  ) {
-    return "limit_exceeded";
+  const limitTerms = ['session', 'limit', 'max_calls', 'budget']
+  if (limitTerms.some((term) => contractLower.includes(term) || messageLower.includes(term))) {
+    return 'limit_exceeded'
   }
 
-  return "policy_violation";
+  return 'policy_violation'
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +108,11 @@ export function classifyFinding(
  */
 export interface PostDecisionLike {
   readonly contractsEvaluated: ReadonlyArray<{
-    readonly passed?: boolean;
-    readonly name: string;
-    readonly message?: string;
-    readonly metadata?: Record<string, unknown>;
-  }>;
+    readonly passed?: boolean
+    readonly name: string
+    readonly message?: string
+    readonly metadata?: Record<string, unknown>
+  }>
 }
 
 // ---------------------------------------------------------------------------
@@ -143,20 +127,20 @@ export interface PostDecisionLike {
  * otherwise defaults to `"output"` for postconditions.
  */
 export function buildFindings(postDecision: PostDecisionLike): Finding[] {
-  const findings: Finding[] = [];
+  const findings: Finding[] = []
   for (const cr of postDecision.contractsEvaluated) {
     if (!cr.passed) {
-      const meta = cr.metadata ?? {};
+      const meta = cr.metadata ?? {}
       findings.push(
         createFinding({
-          type: classifyFinding(cr.name, cr.message ?? ""),
+          type: classifyFinding(cr.name, cr.message ?? ''),
           contractId: cr.name,
-          field: (meta.field as string) ?? "output",
-          message: cr.message ?? "",
+          field: (meta.field as string) ?? 'output',
+          message: cr.message ?? '',
           metadata: meta,
         }),
-      );
+      )
     }
   }
-  return findings;
+  return findings
 }

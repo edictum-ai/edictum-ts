@@ -8,11 +8,11 @@
  * cannot be silently bypassed by a network outage.
  */
 
-import type { StorageBackend } from "@edictum/core";
-import { EdictumConfigError } from "@edictum/core";
+import type { StorageBackend } from '@edictum/core'
+import { EdictumConfigError } from '@edictum/core'
 
-import type { EdictumServerClient} from "./client.js";
-import { EdictumServerError } from "./client.js";
+import type { EdictumServerClient } from './client.js'
+import { EdictumServerError } from './client.js'
 
 /**
  * Validate a storage key: reject empty strings and control characters.
@@ -22,14 +22,12 @@ import { EdictumServerError } from "./client.js";
  */
 function validateKey(key: string): void {
   if (!key) {
-    throw new EdictumConfigError(`Invalid storage key: ${JSON.stringify(key)}`);
+    throw new EdictumConfigError(`Invalid storage key: ${JSON.stringify(key)}`)
   }
   for (let i = 0; i < key.length; i++) {
-    const code = key.charCodeAt(i);
+    const code = key.charCodeAt(i)
     if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) {
-      throw new EdictumConfigError(
-        `Invalid storage key: contains control character at index ${i}`,
-      );
+      throw new EdictumConfigError(`Invalid storage key: contains control character at index ${i}`)
     }
   }
 }
@@ -41,10 +39,10 @@ function validateKey(key: string): void {
  * to the server's session state API.
  */
 export class ServerBackend implements StorageBackend {
-  private readonly _client: EdictumServerClient;
+  private readonly _client: EdictumServerClient
 
   constructor(client: EdictumServerClient) {
-    this._client = client;
+    this._client = client
   }
 
   /**
@@ -54,56 +52,54 @@ export class ServerBackend implements StorageBackend {
    * All other errors propagate so the pipeline fails closed.
    */
   async get(key: string): Promise<string | null> {
-    validateKey(key);
+    validateKey(key)
     try {
-      const response = await this._client.get(`/api/v1/sessions/${encodeURIComponent(key)}`);
-      return (response["value"] as string) ?? null;
+      const response = await this._client.get(`/api/v1/sessions/${encodeURIComponent(key)}`)
+      return (response['value'] as string) ?? null
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
-        return null;
+        return null
       }
-      throw error;
+      throw error
     }
   }
 
   /** Set a value in the server session store. */
   async set(key: string, value: string): Promise<void> {
-    validateKey(key);
-    await this._client.put(`/api/v1/sessions/${encodeURIComponent(key)}`, { value });
+    validateKey(key)
+    await this._client.put(`/api/v1/sessions/${encodeURIComponent(key)}`, { value })
   }
 
   /** Delete a key from the server session store. */
   async delete(key: string): Promise<void> {
-    validateKey(key);
+    validateKey(key)
     try {
-      await this._client.delete(`/api/v1/sessions/${encodeURIComponent(key)}`);
+      await this._client.delete(`/api/v1/sessions/${encodeURIComponent(key)}`)
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
-        return;
+        return
       }
-      throw error;
+      throw error
     }
   }
 
   /** Atomically increment a counter on the server. */
   async increment(key: string, amount: number = 1): Promise<number> {
-    validateKey(key);
+    validateKey(key)
     if (!Number.isFinite(amount)) {
       throw new EdictumConfigError(
         `Invalid increment amount: ${JSON.stringify(amount)}. Must be a finite number.`,
-      );
+      )
     }
     const response = await this._client.post(
       `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
       { amount },
-    );
-    const value = response["value"];
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      throw new Error(
-        `Server returned invalid value for increment: ${JSON.stringify(value)}`,
-      );
+    )
+    const value = response['value']
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error(`Server returned invalid value for increment: ${JSON.stringify(value)}`)
     }
-    return value;
+    return value
   }
 
   /**
@@ -117,35 +113,35 @@ export class ServerBackend implements StorageBackend {
    */
   async batchGet(keys: readonly string[]): Promise<Record<string, string | null>> {
     for (const key of keys) {
-      validateKey(key);
+      validateKey(key)
     }
     if (keys.length === 0) {
-      return {};
+      return {}
     }
 
     try {
-      const response = await this._client.post("/api/v1/sessions/batch", {
+      const response = await this._client.post('/api/v1/sessions/batch', {
         keys: [...keys],
-      });
-      const values = (response["values"] as Record<string, string>) ?? {};
-      const result: Record<string, string | null> = {};
+      })
+      const values = (response['values'] as Record<string, string>) ?? {}
+      const result: Record<string, string | null> = {}
       for (const key of keys) {
-        result[key] = (values[key] as string) ?? null;
+        result[key] = (values[key] as string) ?? null
       }
-      return result;
+      return result
     } catch (error) {
       if (
         error instanceof EdictumServerError &&
         (error.statusCode === 404 || error.statusCode === 405)
       ) {
         // Server doesn't support batch endpoint -- fall back
-        const result: Record<string, string | null> = {};
+        const result: Record<string, string | null> = {}
         for (const key of keys) {
-          result[key] = await this.get(key);
+          result[key] = await this.get(key)
         }
-        return result;
+        return result
       }
-      throw error;
+      throw error
     }
   }
 }

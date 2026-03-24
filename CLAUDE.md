@@ -29,21 +29,21 @@ packages/
 
 ## Tech Stack
 
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| Language | TypeScript (strict) | Security product — type safety is non-negotiable |
-| Runtime | Node 22+ (LTS) | Required by OpenClaw (P0 target), native fetch/structuredClone |
-| Build | tsup (esbuild) | Dual ESM+CJS output, ~10 lines config |
-| Test | Vitest | ESM-native, fast, good DX |
-| Lint | ESLint | Largest plugin ecosystem, best for security rules |
-| Package manager | pnpm | Workspace monorepo support |
-| Module format | Dual ESM + CJS | Maximum compatibility via tsup |
+| Layer           | Technology          | Rationale                                                      |
+| --------------- | ------------------- | -------------------------------------------------------------- |
+| Language        | TypeScript (strict) | Security product — type safety is non-negotiable               |
+| Runtime         | Node 22+ (LTS)      | Required by OpenClaw (P0 target), native fetch/structuredClone |
+| Build           | tsup (esbuild)      | Dual ESM+CJS output, ~10 lines config                          |
+| Test            | Vitest              | ESM-native, fast, good DX                                      |
+| Lint            | ESLint              | Largest plugin ecosystem, best for security rules              |
+| Package manager | pnpm                | Workspace monorepo support                                     |
+| Module format   | Dual ESM + CJS      | Maximum compatibility via tsup                                 |
 
 ## Non-Negotiable Principles
 
 1. **Full feature parity with Python.** 147 features across 12 categories. Every feature has a parity test ID. If Python passes and TS fails, it's a bug.
 2. **Security is non-negotiable.** This is a security product. No shortcuts, no "good enough", no deferred fixes for vulnerabilities. Fail closed on every error path.
-3. **Zero runtime deps in core.** Optional: js-yaml, ajv, @opentelemetry/*, @noble/ed25519. Core runs with nothing.
+3. **Zero runtime deps in core.** Optional: js-yaml, ajv, @opentelemetry/\*, @noble/ed25519. Core runs with nothing.
 4. **Plain objects for contracts.** Interfaces define the shape. TypeScript validates at compile time. No decorators, no builders, no hidden metadata.
 5. **All async.** Every pipeline, session, and audit sink method is async. No sync variants.
 6. **Immutability by default.** ToolEnvelope is `Readonly<T>` + `Object.freeze()` + deep freeze. Principal is frozen. Contract state swaps atomically.
@@ -78,12 +78,11 @@ Contracts use **plain objects** with TypeScript interfaces. This is the most AI-
 
 ```typescript
 const noRm: Precondition = {
-  tool: "Bash",
+  tool: 'Bash',
   check: async (envelope) => {
-    if (envelope.bashCommand?.includes("rm -rf"))
-      return Verdict.fail("Cannot run rm -rf")
+    if (envelope.bashCommand?.includes('rm -rf')) return Verdict.fail('Cannot run rm -rf')
     return Verdict.pass()
-  }
+  },
 }
 
 const guard = new Edictum({ contracts: [noRm] })
@@ -95,13 +94,13 @@ Why plain objects: full autocomplete, compile-time validation, no hidden state, 
 
 Inherited from the Python library. ALL code, comments, docstrings, CLI output, and docs MUST use canonical terms:
 
-| Wrong | Correct |
-|-------|---------|
+| Wrong                   | Correct              |
+| ----------------------- | -------------------- |
 | rule / rules (in prose) | contract / contracts |
-| blocked | denied |
-| engine (for runtime) | pipeline |
-| shadow mode | observe mode |
-| alert | finding |
+| blocked                 | denied               |
+| engine (for runtime)    | pipeline             |
+| shadow mode             | observe mode         |
+| alert                   | finding              |
 
 **No exceptions.**
 
@@ -143,6 +142,7 @@ A behavior test answers: "What observable effect does this parameter have?"
 Every security boundary MUST have bypass tests — tests that attempt to circumvent the boundary and verify the attempt is caught. Marked with `test.describe("security")` or equivalent.
 
 Examples:
+
 - Sandbox: symlink escape, double-encoding, null byte injection
 - BashClassifier: every shell metacharacter individually
 - Session limits: concurrent access patterns

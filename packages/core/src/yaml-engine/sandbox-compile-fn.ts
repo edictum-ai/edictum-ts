@@ -1,31 +1,31 @@
 /** compileSandbox — compile a sandbox contract YAML dict into a callable with metadata. */
 
-import { Verdict } from "../contracts.js";
-import type { ToolEnvelope } from "../envelope.js";
-import { expandMessage } from "./compiler-utils.js";
+import { Verdict } from '../contracts.js'
+import type { ToolEnvelope } from '../envelope.js'
+import { expandMessage } from './compiler-utils.js'
 import {
   extractPaths,
   extractCommand,
   extractUrls,
   extractHostname,
   domainMatches,
-} from "./sandbox-compiler.js";
+} from './sandbox-compiler.js'
 
-import { realpathSync } from "node:fs";
-import { resolve as pathResolve } from "node:path";
+import { realpathSync } from 'node:fs'
+import { resolve as pathResolve } from 'node:path'
 
 /** Resolve a path via realpathSync, falling back to path.resolve. */
 function _realpath(p: string): string {
   try {
-    return realpathSync(p);
+    return realpathSync(p)
   } catch {
-    return pathResolve(p);
+    return pathResolve(p)
   }
 }
 
 /** Check if a path is within an allowed prefix. */
 function _pathWithin(filePath: string, prefix: string): boolean {
-  return filePath === prefix || filePath.startsWith(prefix.replace(/\/+$/, "") + "/");
+  return filePath === prefix || filePath.startsWith(prefix.replace(/\/+$/, '') + '/')
 }
 
 /**
@@ -38,24 +38,23 @@ export function compileSandbox(
   contract: Record<string, unknown>,
   mode: string,
 ): Record<string, unknown> {
-  const contractId = contract.id as string;
+  const contractId = contract.id as string
 
   // Normalize tool/tools to a list
-  const toolPatterns: string[] = "tools" in contract
-    ? (contract.tools as string[])
-    : [contract.tool as string];
+  const toolPatterns: string[] =
+    'tools' in contract ? (contract.tools as string[]) : [contract.tool as string]
 
-  const within = ((contract.within ?? []) as string[]).map(_realpath);
-  const notWithin = ((contract.not_within ?? []) as string[]).map(_realpath);
-  const allows = (contract.allows ?? {}) as Record<string, unknown>;
-  const notAllows = (contract.not_allows ?? {}) as Record<string, unknown>;
-  const allowedCommands = (allows.commands ?? []) as string[];
-  const allowedDomains = (allows.domains ?? []) as string[];
-  const blockedDomains = (notAllows.domains ?? []) as string[];
-  const outside = (contract.outside as string) ?? "deny";
-  const messageTemplate = (contract.message as string) ?? "Tool call outside sandbox boundary.";
-  const timeout = (contract.timeout as number) ?? 300;
-  const timeoutEffect = (contract.timeout_effect as string) ?? "deny";
+  const within = ((contract.within ?? []) as string[]).map(_realpath)
+  const notWithin = ((contract.not_within ?? []) as string[]).map(_realpath)
+  const allows = (contract.allows ?? {}) as Record<string, unknown>
+  const notAllows = (contract.not_allows ?? {}) as Record<string, unknown>
+  const allowedCommands = (allows.commands ?? []) as string[]
+  const allowedDomains = (allows.domains ?? []) as string[]
+  const blockedDomains = (notAllows.domains ?? []) as string[]
+  const outside = (contract.outside as string) ?? 'deny'
+  const messageTemplate = (contract.message as string) ?? 'Tool call outside sandbox boundary.'
+  const timeout = (contract.timeout as number) ?? 300
+  const timeoutEffect = (contract.timeout_effect as string) ?? 'deny'
 
   const check = (envelope: ToolEnvelope): Verdict => {
     // Path checks
@@ -70,19 +69,19 @@ export function compileSandbox(
     // (2) restrict tool access at the adapter level, (3) validate tool args
     // via precondition contracts that match the specific arg patterns.
     if (within.length > 0 || notWithin.length > 0) {
-      const paths = extractPaths(envelope);
+      const paths = extractPaths(envelope)
       if (paths.length > 0) {
         for (const p of paths) {
           for (const excluded of notWithin) {
             if (_pathWithin(p, excluded)) {
-              return Verdict.fail(expandMessage(messageTemplate, envelope));
+              return Verdict.fail(expandMessage(messageTemplate, envelope))
             }
           }
         }
         if (within.length > 0) {
           for (const p of paths) {
             if (!within.some((allowed) => _pathWithin(p, allowed))) {
-              return Verdict.fail(expandMessage(messageTemplate, envelope));
+              return Verdict.fail(expandMessage(messageTemplate, envelope))
             }
           }
         }
@@ -91,54 +90,54 @@ export function compileSandbox(
 
     // Command checks
     if (allowedCommands.length > 0) {
-      const firstToken = extractCommand(envelope);
+      const firstToken = extractCommand(envelope)
       if (firstToken !== null && !allowedCommands.includes(firstToken)) {
-        return Verdict.fail(expandMessage(messageTemplate, envelope));
+        return Verdict.fail(expandMessage(messageTemplate, envelope))
       }
     }
 
     // Domain checks
-    const urls = extractUrls(envelope);
+    const urls = extractUrls(envelope)
     if (urls.length > 0) {
       for (const url of urls) {
-        const hostname = extractHostname(url);
+        const hostname = extractHostname(url)
         if (hostname) {
           if (blockedDomains.length > 0 && domainMatches(hostname, blockedDomains)) {
-            return Verdict.fail(expandMessage(messageTemplate, envelope));
+            return Verdict.fail(expandMessage(messageTemplate, envelope))
           }
           if (allowedDomains.length > 0 && !domainMatches(hostname, allowedDomains)) {
-            return Verdict.fail(expandMessage(messageTemplate, envelope));
+            return Verdict.fail(expandMessage(messageTemplate, envelope))
           }
         } else if (allowedDomains.length > 0) {
           // Fail-closed: URLs without extractable hostname (file://, data:, etc.)
           // cannot be verified against domain allowlist → deny
-          return Verdict.fail(expandMessage(messageTemplate, envelope));
+          return Verdict.fail(expandMessage(messageTemplate, envelope))
         }
       }
     }
 
-    return Verdict.pass_();
-  };
+    return Verdict.pass_()
+  }
 
   const result: Record<string, unknown> = {
     check,
     name: contractId,
     tool: toolPatterns.length === 1 ? toolPatterns[0] : undefined,
-    _edictum_type: "sandbox",
+    _edictum_type: 'sandbox',
     _edictum_tools: toolPatterns,
     _edictum_mode: mode,
     _edictum_id: contractId,
-    _edictum_source: "yaml_sandbox",
+    _edictum_source: 'yaml_sandbox',
     _edictum_effect: outside,
     _edictum_timeout: timeout,
     _edictum_timeout_effect: timeoutEffect,
-  };
+  }
 
   // Use _observe (TS) not _shadow (Python). Strict === true to prevent
   // truthy coercion of non-boolean values (e.g., strings, numbers).
   if (contract._observe === true || contract._shadow === true) {
-    result._edictum_observe = true;
+    result._edictum_observe = true
   }
 
-  return result;
+  return result
 }

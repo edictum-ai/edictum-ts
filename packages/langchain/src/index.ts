@@ -7,7 +7,7 @@
  * Integration point: wrapToolCall middleware for ToolNode.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto'
 
 import {
   type AuditAction,
@@ -27,9 +27,9 @@ import {
   Session,
   buildFindings,
   defaultSuccessCheck,
-} from "@edictum/core";
+} from '@edictum/core'
 
-export const VERSION = "0.1.0" as const;
+export const VERSION = '0.1.0' as const
 
 // ---------------------------------------------------------------------------
 // LangChain types (structural -- no framework import needed)
@@ -38,26 +38,23 @@ export const VERSION = "0.1.0" as const;
 /** Structural type for a LangChain tool call request. */
 export interface ToolCallRequest {
   readonly toolCall: {
-    readonly name: string;
-    readonly args: Record<string, unknown>;
-    readonly id: string;
-  };
+    readonly name: string
+    readonly args: Record<string, unknown>
+    readonly id: string
+  }
 }
 
 /** Handler function that executes the actual tool. */
-export type ToolCallHandler = (request: ToolCallRequest) => Promise<unknown>;
+export type ToolCallHandler = (request: ToolCallRequest) => Promise<unknown>
 
 // ---------------------------------------------------------------------------
 // LangChainAdapterOptions
 // ---------------------------------------------------------------------------
 
 export interface LangChainAdapterOptions {
-  readonly sessionId?: string;
-  readonly principal?: Principal;
-  readonly principalResolver?: (
-    toolName: string,
-    toolInput: Record<string, unknown>,
-  ) => Principal;
+  readonly sessionId?: string
+  readonly principal?: Principal
+  readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
 }
 
 // ---------------------------------------------------------------------------
@@ -65,10 +62,7 @@ export interface LangChainAdapterOptions {
 // ---------------------------------------------------------------------------
 
 export interface AsMiddlewareOptions {
-  readonly onPostconditionWarn?: (
-    result: unknown,
-    findings: Finding[],
-  ) => void;
+  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -76,10 +70,7 @@ export interface AsMiddlewareOptions {
 // ---------------------------------------------------------------------------
 
 export interface AsToolWrapperOptions {
-  readonly onPostconditionWarn?: (
-    result: unknown,
-    findings: Finding[],
-  ) => void;
+  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +78,7 @@ export interface AsToolWrapperOptions {
 // ---------------------------------------------------------------------------
 
 interface PendingCall {
-  readonly envelope: ReturnType<typeof createEnvelope>;
+  readonly envelope: ReturnType<typeof createEnvelope>
 }
 
 // ---------------------------------------------------------------------------
@@ -105,32 +96,32 @@ interface PendingCall {
  * 4. Handles observe mode (deny -> allow conversion)
  */
 export class LangChainAdapter {
-  private readonly _guard: Edictum;
-  private readonly _pipeline: GovernancePipeline;
-  private readonly _sessionId: string;
-  private readonly _session: Session;
-  private _callIndex: number = 0;
-  private readonly _pending: Map<string, PendingCall> = new Map();
-  private _principal: Principal | null;
+  private readonly _guard: Edictum
+  private readonly _pipeline: GovernancePipeline
+  private readonly _sessionId: string
+  private readonly _session: Session
+  private _callIndex: number = 0
+  private readonly _pending: Map<string, PendingCall> = new Map()
+  private _principal: Principal | null
   private readonly _principalResolver:
     | ((toolName: string, toolInput: Record<string, unknown>) => Principal)
-    | null;
+    | null
 
   constructor(guard: Edictum, options?: LangChainAdapterOptions) {
-    this._guard = guard;
-    this._pipeline = new GovernancePipeline(guard);
-    this._sessionId = options?.sessionId ?? randomUUID();
-    this._session = new Session(this._sessionId, guard.backend);
-    this._principal = options?.principal ?? null;
-    this._principalResolver = options?.principalResolver ?? null;
+    this._guard = guard
+    this._pipeline = new GovernancePipeline(guard)
+    this._sessionId = options?.sessionId ?? randomUUID()
+    this._session = new Session(this._sessionId, guard.backend)
+    this._principal = options?.principal ?? null
+    this._principalResolver = options?.principalResolver ?? null
   }
 
   get sessionId(): string {
-    return this._sessionId;
+    return this._sessionId
   }
 
   setPrincipal(principal: Principal): void {
-    this._principal = principal;
+    this._principal = principal
   }
 
   // -----------------------------------------------------------------------
@@ -142,9 +133,9 @@ export class LangChainAdapter {
     toolInput: Record<string, unknown>,
   ): Principal | null {
     if (this._principalResolver != null) {
-      return this._principalResolver(toolName, toolInput);
+      return this._principalResolver(toolName, toolInput)
     }
-    return this._principal;
+    return this._principal
   }
 
   // -----------------------------------------------------------------------
@@ -162,48 +153,42 @@ export class LangChainAdapter {
    * ```
    */
   asMiddleware(options?: AsMiddlewareOptions): {
-    name: string;
-    wrapToolCall: (
-      request: ToolCallRequest,
-      handler: ToolCallHandler,
-    ) => Promise<unknown>;
+    name: string
+    wrapToolCall: (request: ToolCallRequest, handler: ToolCallHandler) => Promise<unknown>
   } {
-    const onPostconditionWarn = options?.onPostconditionWarn ?? null;
+    const onPostconditionWarn = options?.onPostconditionWarn ?? null
 
     return {
-      name: "edictum",
+      name: 'edictum',
       wrapToolCall: async (
         request: ToolCallRequest,
         handler: ToolCallHandler,
       ): Promise<unknown> => {
-        const { name: toolName, args: toolArgs, id: callId } = request.toolCall;
+        const { name: toolName, args: toolArgs, id: callId } = request.toolCall
 
         // Pre-execution governance
-        const preResult = await this._pre(toolName, toolArgs, callId);
+        const preResult = await this._pre(toolName, toolArgs, callId)
         if (preResult != null) {
-          throw new EdictumDenied(preResult);
+          throw new EdictumDenied(preResult)
         }
 
         // Execute the tool
-        let result: unknown;
-        let toolSuccess = true;
+        let result: unknown
+        let toolSuccess = true
         try {
-          result = await handler(request);
+          result = await handler(request)
         } catch (err) {
-          result = String(err);
-          toolSuccess = false;
+          result = String(err)
+          toolSuccess = false
         }
 
         // Post-execution governance (always runs, even on tool failure)
-        const postResult = await this._post(callId, result);
+        const postResult = await this._post(callId, result)
 
         // Fire callback on postcondition failure
         if (!postResult.postconditionsPassed && onPostconditionWarn != null) {
           try {
-            onPostconditionWarn(
-              postResult.result,
-              [...postResult.findings],
-            );
+            onPostconditionWarn(postResult.result, [...postResult.findings])
           } catch {
             // on_postcondition_warn callback raised -- swallow
           }
@@ -211,12 +196,12 @@ export class LangChainAdapter {
 
         // Re-throw tool errors after recording the execution
         if (!toolSuccess) {
-          throw new Error(String(result));
+          throw new Error(String(result))
         }
 
-        return postResult.result;
+        return postResult.result
       },
-    };
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -237,51 +222,44 @@ export class LangChainAdapter {
    * const result = await governed("MyTool", { arg: "value" });
    * ```
    */
-  asToolWrapper(options?: AsToolWrapperOptions): (
+  asToolWrapper(
+    options?: AsToolWrapperOptions,
+  ): (
     toolCallable: (args: Record<string, unknown>) => unknown | Promise<unknown>,
-  ) => (
-    toolName: string,
-    toolInput: Record<string, unknown>,
-    callId?: string,
-  ) => Promise<unknown> {
-    const onPostconditionWarn = options?.onPostconditionWarn ?? null;
+  ) => (toolName: string, toolInput: Record<string, unknown>, callId?: string) => Promise<unknown> {
+    const onPostconditionWarn = options?.onPostconditionWarn ?? null
 
-    return (
-      toolCallable: (args: Record<string, unknown>) => unknown | Promise<unknown>,
-    ) => {
+    return (toolCallable: (args: Record<string, unknown>) => unknown | Promise<unknown>) => {
       return async (
         toolName: string,
         toolInput: Record<string, unknown>,
         callId?: string,
       ): Promise<unknown> => {
-        const resolvedCallId = callId ?? randomUUID();
+        const resolvedCallId = callId ?? randomUUID()
 
         // Pre-execution governance
-        const preResult = await this._pre(toolName, toolInput, resolvedCallId);
+        const preResult = await this._pre(toolName, toolInput, resolvedCallId)
         if (preResult != null) {
-          throw new EdictumDenied(preResult);
+          throw new EdictumDenied(preResult)
         }
 
         // Execute the tool
-        let result: unknown;
-        let toolSuccess = true;
+        let result: unknown
+        let toolSuccess = true
         try {
-          result = await toolCallable(toolInput);
+          result = await toolCallable(toolInput)
         } catch (err) {
-          result = String(err);
-          toolSuccess = false;
+          result = String(err)
+          toolSuccess = false
         }
 
         // Post-execution governance (always runs, even on tool failure)
-        const postResult = await this._post(resolvedCallId, result);
+        const postResult = await this._post(resolvedCallId, result)
 
         // Fire callback on postcondition failure
         if (!postResult.postconditionsPassed && onPostconditionWarn != null) {
           try {
-            onPostconditionWarn(
-              postResult.result,
-              [...postResult.findings],
-            );
+            onPostconditionWarn(postResult.result, [...postResult.findings])
           } catch {
             // on_postcondition_warn callback raised -- swallow
           }
@@ -289,12 +267,12 @@ export class LangChainAdapter {
 
         // Re-throw tool errors after recording the execution
         if (!toolSuccess) {
-          throw new Error(String(result));
+          throw new Error(String(result))
         }
 
-        return postResult.result;
-      };
-    };
+        return postResult.result
+      }
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -318,121 +296,105 @@ export class LangChainAdapter {
       environment: this._guard.environment,
       registry: this._guard.toolRegistry,
       principal: this._resolvePrincipal(toolName, toolInput),
-    });
-    this._callIndex += 1;
+    })
+    this._callIndex += 1
 
     // Increment attempts BEFORE governance
-    await this._session.incrementAttempts();
+    await this._session.incrementAttempts()
 
     // Run pipeline
-    const decision = await this._pipeline.preExecute(
-      envelope,
-      this._session,
-    );
+    const decision = await this._pipeline.preExecute(envelope, this._session)
 
     // Finding 1: Handle pending_approval
-    if (decision.action === "pending_approval") {
+    if (decision.action === 'pending_approval') {
       if (this._guard._approvalBackend == null) {
-        return `DENIED: Approval required but no approval backend configured: ${decision.reason}`;
+        return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
       }
 
       const principalDict = envelope.principal
         ? ({ ...envelope.principal } as Record<string, unknown>)
-        : null;
+        : null
 
-      const approvalRequest =
-        await this._guard._approvalBackend.requestApproval(
-          envelope.toolName,
-          envelope.args as Record<string, unknown>,
-          decision.approvalMessage ?? decision.reason ?? "",
-          {
-            timeout: decision.approvalTimeout,
-            timeoutEffect: decision.approvalTimeoutEffect,
-            principal: principalDict,
-          },
-        );
+      const approvalRequest = await this._guard._approvalBackend.requestApproval(
+        envelope.toolName,
+        envelope.args as Record<string, unknown>,
+        decision.approvalMessage ?? decision.reason ?? '',
+        {
+          timeout: decision.approvalTimeout,
+          timeoutEffect: decision.approvalTimeoutEffect,
+          principal: principalDict,
+        },
+      )
 
-      await this._emitAuditPre(
-        envelope,
-        decision,
-        AA.CALL_APPROVAL_REQUESTED,
-      );
+      await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_REQUESTED)
 
       const approvalDecision = await this._guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
         decision.approvalTimeout,
-      );
+      )
 
-      let approved = false;
+      let approved = false
       if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_TIMEOUT);
-        if (decision.approvalTimeoutEffect === "allow") {
-          approved = true;
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_TIMEOUT)
+        if (decision.approvalTimeoutEffect === 'allow') {
+          approved = true
         }
       } else if (!approvalDecision.approved) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_DENIED);
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_DENIED)
       } else {
-        approved = true;
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_GRANTED);
+        approved = true
+        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_GRANTED)
       }
 
       if (approved) {
         if (this._guard._onAllow) {
           try {
-            this._guard._onAllow(envelope);
+            this._guard._onAllow(envelope)
           } catch {
             // on_allow callback raised -- swallow
           }
         }
-        this._pending.set(callId, { envelope });
-        return null;
+        this._pending.set(callId, { envelope })
+        return null
       } else {
-        const denyReason = approvalDecision.reason ?? decision.reason ?? "";
+        const denyReason = approvalDecision.reason ?? decision.reason ?? ''
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(envelope, denyReason, decision.decisionName);
+            this._guard._onDeny(envelope, denyReason, decision.decisionName)
           } catch {
             // on_deny callback raised -- swallow
           }
         }
-        this._pending.delete(callId);
-        return `DENIED: ${denyReason}`;
+        this._pending.delete(callId)
+        return `DENIED: ${denyReason}`
       }
     }
 
     // Handle observe mode: convert deny to allow with warning
-    if (this._guard.mode === "observe" && decision.action === "deny") {
-      await this._emitAuditPre(
-        envelope,
-        decision,
-        AA.CALL_WOULD_DENY,
-      );
-      this._pending.set(callId, { envelope });
-      return null; // allow through
+    if (this._guard.mode === 'observe' && decision.action === 'deny') {
+      await this._emitAuditPre(envelope, decision, AA.CALL_WOULD_DENY)
+      this._pending.set(callId, { envelope })
+      return null // allow through
     }
 
     // Handle deny
-    if (decision.action === "deny") {
-      await this._emitAuditPre(envelope, decision);
+    if (decision.action === 'deny') {
+      await this._emitAuditPre(envelope, decision)
       if (this._guard._onDeny) {
         try {
-          this._guard._onDeny(
-            envelope,
-            decision.reason ?? "",
-            decision.decisionName,
-          );
+          this._guard._onDeny(envelope, decision.reason ?? '', decision.decisionName)
         } catch {
           // on_deny callback raised -- swallow
         }
       }
-      this._pending.delete(callId);
-      return `DENIED: ${decision.reason}`;
+      this._pending.delete(callId)
+      return `DENIED: ${decision.reason}`
     }
 
     // Handle per-contract observed denials
     if (decision.observed) {
       for (const cr of decision.contractsEvaluated) {
-        if (cr["observed"] && !cr["passed"]) {
+        if (cr['observed'] && !cr['passed']) {
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: AA.CALL_WOULD_DENY,
@@ -440,43 +402,39 @@ export class LangChainAdapter {
               callId: envelope.callId,
               callIndex: envelope.callIndex,
               toolName: envelope.toolName,
-              toolArgs: this._guard.redaction.redactArgs(
-                envelope.args,
-              ) as Record<string, unknown>,
+              toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
               sideEffect: envelope.sideEffect,
               environment: envelope.environment,
               principal: envelope.principal
                 ? ({ ...envelope.principal } as Record<string, unknown>)
                 : null,
-              decisionSource: "precondition",
-              decisionName: cr["name"] as string,
-              reason: cr["message"] as string | null,
-              mode: "observe",
+              decisionSource: 'precondition',
+              decisionName: cr['name'] as string,
+              reason: cr['message'] as string | null,
+              mode: 'observe',
               policyVersion: this._guard.policyVersion,
               policyError: decision.policyError,
             }),
-          );
+          )
         }
       }
     }
 
     // Handle allow
-    await this._emitAuditPre(envelope, decision);
+    await this._emitAuditPre(envelope, decision)
     if (this._guard._onAllow) {
       try {
-        this._guard._onAllow(envelope);
+        this._guard._onAllow(envelope)
       } catch {
         // on_allow callback raised -- swallow
       }
     }
-    this._pending.set(callId, { envelope });
+    this._pending.set(callId, { envelope })
 
     // Observe-mode audits — errors swallowed (must not block execution)
     for (const sr of decision.observeResults) {
       try {
-        const observeAction = sr["passed"]
-          ? AA.CALL_ALLOWED
-          : AA.CALL_WOULD_DENY;
+        const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
@@ -484,27 +442,25 @@ export class LangChainAdapter {
             callId: envelope.callId,
             callIndex: envelope.callIndex,
             toolName: envelope.toolName,
-            toolArgs: this._guard.redaction.redactArgs(
-              envelope.args,
-            ) as Record<string, unknown>,
+            toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
             sideEffect: envelope.sideEffect,
             environment: envelope.environment,
             principal: envelope.principal
               ? ({ ...envelope.principal } as Record<string, unknown>)
               : null,
-            decisionSource: sr["source"] as string | null,
-            decisionName: sr["name"] as string | null,
-            reason: sr["message"] as string | null,
-            mode: "observe",
+            decisionSource: sr['source'] as string | null,
+            decisionName: sr['name'] as string | null,
+            reason: sr['message'] as string | null,
+            mode: 'observe',
             policyVersion: this._guard.policyVersion,
           }),
-        );
+        )
       } catch {
         // Observe audit errors must not block tool execution — continue with remaining
       }
     }
 
-    return null;
+    return null
   }
 
   // -----------------------------------------------------------------------
@@ -516,44 +472,30 @@ export class LangChainAdapter {
    *
    * Exposed for direct testing without framework imports.
    */
-  async _post(
-    callId: string,
-    toolResponse: unknown = undefined,
-  ): Promise<PostCallResult> {
-    const pending = this._pending.get(callId);
-    this._pending.delete(callId);
+  async _post(callId: string, toolResponse: unknown = undefined): Promise<PostCallResult> {
+    const pending = this._pending.get(callId)
+    this._pending.delete(callId)
 
     if (!pending) {
-      return createPostCallResult({ result: toolResponse });
+      return createPostCallResult({ result: toolResponse })
     }
 
-    const { envelope } = pending;
+    const { envelope } = pending
 
     // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(
-      envelope.toolName,
-      toolResponse,
-    );
+    const toolSuccess = this._checkToolSuccess(envelope.toolName, toolResponse)
 
     // Run pipeline
-    const postDecision = await this._pipeline.postExecute(
-      envelope,
-      toolResponse,
-      toolSuccess,
-    );
+    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
 
     const effectiveResponse =
-      postDecision.redactedResponse != null
-        ? postDecision.redactedResponse
-        : toolResponse;
+      postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
     // Record in session
-    await this._session.recordExecution(envelope.toolName, toolSuccess);
+    await this._session.recordExecution(envelope.toolName, toolSuccess)
 
     // Emit audit
-    const action: AuditAction = toolSuccess
-      ? AA.CALL_EXECUTED
-      : AA.CALL_FAILED;
+    const action: AuditAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
@@ -561,9 +503,7 @@ export class LangChainAdapter {
         callId: envelope.callId,
         callIndex: envelope.callIndex,
         toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(
-          envelope.args,
-        ) as Record<string, unknown>,
+        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
         sideEffect: envelope.sideEffect,
         environment: envelope.environment,
         principal: envelope.principal
@@ -578,15 +518,15 @@ export class LangChainAdapter {
         policyVersion: this._guard.policyVersion,
         policyError: postDecision.policyError,
       }),
-    );
+    )
 
-    const findings = buildFindings(postDecision as unknown as PostDecisionLike);
+    const findings = buildFindings(postDecision as unknown as PostDecisionLike)
     return createPostCallResult({
       result: effectiveResponse,
       postconditionsPassed: postDecision.postconditionsPassed,
       findings,
       outputSuppressed: postDecision.outputSuppressed,
-    });
+    })
   }
 
   // -----------------------------------------------------------------------
@@ -599,8 +539,7 @@ export class LangChainAdapter {
     auditAction?: AuditAction,
   ): Promise<void> {
     const action: AuditAction =
-      auditAction ??
-      (decision.action === "deny" ? AA.CALL_DENIED : AA.CALL_ALLOWED);
+      auditAction ?? (decision.action === 'deny' ? AA.CALL_DENIED : AA.CALL_ALLOWED)
 
     await this._guard.auditSink.emit(
       createAuditEvent({
@@ -609,9 +548,7 @@ export class LangChainAdapter {
         callId: envelope.callId,
         callIndex: envelope.callIndex,
         toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(
-          envelope.args,
-        ) as Record<string, unknown>,
+        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
         sideEffect: envelope.sideEffect,
         environment: envelope.environment,
         principal: envelope.principal
@@ -628,20 +565,17 @@ export class LangChainAdapter {
         policyVersion: this._guard.policyVersion,
         policyError: decision.policyError,
       }),
-    );
+    )
   }
 
   // -----------------------------------------------------------------------
   // Tool success detection
   // -----------------------------------------------------------------------
 
-  private _checkToolSuccess(
-    toolName: string,
-    toolResponse: unknown,
-  ): boolean {
+  private _checkToolSuccess(toolName: string, toolResponse: unknown): boolean {
     if (this._guard._successCheck != null) {
-      return this._guard._successCheck(toolName, toolResponse);
+      return this._guard._successCheck(toolName, toolResponse)
     }
-    return defaultSuccessCheck(toolName, toolResponse);
+    return defaultSuccessCheck(toolName, toolResponse)
   }
 }

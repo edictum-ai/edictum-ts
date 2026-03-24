@@ -11,6 +11,8 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "husky"
   },
   "pnpm": {
@@ -23,6 +25,7 @@
   "devDependencies": {
     "eslint": "^9.39.4",
     "husky": "^9.1.7",
+    "prettier": "^3.8.1",
     "typescript-eslint": "^8.57.0"
   }
 }

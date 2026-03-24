@@ -1,10 +1,10 @@
 /** End-to-end integration tests for YAML contract engine — ports Python test_integration.py. */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from 'vitest'
 
-import { Edictum } from "../../src/guard.js";
-import { EdictumDenied } from "../../src/errors.js";
-import { NullAuditSink } from "../helpers.js";
+import { Edictum } from '../../src/guard.js'
+import { EdictumDenied } from '../../src/errors.js'
+import { NullAuditSink } from '../helpers.js'
 
 // ---------------------------------------------------------------------------
 // YAML fixtures
@@ -46,7 +46,7 @@ contracts:
     then:
       effect: deny
       message: "Session limit exceeded."
-`;
+`
 
 const BASIC_PRE_BUNDLE = `
 apiVersion: edictum/v1
@@ -76,7 +76,7 @@ contracts:
       effect: deny
       message: "Destructive command denied."
       tags: [safety]
-`;
+`
 
 const POST_BUNDLE = `
 apiVersion: edictum/v1
@@ -96,7 +96,7 @@ contracts:
       effect: warn
       message: "PII detected."
       tags: [pii]
-`;
+`
 
 const OBSERVE_BUNDLE = `
 apiVersion: edictum/v1
@@ -117,7 +117,7 @@ contracts:
       effect: deny
       message: "Would deny rm."
       tags: [safety]
-`;
+`
 
 const MIXED_BUNDLE = `
 apiVersion: edictum/v1
@@ -147,240 +147,244 @@ contracts:
       effect: warn
       message: "PII detected."
       tags: [pii]
-`;
+`
 
 // ---------------------------------------------------------------------------
 // fromYamlString — Guard creation
 // ---------------------------------------------------------------------------
 
-describe("FromYamlString", () => {
-  test("creates guard", () => {
-    const guard = Edictum.fromYamlString(VALID_BUNDLE);
-    expect(guard).toBeInstanceOf(Edictum);
-    expect(guard.mode).toBe("enforce");
-  });
+describe('FromYamlString', () => {
+  test('creates guard', () => {
+    const guard = Edictum.fromYamlString(VALID_BUNDLE)
+    expect(guard).toBeInstanceOf(Edictum)
+    expect(guard.mode).toBe('enforce')
+  })
 
-  test("policy version is SHA256 hex", () => {
-    const guard = Edictum.fromYamlString(VALID_BUNDLE);
-    expect(guard.policyVersion).not.toBeNull();
-    expect(guard.policyVersion!.length).toBe(64);
-    expect(/^[a-f0-9]{64}$/.test(guard.policyVersion!)).toBe(true);
-  });
+  test('policy version is SHA256 hex', () => {
+    const guard = Edictum.fromYamlString(VALID_BUNDLE)
+    expect(guard.policyVersion).not.toBeNull()
+    expect(guard.policyVersion!.length).toBe(64)
+    expect(/^[a-f0-9]{64}$/.test(guard.policyVersion!)).toBe(true)
+  })
 
-  test("mode override", () => {
-    const guard = Edictum.fromYamlString(VALID_BUNDLE, { mode: "observe" });
-    expect(guard.mode).toBe("observe");
-  });
+  test('mode override', () => {
+    const guard = Edictum.fromYamlString(VALID_BUNDLE, { mode: 'observe' })
+    expect(guard.mode).toBe('observe')
+  })
 
-  test("limits from YAML", () => {
-    const guard = Edictum.fromYamlString(VALID_BUNDLE);
-    expect(guard.limits.maxToolCalls).toBe(50);
-    expect(guard.limits.maxAttempts).toBe(120);
-  });
-});
+  test('limits from YAML', () => {
+    const guard = Edictum.fromYamlString(VALID_BUNDLE)
+    expect(guard.limits.maxToolCalls).toBe(50)
+    expect(guard.limits.maxAttempts).toBe(120)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // End-to-end: run() with YAML contracts
 // ---------------------------------------------------------------------------
 
-describe("EndToEndRun", () => {
-  test("yaml precondition denies", async () => {
+describe('EndToEndRun', () => {
+  test('yaml precondition denies', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     await expect(
-      guard.run("read_file", { path: "/home/.env" }, async () => "contents"),
-    ).rejects.toThrow(EdictumDenied);
-  });
+      guard.run('read_file', { path: '/home/.env' }, async () => 'contents'),
+    ).rejects.toThrow(EdictumDenied)
+  })
 
-  test("yaml precondition allows", async () => {
+  test('yaml precondition allows', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     const result = await guard.run(
-      "read_file",
-      { path: "/home/readme.md" },
-      async () => "readme contents",
-    );
-    expect(result).toBe("readme contents");
-  });
+      'read_file',
+      { path: '/home/readme.md' },
+      async () => 'readme contents',
+    )
+    expect(result).toBe('readme contents')
+  })
 
-  test("non-matching tool passes", async () => {
+  test('non-matching tool passes', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     const result = await guard.run(
-      "write_file",
-      { path: ".env", content: "test" },
-      async () => "ok",
-    );
-    expect(result).toBe("ok");
-  });
-});
+      'write_file',
+      { path: '.env', content: 'test' },
+      async () => 'ok',
+    )
+    expect(result).toBe('ok')
+  })
+})
 
 // ---------------------------------------------------------------------------
 // evaluate() with YAML contracts
 // ---------------------------------------------------------------------------
 
-describe("Evaluate", () => {
-  test("no matching contracts returns allow", async () => {
+describe('Evaluate', () => {
+  test('no matching contracts returns allow', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("send_email", { to: "x" });
-    expect(result.verdict).toBe("allow");
-    expect(result.contractsEvaluated).toBe(0);
-  });
+    })
+    const result = await guard.evaluate('send_email', { to: 'x' })
+    expect(result.verdict).toBe('allow')
+    expect(result.contractsEvaluated).toBe(0)
+  })
 
-  test("precondition denies", async () => {
+  test('precondition denies', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("read_file", { path: "/app/.env" });
-    expect(result.verdict).toBe("deny");
-    expect(result.denyReasons.length).toBeGreaterThanOrEqual(1);
-    expect(result.contracts[0]!.contractId).toBe("block-env-reads");
-  });
+    })
+    const result = await guard.evaluate('read_file', { path: '/app/.env' })
+    expect(result.verdict).toBe('deny')
+    expect(result.denyReasons.length).toBeGreaterThanOrEqual(1)
+    expect(result.contracts[0]!.contractId).toBe('block-env-reads')
+  })
 
-  test("precondition passes", async () => {
+  test('precondition passes', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("read_file", { path: "README.md" });
-    expect(result.verdict).toBe("allow");
-  });
+    })
+    const result = await guard.evaluate('read_file', { path: 'README.md' })
+    expect(result.verdict).toBe('allow')
+  })
 
-  test("postcondition warns with output", async () => {
+  test('postcondition warns with output', async () => {
     const guard = Edictum.fromYamlString(POST_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("read_file", { path: "x" }, {
-      output: "SSN: 123-45-6789",
-    });
-    expect(result.verdict).toBe("warn");
-    expect(result.warnReasons.length).toBeGreaterThanOrEqual(1);
-  });
+    })
+    const result = await guard.evaluate(
+      'read_file',
+      { path: 'x' },
+      {
+        output: 'SSN: 123-45-6789',
+      },
+    )
+    expect(result.verdict).toBe('warn')
+    expect(result.warnReasons.length).toBeGreaterThanOrEqual(1)
+  })
 
-  test("postcondition skipped without output", async () => {
+  test('postcondition skipped without output', async () => {
     const guard = Edictum.fromYamlString(POST_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("read_file", { path: "x" });
-    expect(result.contractsEvaluated).toBe(0);
-    expect(result.verdict).toBe("allow");
-  });
+    })
+    const result = await guard.evaluate('read_file', { path: 'x' })
+    expect(result.contractsEvaluated).toBe(0)
+    expect(result.verdict).toBe('allow')
+  })
 
-  test("mixed deny and warn", async () => {
+  test('mixed deny and warn', async () => {
     const guard = Edictum.fromYamlString(MIXED_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("read_file", { path: ".env" }, {
-      output: "SSN: 123-45-6789",
-    });
-    expect(result.verdict).toBe("deny");
-    expect(result.denyReasons.length).toBeGreaterThanOrEqual(1);
-    expect(result.warnReasons.length).toBeGreaterThanOrEqual(1);
-  });
+    })
+    const result = await guard.evaluate(
+      'read_file',
+      { path: '.env' },
+      {
+        output: 'SSN: 123-45-6789',
+      },
+    )
+    expect(result.verdict).toBe('deny')
+    expect(result.denyReasons.length).toBeGreaterThanOrEqual(1)
+    expect(result.warnReasons.length).toBeGreaterThanOrEqual(1)
+  })
 
-  test("bash regex match", async () => {
+  test('bash regex match', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("bash", { command: "rm -rf /tmp" });
-    expect(result.verdict).toBe("deny");
-    expect(result.contracts[0]!.contractId).toBe("bash-safety");
-  });
+    })
+    const result = await guard.evaluate('bash', { command: 'rm -rf /tmp' })
+    expect(result.verdict).toBe('deny')
+    expect(result.contracts[0]!.contractId).toBe('bash-safety')
+  })
 
-  test("bash regex no match", async () => {
+  test('bash regex no match', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("bash", { command: "ls -la" });
-    expect(result.verdict).toBe("allow");
-  });
-});
+    })
+    const result = await guard.evaluate('bash', { command: 'ls -la' })
+    expect(result.verdict).toBe('allow')
+  })
+})
 
 // ---------------------------------------------------------------------------
 // evaluateBatch()
 // ---------------------------------------------------------------------------
 
-describe("EvaluateBatch", () => {
-  test("batch correct length", async () => {
+describe('EvaluateBatch', () => {
+  test('batch correct length', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     const results = await guard.evaluateBatch([
-      { tool: "read_file", args: { path: "a.txt" } },
-      { tool: "read_file", args: { path: "b.txt" } },
-      { tool: "bash", args: { command: "echo hi" } },
-    ]);
-    expect(results.length).toBe(3);
-  });
+      { tool: 'read_file', args: { path: 'a.txt' } },
+      { tool: 'read_file', args: { path: 'b.txt' } },
+      { tool: 'bash', args: { command: 'echo hi' } },
+    ])
+    expect(results.length).toBe(3)
+  })
 
-  test("batch mixed results", async () => {
+  test('batch mixed results', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     const results = await guard.evaluateBatch([
-      { tool: "read_file", args: { path: "/app/.env" } },
-      { tool: "read_file", args: { path: "README.md" } },
-    ]);
-    expect(results[0]!.verdict).toBe("deny");
-    expect(results[1]!.verdict).toBe("allow");
-  });
+      { tool: 'read_file', args: { path: '/app/.env' } },
+      { tool: 'read_file', args: { path: 'README.md' } },
+    ])
+    expect(results[0]!.verdict).toBe('deny')
+    expect(results[1]!.verdict).toBe('allow')
+  })
 
-  test("batch empty list", async () => {
+  test('batch empty list', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const results = await guard.evaluateBatch([]);
-    expect(results).toEqual([]);
-  });
-});
+    })
+    const results = await guard.evaluateBatch([])
+    expect(results).toEqual([])
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Observe mode
 // ---------------------------------------------------------------------------
 
-describe("ObserveMode", () => {
-  test("observe mode contract does not block", async () => {
+describe('ObserveMode', () => {
+  test('observe mode contract does not block', async () => {
     const guard = Edictum.fromYamlString(OBSERVE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     // Should NOT raise even though the contract matches
-    const result = await guard.run(
-      "bash",
-      { command: "rm file" },
-      async () => "done",
-    );
-    expect(result).toBe("done");
-  });
+    const result = await guard.run('bash', { command: 'rm file' }, async () => 'done')
+    expect(result).toBe('done')
+  })
 
-  test("observe mode in evaluate returns observed flag", async () => {
+  test('observe mode in evaluate returns observed flag', async () => {
     const guard = Edictum.fromYamlString(OBSERVE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
-    const result = await guard.evaluate("bash", { command: "rm file" });
-    expect(result.verdict).toBe("allow");
-    expect(result.contracts.length).toBe(1);
-    expect(result.contracts[0]!.observed).toBe(true);
-    expect(result.contracts[0]!.passed).toBe(false);
-  });
-});
+    })
+    const result = await guard.evaluate('bash', { command: 'rm file' })
+    expect(result.verdict).toBe('allow')
+    expect(result.contracts.length).toBe(1)
+    expect(result.contracts[0]!.observed).toBe(true)
+    expect(result.contracts[0]!.passed).toBe(false)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // reload()
 // ---------------------------------------------------------------------------
 
-describe("Reload", () => {
-  test("reload atomically replaces contracts", async () => {
+describe('Reload', () => {
+  test('reload atomically replaces contracts', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
 
     // Before reload: .env is denied
-    const before = await guard.evaluate("read_file", { path: ".env" });
-    expect(before.verdict).toBe("deny");
+    const before = await guard.evaluate('read_file', { path: '.env' })
+    expect(before.verdict).toBe('deny')
 
     // Reload with a bundle that has no pre contracts for read_file
     const newBundle = `
@@ -400,21 +404,21 @@ contracts:
     then:
       effect: deny
       message: "No rm."
-`;
-    guard.reload(newBundle);
+`
+    guard.reload(newBundle)
 
     // After reload: .env is allowed (no matching contract for read_file)
-    const after = await guard.evaluate("read_file", { path: ".env" });
-    expect(after.verdict).toBe("allow");
+    const after = await guard.evaluate('read_file', { path: '.env' })
+    expect(after.verdict).toBe('allow')
 
     // New contract is active
-    const bash = await guard.evaluate("bash", { command: "rm -rf /" });
-    expect(bash.verdict).toBe("deny");
-  });
+    const bash = await guard.evaluate('bash', { command: 'rm -rf /' })
+    expect(bash.verdict).toBe('deny')
+  })
 
-  test("reload updates policy version", () => {
-    const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE);
-    const oldVersion = guard.policyVersion;
+  test('reload updates policy version', () => {
+    const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE)
+    const oldVersion = guard.policyVersion
 
     const newBundle = `
 apiVersion: edictum/v1
@@ -424,16 +428,16 @@ metadata:
 defaults:
   mode: enforce
 contracts: []
-`;
-    guard.reload(newBundle);
-    expect(guard.policyVersion).not.toBe(oldVersion);
-  });
+`
+    guard.reload(newBundle)
+    expect(guard.policyVersion).not.toBe(oldVersion)
+  })
 
-  test("reload passes custom operators", () => {
+  test('reload passes custom operators', () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
       customOperators: { is_even: (v) => (v as number) % 2 === 0 },
-    });
+    })
 
     const newBundle = `
 apiVersion: edictum/v1
@@ -452,37 +456,37 @@ contracts:
     then:
       effect: deny
       message: "Even count denied."
-`;
+`
     // Should not throw when custom operator is provided to reload
     expect(() =>
       guard.reload(newBundle, {
         customOperators: { is_even: (v) => (v as number) % 2 === 0 },
       }),
-    ).not.toThrow();
-  });
-});
+    ).not.toThrow()
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Security: adversarial integration tests
 // ---------------------------------------------------------------------------
 
-describe("security", () => {
-  test("fromYaml returnReport returns tuple", () => {
-    const { writeFileSync, mkdtempSync } = require("node:fs");
-    const { join } = require("node:path");
-    const { tmpdir } = require("node:os");
-    const dir = mkdtempSync(join(tmpdir(), "edictum-sec-"));
-    const filePath = join(dir, "bundle.yaml");
-    writeFileSync(filePath, BASIC_PRE_BUNDLE, "utf-8");
+describe('security', () => {
+  test('fromYaml returnReport returns tuple', () => {
+    const { writeFileSync, mkdtempSync } = require('node:fs')
+    const { join } = require('node:path')
+    const { tmpdir } = require('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'edictum-sec-'))
+    const filePath = join(dir, 'bundle.yaml')
+    writeFileSync(filePath, BASIC_PRE_BUNDLE, 'utf-8')
 
-    const result = Edictum.fromYaml(filePath, { returnReport: true });
-    expect(Array.isArray(result)).toBe(true);
-    const [guard, report] = result as [Edictum, unknown];
-    expect(guard).toBeInstanceOf(Edictum);
-    expect(report).toBeDefined();
-  });
+    const result = Edictum.fromYaml(filePath, { returnReport: true })
+    expect(Array.isArray(result)).toBe(true)
+    const [guard, report] = result as [Edictum, unknown]
+    expect(guard).toBeInstanceOf(Edictum)
+    expect(report).toBeDefined()
+  })
 
-  test("YAML without defaults section throws config error", () => {
+  test('YAML without defaults section throws config error', () => {
     const badBundle = `
 apiVersion: edictum/v1
 kind: ContractBundle
@@ -497,22 +501,22 @@ contracts:
     then:
       effect: deny
       message: "denied"
-`;
-    expect(() => Edictum.fromYamlString(badBundle)).toThrow();
-  });
+`
+    expect(() => Edictum.fromYamlString(badBundle)).toThrow()
+  })
 
-  test("deny verdict propagates end-to-end through run()", async () => {
+  test('deny verdict propagates end-to-end through run()', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
-    });
+    })
     // Verify deny is never silently converted to allow
-    let toolExecuted = false;
+    let toolExecuted = false
     await expect(
-      guard.run("read_file", { path: ".env" }, async () => {
-        toolExecuted = true;
-        return "should not reach";
+      guard.run('read_file', { path: '.env' }, async () => {
+        toolExecuted = true
+        return 'should not reach'
       }),
-    ).rejects.toThrow(EdictumDenied);
-    expect(toolExecuted).toBe(false);
-  });
-});
+    ).rejects.toThrow(EdictumDenied)
+    expect(toolExecuted).toBe(false)
+  })
+})

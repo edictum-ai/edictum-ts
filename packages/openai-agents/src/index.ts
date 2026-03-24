@@ -13,7 +13,7 @@
  * Postcondition effect=deny is enforced natively via tripwireTriggered.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto'
 
 import {
   ApprovalStatus,
@@ -32,9 +32,9 @@ import {
   type Finding,
   type PreDecision,
   type PostDecisionLike,
-} from "@edictum/core";
+} from '@edictum/core'
 
-export const VERSION = "0.1.0" as const;
+export const VERSION = '0.1.0' as const
 
 // ---------------------------------------------------------------------------
 // InputGuardrail / OutputGuardrail types (structural, no SDK import needed)
@@ -42,20 +42,20 @@ export const VERSION = "0.1.0" as const;
 
 /** Structural type matching @openai/agents InputGuardrail. */
 export interface InputGuardrail {
-  readonly name: string;
+  readonly name: string
   readonly execute: (ctx: { input: unknown }) => Promise<{
-    tripwireTriggered: boolean;
-    outputInfo?: unknown;
-  }>;
+    tripwireTriggered: boolean
+    outputInfo?: unknown
+  }>
 }
 
 /** Structural type matching @openai/agents OutputGuardrail. */
 export interface OutputGuardrail {
-  readonly name: string;
+  readonly name: string
   readonly execute: (ctx: { agentOutput: unknown }) => Promise<{
-    tripwireTriggered: boolean;
-    outputInfo?: unknown;
-  }>;
+    tripwireTriggered: boolean
+    outputInfo?: unknown
+  }>
 }
 
 // ---------------------------------------------------------------------------
@@ -63,12 +63,9 @@ export interface OutputGuardrail {
 // ---------------------------------------------------------------------------
 
 export interface OpenAIAgentsAdapterOptions {
-  readonly sessionId?: string;
-  readonly principal?: Principal;
-  readonly principalResolver?: (
-    toolName: string,
-    toolInput: Record<string, unknown>,
-  ) => Principal;
+  readonly sessionId?: string
+  readonly principal?: Principal
+  readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +73,7 @@ export interface OpenAIAgentsAdapterOptions {
 // ---------------------------------------------------------------------------
 
 export interface AsGuardrailsOptions {
-  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void;
+  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -84,38 +81,36 @@ export interface AsGuardrailsOptions {
 // ---------------------------------------------------------------------------
 
 export class OpenAIAgentsAdapter {
-  private readonly _guard: Edictum;
-  private readonly _pipeline: GovernancePipeline;
-  private readonly _sessionId: string;
-  private readonly _session: Session;
-  private _callIndex: number;
-  private readonly _pending: Map<string, { envelope: Readonly<ToolEnvelope> }>;
-  private _principal: Principal | null;
+  private readonly _guard: Edictum
+  private readonly _pipeline: GovernancePipeline
+  private readonly _sessionId: string
+  private readonly _session: Session
+  private _callIndex: number
+  private readonly _pending: Map<string, { envelope: Readonly<ToolEnvelope> }>
+  private _principal: Principal | null
   private readonly _principalResolver:
     | ((toolName: string, toolInput: Record<string, unknown>) => Principal)
-    | null;
-  private _onPostconditionWarn:
-    | ((result: unknown, findings: Finding[]) => void)
-    | null;
+    | null
+  private _onPostconditionWarn: ((result: unknown, findings: Finding[]) => void) | null
 
   constructor(guard: Edictum, options?: OpenAIAgentsAdapterOptions) {
-    this._guard = guard;
-    this._pipeline = new GovernancePipeline(guard);
-    this._sessionId = options?.sessionId ?? randomUUID();
-    this._session = new Session(this._sessionId, guard.backend);
-    this._callIndex = 0;
-    this._pending = new Map();
-    this._principal = options?.principal ?? null;
-    this._principalResolver = options?.principalResolver ?? null;
-    this._onPostconditionWarn = null;
+    this._guard = guard
+    this._pipeline = new GovernancePipeline(guard)
+    this._sessionId = options?.sessionId ?? randomUUID()
+    this._session = new Session(this._sessionId, guard.backend)
+    this._callIndex = 0
+    this._pending = new Map()
+    this._principal = options?.principal ?? null
+    this._principalResolver = options?.principalResolver ?? null
+    this._onPostconditionWarn = null
   }
 
   get sessionId(): string {
-    return this._sessionId;
+    return this._sessionId
   }
 
   setPrincipal(principal: Principal): void {
-    this._principal = principal;
+    this._principal = principal
   }
 
   // -----------------------------------------------------------------------
@@ -127,9 +122,9 @@ export class OpenAIAgentsAdapter {
     toolInput: Record<string, unknown>,
   ): Principal | null {
     if (this._principalResolver != null) {
-      return this._principalResolver(toolName, toolInput);
+      return this._principalResolver(toolName, toolInput)
     }
-    return this._principal;
+    return this._principal
   }
 
   // -----------------------------------------------------------------------
@@ -137,51 +132,47 @@ export class OpenAIAgentsAdapter {
   // -----------------------------------------------------------------------
 
   asGuardrails(options?: AsGuardrailsOptions): {
-    inputGuardrail: InputGuardrail;
-    outputGuardrail: OutputGuardrail;
+    inputGuardrail: InputGuardrail
+    outputGuardrail: OutputGuardrail
   } {
-    this._onPostconditionWarn = options?.onPostconditionWarn ?? null;
+    this._onPostconditionWarn = options?.onPostconditionWarn ?? null
 
     const inputGuardrail: InputGuardrail = {
-      name: "edictum_input_guardrail",
+      name: 'edictum_input_guardrail',
       execute: async ({ input }) => {
         // Parse input: expect { toolName, toolInput, callId } or similar
-        const parsed = this._parseInput(input);
-        const result = await this._pre(
-          parsed.toolName,
-          parsed.toolInput,
-          parsed.callId,
-        );
+        const parsed = this._parseInput(input)
+        const result = await this._pre(parsed.toolName, parsed.toolInput, parsed.callId)
         if (result != null) {
-          return { tripwireTriggered: true, outputInfo: result };
+          return { tripwireTriggered: true, outputInfo: result }
         }
-        return { tripwireTriggered: false };
+        return { tripwireTriggered: false }
       },
-    };
+    }
 
     const outputGuardrail: OutputGuardrail = {
-      name: "edictum_output_guardrail",
+      name: 'edictum_output_guardrail',
       execute: async ({ agentOutput }) => {
         // Preserve structured output for postcondition/success inspection
-        const toolOutput = agentOutput ?? "";
+        const toolOutput = agentOutput ?? ''
 
         // Try FIFO correlation (insertion-order) for sequential execution
         if (this._pending.size > 0) {
-          const callId = this._pending.keys().next().value as string;
-          const postResult = await this._post(callId, toolOutput);
+          const callId = this._pending.keys().next().value as string
+          const postResult = await this._post(callId, toolOutput)
           if (postResult.outputSuppressed) {
             return {
               tripwireTriggered: true,
               outputInfo: String(postResult.result),
-            };
+            }
           }
         }
 
-        return { tripwireTriggered: false };
+        return { tripwireTriggered: false }
       },
-    };
+    }
 
-    return { inputGuardrail, outputGuardrail };
+    return { inputGuardrail, outputGuardrail }
   }
 
   // -----------------------------------------------------------------------
@@ -189,23 +180,22 @@ export class OpenAIAgentsAdapter {
   // -----------------------------------------------------------------------
 
   private _parseInput(input: unknown): {
-    toolName: string;
-    toolInput: Record<string, unknown>;
-    callId: string;
+    toolName: string
+    toolInput: Record<string, unknown>
+    callId: string
   } {
-    if (input != null && typeof input === "object") {
-      const obj = input as Record<string, unknown>;
+    if (input != null && typeof input === 'object') {
+      const obj = input as Record<string, unknown>
       return {
-        toolName: typeof obj["toolName"] === "string" ? obj["toolName"] : "unknown",
+        toolName: typeof obj['toolName'] === 'string' ? obj['toolName'] : 'unknown',
         toolInput:
-          typeof obj["toolInput"] === "object" && obj["toolInput"] != null
-            ? (obj["toolInput"] as Record<string, unknown>)
+          typeof obj['toolInput'] === 'object' && obj['toolInput'] != null
+            ? (obj['toolInput'] as Record<string, unknown>)
             : {},
-        callId:
-          typeof obj["callId"] === "string" ? obj["callId"] : randomUUID(),
-      };
+        callId: typeof obj['callId'] === 'string' ? obj['callId'] : randomUUID(),
+      }
     }
-    return { toolName: "unknown", toolInput: {}, callId: randomUUID() };
+    return { toolName: 'unknown', toolInput: {}, callId: randomUUID() }
   }
 
   // -----------------------------------------------------------------------
@@ -229,122 +219,106 @@ export class OpenAIAgentsAdapter {
       environment: this._guard.environment,
       registry: this._guard.toolRegistry,
       principal: this._resolvePrincipal(toolName, toolInput),
-    });
-    this._callIndex += 1;
+    })
+    this._callIndex += 1
 
     // Increment attempts BEFORE governance
-    await this._session.incrementAttempts();
+    await this._session.incrementAttempts()
 
     try {
       // Run pipeline
-      const decision = await this._pipeline.preExecute(
-        envelope,
-        this._session,
-      );
+      const decision = await this._pipeline.preExecute(envelope, this._session)
 
       // Finding 1: Handle pending_approval
-      if (decision.action === "pending_approval") {
+      if (decision.action === 'pending_approval') {
         if (this._guard._approvalBackend == null) {
-          return `DENIED: Approval required but no approval backend configured: ${decision.reason}`;
+          return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
         }
 
         const principalDict = envelope.principal
           ? ({ ...envelope.principal } as Record<string, unknown>)
-          : null;
+          : null
 
-        const approvalRequest =
-          await this._guard._approvalBackend.requestApproval(
-            envelope.toolName,
-            envelope.args as Record<string, unknown>,
-            decision.approvalMessage ?? decision.reason ?? "",
-            {
-              timeout: decision.approvalTimeout,
-              timeoutEffect: decision.approvalTimeoutEffect,
-              principal: principalDict,
-            },
-          );
+        const approvalRequest = await this._guard._approvalBackend.requestApproval(
+          envelope.toolName,
+          envelope.args as Record<string, unknown>,
+          decision.approvalMessage ?? decision.reason ?? '',
+          {
+            timeout: decision.approvalTimeout,
+            timeoutEffect: decision.approvalTimeoutEffect,
+            principal: principalDict,
+          },
+        )
 
-        await this._emitAuditPre(
-          envelope,
-          decision,
-          AuditAction.CALL_APPROVAL_REQUESTED,
-        );
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_REQUESTED)
 
         const approvalDecision = await this._guard._approvalBackend.waitForDecision(
           approvalRequest.approvalId,
           decision.approvalTimeout,
-        );
+        )
 
-        let approved = false;
+        let approved = false
         if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT);
-          if (decision.approvalTimeoutEffect === "allow") {
-            approved = true;
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT)
+          if (decision.approvalTimeoutEffect === 'allow') {
+            approved = true
           }
         } else if (!approvalDecision.approved) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED);
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED)
         } else {
-          approved = true;
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED);
+          approved = true
+          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED)
         }
 
         if (approved) {
           if (this._guard._onAllow) {
             try {
-              this._guard._onAllow(envelope);
+              this._guard._onAllow(envelope)
             } catch {
               // on_allow callback raised — swallow
             }
           }
-          this._pending.set(callId, { envelope });
-          return null;
+          this._pending.set(callId, { envelope })
+          return null
         } else {
-          const denyReason = approvalDecision.reason ?? decision.reason ?? "";
+          const denyReason = approvalDecision.reason ?? decision.reason ?? ''
           if (this._guard._onDeny) {
             try {
-              this._guard._onDeny(envelope, denyReason, decision.decisionName);
+              this._guard._onDeny(envelope, denyReason, decision.decisionName)
             } catch {
               // on_deny callback raised — swallow
             }
           }
-          this._pending.delete(callId);
-          return `DENIED: ${denyReason}`;
+          this._pending.delete(callId)
+          return `DENIED: ${denyReason}`
         }
       }
 
       // Handle observe mode: convert deny to allow with warning
-      if (this._guard.mode === "observe" && decision.action === "deny") {
-        await this._emitAuditPre(
-          envelope,
-          decision,
-          AuditAction.CALL_WOULD_DENY,
-        );
-        this._pending.set(callId, { envelope });
-        return null; // allow through
+      if (this._guard.mode === 'observe' && decision.action === 'deny') {
+        await this._emitAuditPre(envelope, decision, AuditAction.CALL_WOULD_DENY)
+        this._pending.set(callId, { envelope })
+        return null // allow through
       }
 
       // Handle deny
-      if (decision.action === "deny") {
-        await this._emitAuditPre(envelope, decision);
+      if (decision.action === 'deny') {
+        await this._emitAuditPre(envelope, decision)
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(
-              envelope,
-              decision.reason ?? "",
-              decision.decisionName,
-            );
+            this._guard._onDeny(envelope, decision.reason ?? '', decision.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
         }
-        this._pending.delete(callId);
-        return `DENIED: ${decision.reason}`;
+        this._pending.delete(callId)
+        return `DENIED: ${decision.reason}`
       }
 
       // Handle per-contract observed denials
       if (decision.observed) {
         for (const cr of decision.contractsEvaluated) {
-          if (cr["observed"] && !cr["passed"]) {
+          if (cr['observed'] && !cr['passed']) {
             await this._guard.auditSink.emit(
               createAuditEvent({
                 action: AuditAction.CALL_WOULD_DENY,
@@ -352,43 +326,44 @@ export class OpenAIAgentsAdapter {
                 callId: envelope.callId,
                 callIndex: envelope.callIndex,
                 toolName: envelope.toolName,
-                toolArgs: this._guard.redaction.redactArgs(
-                  envelope.args,
-                ) as Record<string, unknown>,
+                toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<
+                  string,
+                  unknown
+                >,
                 sideEffect: envelope.sideEffect,
                 environment: envelope.environment,
                 principal: envelope.principal
                   ? ({ ...envelope.principal } as Record<string, unknown>)
                   : null,
-                decisionSource: "precondition",
-                decisionName: cr["name"] as string,
-                reason: cr["message"] as string | null,
-                mode: "observe",
+                decisionSource: 'precondition',
+                decisionName: cr['name'] as string,
+                reason: cr['message'] as string | null,
+                mode: 'observe',
                 policyVersion: this._guard.policyVersion,
                 policyError: decision.policyError,
               }),
-            );
+            )
           }
         }
       }
 
       // Handle allow
-      await this._emitAuditPre(envelope, decision);
+      await this._emitAuditPre(envelope, decision)
       if (this._guard._onAllow) {
         try {
-          this._guard._onAllow(envelope);
+          this._guard._onAllow(envelope)
         } catch {
           // on_allow callback raised — swallow
         }
       }
-      this._pending.set(callId, { envelope });
+      this._pending.set(callId, { envelope })
 
       // Observe-mode audits — errors swallowed (must not block execution)
       for (const sr of decision.observeResults) {
         try {
-          const observeAction = sr["passed"]
+          const observeAction = sr['passed']
             ? AuditAction.CALL_ALLOWED
-            : AuditAction.CALL_WOULD_DENY;
+            : AuditAction.CALL_WOULD_DENY
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: observeAction,
@@ -396,32 +371,30 @@ export class OpenAIAgentsAdapter {
               callId: envelope.callId,
               callIndex: envelope.callIndex,
               toolName: envelope.toolName,
-              toolArgs: this._guard.redaction.redactArgs(
-                envelope.args,
-              ) as Record<string, unknown>,
+              toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
               sideEffect: envelope.sideEffect,
               environment: envelope.environment,
               principal: envelope.principal
                 ? ({ ...envelope.principal } as Record<string, unknown>)
                 : null,
-              decisionSource: sr["source"] as string | null,
-              decisionName: sr["name"] as string | null,
-              reason: sr["message"] as string | null,
-              mode: "observe",
+              decisionSource: sr['source'] as string | null,
+              decisionName: sr['name'] as string | null,
+              reason: sr['message'] as string | null,
+              mode: 'observe',
               policyVersion: this._guard.policyVersion,
             }),
-          );
+          )
         } catch {
           // Observe audit errors must not block tool execution — continue with remaining
         }
       }
 
-      return null;
+      return null
     } catch (err) {
       if (!this._pending.has(callId)) {
         // No pending state to clean up
       }
-      throw err;
+      throw err
     }
   }
 
@@ -434,44 +407,30 @@ export class OpenAIAgentsAdapter {
    *
    * Exposed for direct testing without framework imports.
    */
-  async _post(
-    callId: string,
-    toolResponse: unknown = null,
-  ): Promise<PostCallResult> {
-    const pending = this._pending.get(callId);
-    this._pending.delete(callId);
+  async _post(callId: string, toolResponse: unknown = null): Promise<PostCallResult> {
+    const pending = this._pending.get(callId)
+    this._pending.delete(callId)
 
     if (!pending) {
-      return createPostCallResult({ result: toolResponse });
+      return createPostCallResult({ result: toolResponse })
     }
 
-    const { envelope } = pending;
+    const { envelope } = pending
 
     // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(
-      envelope.toolName,
-      toolResponse,
-    );
+    const toolSuccess = this._checkToolSuccess(envelope.toolName, toolResponse)
 
     // Run pipeline
-    const postDecision = await this._pipeline.postExecute(
-      envelope,
-      toolResponse,
-      toolSuccess,
-    );
+    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
 
     const effectiveResponse =
-      postDecision.redactedResponse != null
-        ? postDecision.redactedResponse
-        : toolResponse;
+      postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
     // Record in session
-    await this._session.recordExecution(envelope.toolName, toolSuccess);
+    await this._session.recordExecution(envelope.toolName, toolSuccess)
 
     // Emit audit
-    const action = toolSuccess
-      ? AuditAction.CALL_EXECUTED
-      : AuditAction.CALL_FAILED;
+    const action = toolSuccess ? AuditAction.CALL_EXECUTED : AuditAction.CALL_FAILED
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
@@ -479,9 +438,7 @@ export class OpenAIAgentsAdapter {
         callId: envelope.callId,
         callIndex: envelope.callIndex,
         toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(
-          envelope.args,
-        ) as Record<string, unknown>,
+        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
         sideEffect: envelope.sideEffect,
         environment: envelope.environment,
         principal: envelope.principal
@@ -496,29 +453,26 @@ export class OpenAIAgentsAdapter {
         policyVersion: this._guard.policyVersion,
         policyError: postDecision.policyError,
       }),
-    );
+    )
 
-    const findings = buildFindings(postDecision as unknown as PostDecisionLike);
+    const findings = buildFindings(postDecision as unknown as PostDecisionLike)
     const postResult = createPostCallResult({
       result: effectiveResponse,
       postconditionsPassed: postDecision.postconditionsPassed,
       findings,
       outputSuppressed: postDecision.outputSuppressed,
-    });
+    })
 
     // Call callback for side effects
     if (!postResult.postconditionsPassed && this._onPostconditionWarn) {
       try {
-        this._onPostconditionWarn(
-          postResult.result,
-          [...postResult.findings],
-        );
+        this._onPostconditionWarn(postResult.result, [...postResult.findings])
       } catch {
         // on_postcondition_warn callback raised — swallow
       }
     }
 
-    return postResult;
+    return postResult
   }
 
   // -----------------------------------------------------------------------
@@ -532,9 +486,7 @@ export class OpenAIAgentsAdapter {
   ): Promise<void> {
     const action =
       auditAction ??
-      (decision.action === "deny"
-        ? AuditAction.CALL_DENIED
-        : AuditAction.CALL_ALLOWED);
+      (decision.action === 'deny' ? AuditAction.CALL_DENIED : AuditAction.CALL_ALLOWED)
 
     await this._guard.auditSink.emit(
       createAuditEvent({
@@ -543,9 +495,7 @@ export class OpenAIAgentsAdapter {
         callId: envelope.callId,
         callIndex: envelope.callIndex,
         toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(
-          envelope.args,
-        ) as Record<string, unknown>,
+        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
         sideEffect: envelope.sideEffect,
         environment: envelope.environment,
         principal: envelope.principal
@@ -562,20 +512,17 @@ export class OpenAIAgentsAdapter {
         policyVersion: this._guard.policyVersion,
         policyError: decision.policyError,
       }),
-    );
+    )
   }
 
   // -----------------------------------------------------------------------
   // _checkToolSuccess
   // -----------------------------------------------------------------------
 
-  private _checkToolSuccess(
-    toolName: string,
-    toolResponse: unknown,
-  ): boolean {
+  private _checkToolSuccess(toolName: string, toolResponse: unknown): boolean {
     if (this._guard._successCheck != null) {
-      return this._guard._successCheck(toolName, toolResponse);
+      return this._guard._successCheck(toolName, toolResponse)
     }
-    return defaultSuccessCheck(toolName, toolResponse);
+    return defaultSuccessCheck(toolName, toolResponse)
   }
 }

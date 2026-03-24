@@ -21,34 +21,34 @@ Prompt engineering doesn't fix this. You need enforcement at the tool-call layer
 
 ```typescript
 // Agent decides to read .env
-const result = await readFile(".env");
+const result = await readFile('.env')
 // => "OPENAI_API_KEY=sk-abc123..."
 ```
 
 **With** -- the call is denied before it executes:
 
 ```typescript
-import { Edictum, EdictumDenied } from "@edictum/core";
-import { readFile } from "node:fs/promises";
+import { Edictum, EdictumDenied } from '@edictum/core'
+import { readFile } from 'node:fs/promises'
 
 // fromYaml() is synchronous — no await needed
-const guard = Edictum.fromYaml("contracts.yaml");
+const guard = Edictum.fromYaml('contracts.yaml')
 
 // toolCallable must accept args as Record<string, unknown>
 const governedReadFile = (args: Record<string, unknown>) => {
-  const path = args.path;
-  if (typeof path !== "string") throw new TypeError("path must be a string");
-  return readFile(path, "utf8");
-};
+  const path = args.path
+  if (typeof path !== 'string') throw new TypeError('path must be a string')
+  return readFile(path, 'utf8')
+}
 
 try {
-  await guard.run("readFile", { path: ".env" }, governedReadFile);
+  await guard.run('readFile', { path: '.env' }, governedReadFile)
 } catch (e) {
   if (e instanceof EdictumDenied) {
-    console.log(e.reason);
+    console.log(e.reason)
     // => "Sensitive file '.env' denied."
   } else {
-    throw e;
+    throw e
   }
 }
 ```
@@ -68,7 +68,7 @@ contracts:
     tool: readFile
     when:
       args.path:
-        contains_any: [".env", ".secret", "credentials", ".pem", "id_rsa"]
+        contains_any: ['.env', '.secret', 'credentials', '.pem', 'id_rsa']
     then:
       effect: deny
       message: "Sensitive file '{args.path}' denied."
@@ -92,51 +92,54 @@ pnpm add @edictum/core js-yaml
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`@edictum/core`](packages/core) | Pipeline, contracts, audit, session, YAML engine. Zero runtime deps. |
-| [`@edictum/vercel-ai`](packages/vercel-ai) | Vercel AI SDK adapter |
-| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter |
-| [`@edictum/claude-sdk`](packages/claude-sdk) | Claude Agent SDK adapter |
-| [`@edictum/langchain`](packages/langchain) | LangChain.js adapter |
-| [`@edictum/openclaw`](packages/openclaw) | OpenClaw adapter (coming soon) |
-| [`@edictum/server`](packages/server) | Server SDK -- HTTP client, SSE hot-reload, audit sink |
+| Package                                            | Description                                                          |
+| -------------------------------------------------- | -------------------------------------------------------------------- |
+| [`@edictum/core`](packages/core)                   | Pipeline, contracts, audit, session, YAML engine. Zero runtime deps. |
+| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                |
+| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                            |
+| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                             |
+| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                 |
+| [`@edictum/openclaw`](packages/openclaw)           | OpenClaw adapter (coming soon)                                       |
+| [`@edictum/server`](packages/server)               | Server SDK -- HTTP client, SSE hot-reload, audit sink                |
 
 ## Works With Your Framework
 
 **Vercel AI SDK** -- callbacks for generateText / streamText:
+
 ```typescript
-import { VercelAIAdapter } from "@edictum/vercel-ai";
-const adapter = new VercelAIAdapter(guard);
-const { experimental_onToolCallStart, experimental_onToolCallFinish } =
-  adapter.asCallbacks();
+import { VercelAIAdapter } from '@edictum/vercel-ai'
+const adapter = new VercelAIAdapter(guard)
+const { experimental_onToolCallStart, experimental_onToolCallFinish } = adapter.asCallbacks()
 // Preconditions enforced via onToolCallStart. Postcondition redact/deny
 // requires guard.run() for full enforcement (callbacks are notification-only).
 ```
 
 **OpenAI Agents SDK** -- input/output guardrails:
+
 ```typescript
-import { OpenAIAgentsAdapter } from "@edictum/openai-agents";
-const adapter = new OpenAIAgentsAdapter(guard);
-const { inputGuardrail, outputGuardrail } = adapter.asGuardrails();
+import { OpenAIAgentsAdapter } from '@edictum/openai-agents'
+const adapter = new OpenAIAgentsAdapter(guard)
+const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 // Note: postcondition redact requires guard.run() for full enforcement.
 // asGuardrails() enforces preconditions and postcondition deny natively.
 ```
 
 **Claude Agent SDK** -- pre/post tool use hooks:
+
 ```typescript
-import { ClaudeAgentSDKAdapter } from "@edictum/claude-sdk";
-const adapter = new ClaudeAgentSDKAdapter(guard);
-const { PreToolUse, PostToolUse } = adapter.toSdkHooks();
+import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
+const adapter = new ClaudeAgentSDKAdapter(guard)
+const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
 // Preconditions fully enforced. Postcondition redact/deny sets
 // updatedMCPToolOutput — use guard.run() for guaranteed enforcement.
 ```
 
 **LangChain.js** -- middleware for ToolNode:
+
 ```typescript
-import { LangChainAdapter } from "@edictum/langchain";
-const adapter = new LangChainAdapter(guard);
-const middleware = adapter.asMiddleware(); // { name: "edictum", wrapToolCall }
+import { LangChainAdapter } from '@edictum/langchain'
+const adapter = new LangChainAdapter(guard)
+const middleware = adapter.asMiddleware() // { name: "edictum", wrapToolCall }
 ```
 
 Adapters are thin wrappers. All governance logic lives in the pipeline.
@@ -153,19 +156,18 @@ Adapters are thin wrappers. All governance logic lives in the pipeline.
 **Programmatic contracts:**
 
 ```typescript
-import { Edictum, Verdict } from "@edictum/core";
-import type { Precondition } from "@edictum/core";
+import { Edictum, Verdict } from '@edictum/core'
+import type { Precondition } from '@edictum/core'
 
 const noRm: Precondition = {
-  tool: "Bash",
+  tool: 'Bash',
   check: async (envelope) => {
-    if (envelope.bashCommand?.includes("rm -rf"))
-      return Verdict.fail("Cannot run rm -rf");
-    return Verdict.pass();
+    if (envelope.bashCommand?.includes('rm -rf')) return Verdict.fail('Cannot run rm -rf')
+    return Verdict.pass()
   },
-};
+}
 
-const guard = new Edictum({ contracts: [noRm] });
+const guard = new Edictum({ contracts: [noRm] })
 ```
 
 **Principal-aware enforcement** -- role-gate tools with claims and `env.*` context.
@@ -179,13 +181,13 @@ const guard = new Edictum({ contracts: [noRm] });
 Optional self-hostable operations console. Contract management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
 
 ```typescript
-import { ServerClient } from "@edictum/server";
+import { ServerClient } from '@edictum/server'
 
 const client = new ServerClient({
-  baseUrl: "http://localhost:8000",
-  apiKey: "edk_production_...",
-  agentId: "my-agent",
-});
+  baseUrl: 'http://localhost:8000',
+  apiKey: 'edk_production_...',
+  agentId: 'my-agent',
+})
 ```
 
 See [edictum-console](https://github.com/edictum-ai/edictum-console) for deployment.
