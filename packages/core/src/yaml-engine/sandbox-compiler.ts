@@ -1,10 +1,8 @@
 /** Sandbox contract compiler — extract/classify tool call resources and compile sandbox contracts. */
 
-import { realpathSync } from 'node:fs'
-import { resolve as pathResolve } from 'node:path'
-
 import type { ToolEnvelope } from '../envelope.js'
 import { fnmatch } from '../fnmatch.js'
+import { resolvePath } from './resolve-path.js'
 
 // ---------------------------------------------------------------------------
 // Shell tokenization
@@ -122,15 +120,6 @@ const _PATH_ARG_KEYS = new Set([
   'dst',
 ])
 
-/** Resolve a path via realpathSync, falling back to path.resolve for non-existent paths. */
-function _realpath(p: string): string {
-  try {
-    return realpathSync(p)
-  } catch {
-    return pathResolve(p)
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Resource extraction
 // ---------------------------------------------------------------------------
@@ -142,7 +131,7 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
 
   function add(p: string): void {
     if (!p) return
-    const resolved = _realpath(p)
+    const resolved = resolvePath(p)
     if (!seen.has(resolved)) {
       seen.add(resolved)
       paths.push(resolved)

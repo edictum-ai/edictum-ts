@@ -83,6 +83,8 @@ describe('compileSandbox — within', () => {
     const result = _checkResult(sb, env)
     expect(result.passed).toBe(false)
   })
+
+  // Issue #114 regression tests moved to resolve-path.test.ts (sandbox integration section)
 })
 
 // ---------------------------------------------------------------------------

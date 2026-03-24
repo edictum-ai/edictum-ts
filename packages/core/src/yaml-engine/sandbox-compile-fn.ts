@@ -11,17 +11,7 @@ import {
   domainMatches,
 } from './sandbox-compiler.js'
 
-import { realpathSync } from 'node:fs'
-import { resolve as pathResolve } from 'node:path'
-
-/** Resolve a path via realpathSync, falling back to path.resolve. */
-function _realpath(p: string): string {
-  try {
-    return realpathSync(p)
-  } catch {
-    return pathResolve(p)
-  }
-}
+import { resolvePath } from './resolve-path.js'
 
 /** Check if a path is within an allowed prefix. */
 function _pathWithin(filePath: string, prefix: string): boolean {
@@ -44,8 +34,8 @@ export function compileSandbox(
   const toolPatterns: string[] =
     'tools' in contract ? (contract.tools as string[]) : [contract.tool as string]
 
-  const within = ((contract.within ?? []) as string[]).map(_realpath)
-  const notWithin = ((contract.not_within ?? []) as string[]).map(_realpath)
+  const within = ((contract.within ?? []) as string[]).map(resolvePath)
+  const notWithin = ((contract.not_within ?? []) as string[]).map(resolvePath)
   const allows = (contract.allows ?? {}) as Record<string, unknown>
   const notAllows = (contract.not_allows ?? {}) as Record<string, unknown>
   const allowedCommands = (allows.commands ?? []) as string[]
