@@ -41,6 +41,14 @@ export function resolvePath(p: string): string {
         const rest = parts.slice(i).join(pathSep)
         return pathJoin(realPrefix, rest)
       } catch {
+        // Skip this ancestor if it can't be resolved. ENOENT means it
+        // doesn't exist (keep walking up). EACCES/ELOOP on an ancestor
+        // means we can't determine its real path, so we try a higher
+        // ancestor. On POSIX, a symlink's target is readable from the
+        // parent directory's execute bit, so EACCES here indicates a
+        // non-symlinked directory whose normalized path is already
+        // correct. The outer catch already handles EACCES/ELOOP on
+        // the leaf path by returning early.
         continue
       }
     }

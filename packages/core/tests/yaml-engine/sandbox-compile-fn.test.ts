@@ -84,33 +84,7 @@ describe('compileSandbox — within', () => {
     expect(result.passed).toBe(false)
   })
 
-  test('non-existent file under symlinked within path is allowed (issue #114)', () => {
-    // On macOS, /tmp → /private/tmp. This test verifies that a within boundary
-    // specified as /tmp/ correctly allows paths like /tmp/nonexistent.txt even
-    // though the file doesn't exist on disk. Before the fix, realpathSync
-    // resolved /tmp/ to /private/tmp/ for the boundary but fell back to
-    // path.resolve for the non-existent tool path, causing a prefix mismatch.
-    const rawTmp = tmpdir()
-
-    // Only meaningful when tmpdir() is a symlink (macOS /tmp → /private/tmp)
-    // but also works on Linux where rawTmp === realTmp (no symlink, no mismatch)
-    const sb = _sandbox({ within: [rawTmp] })
-    const nonexistent = join(rawTmp, 'edictum-does-not-exist-' + Date.now() + '.txt')
-    const env = _fileEnvelope('Read', nonexistent)
-    const result = _checkResult(sb, env)
-    expect(result.passed).toBe(true)
-  })
-
-  test('non-existent file outside symlinked within path is denied (issue #114)', () => {
-    // Complementary to the above: a non-existent path OUTSIDE the boundary
-    // must still be denied, even when the boundary path is a symlink.
-    const rawTmp = tmpdir()
-    const sb = _sandbox({ within: [join(rawTmp, 'allowed-subdir')] })
-    const nonexistent = join(rawTmp, 'forbidden-subdir', 'file.txt')
-    const env = _fileEnvelope('Read', nonexistent)
-    const result = _checkResult(sb, env)
-    expect(result.passed).toBe(false)
-  })
+  // Issue #114 regression tests moved to resolve-path.test.ts (sandbox integration section)
 })
 
 // ---------------------------------------------------------------------------

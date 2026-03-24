@@ -1,6 +1,6 @@
 /** Tests for resolvePath — cross-platform path resolution with security boundaries. */
 
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, beforeAll } from 'vitest'
 import {
   mkdtempSync,
   mkdirSync,
@@ -9,19 +9,46 @@ import {
   chmodSync,
   realpathSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve as pathResolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { resolvePath } from '../../src/yaml-engine/resolve-path.js'
+import { createEnvelope } from '../../src/envelope.js'
+import { compileSandbox } from '../../src/yaml-engine/sandbox-compile-fn.js'
 
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-const tmp = mkdtempSync(join(tmpdir(), 'edictum-resolve-path-'))
-const subdir = join(tmp, 'subdir')
-mkdirSync(subdir)
-writeFileSync(join(subdir, 'file.txt'), 'test')
+let tmp: string
+let subdir: string
+
+beforeAll(() => {
+  tmp = mkdtempSync(join(tmpdir(), 'edictum-resolve-path-'))
+  subdir = join(tmp, 'subdir')
+  mkdirSync(subdir)
+  writeFileSync(join(subdir, 'file.txt'), 'test')
+})
+
+// ---------------------------------------------------------------------------
+// Helpers (sandbox integration)
+// ---------------------------------------------------------------------------
+
+function _fileEnvelope(tool: string, filePath: string) {
+  return createEnvelope(tool, { file_path: filePath }, { filePath })
+}
+
+function _sandbox(overrides: Record<string, unknown> = {}) {
+  return compileSandbox({ id: 'test-sandbox', type: 'sandbox', tool: '*', ...overrides }, 'enforce')
+}
+
+function _checkResult(
+  sandbox: Record<string, unknown>,
+  envelope: ReturnType<typeof createEnvelope>,
+) {
+  const check = sandbox.check as (e: typeof envelope) => { passed: boolean; message: string | null }
+  return check(envelope)
+}
 
 // ---------------------------------------------------------------------------
 // Behavior tests
@@ -42,7 +69,6 @@ describe('resolvePath', () => {
   test('resolves non-existent file under existing directory', () => {
     const nonexistent = join(subdir, 'does-not-exist.txt')
     const result = resolvePath(nonexistent)
-    // Should resolve the parent's symlinks and append the filename
     expect(result).toBe(join(realpathSync(subdir), 'does-not-exist.txt'))
   })
 
@@ -57,7 +83,7 @@ describe('resolvePath', () => {
     try {
       symlinkSync(subdir, linkPath)
     } catch {
-      // may exist from previous run
+      /* may exist */
     }
     const result = resolvePath(join(linkPath, 'file.txt'))
     expect(result).toBe(join(realpathSync(subdir), 'file.txt'))
@@ -68,11 +94,10 @@ describe('resolvePath', () => {
     try {
       symlinkSync(subdir, linkPath)
     } catch {
-      // may exist from previous run
+      /* may exist */
     }
     const nonexistent = join(linkPath, 'nonexistent.txt')
     const result = resolvePath(nonexistent)
-    // Walk-up finds linkPath → resolves to real subdir → appends filename
     expect(result).toBe(join(realpathSync(subdir), 'nonexistent.txt'))
   })
 
@@ -81,7 +106,6 @@ describe('resolvePath', () => {
     const realTmp = realpathSync(rawTmp)
     const nonexistent = join(rawTmp, 'edictum-resolve-test-' + Date.now() + '.txt')
     const result = resolvePath(nonexistent)
-    // Should start with the real tmp path (on macOS: /private/tmp)
     expect(result.startsWith(realTmp)).toBe(true)
   })
 
@@ -102,45 +126,38 @@ describe('resolvePath', () => {
 
 describe('security', () => {
   test('EACCES returns normalized path without partial resolution', () => {
-    // Create a directory, then remove read+execute permission
     const restrictedDir = join(tmp, 'restricted')
     mkdirSync(restrictedDir, { recursive: true })
     writeFileSync(join(restrictedDir, 'secret.txt'), 'hidden')
     chmodSync(restrictedDir, 0o000)
 
     try {
-      const result = resolvePath(join(restrictedDir, 'secret.txt'))
-      // Should NOT walk up and partially resolve — should return the
-      // normalized path, which won't match a symlink-resolved boundary
-      // This is fail-closed: if we can't determine the true path, we
-      // return the unresolved normalized form
-      expect(typeof result).toBe('string')
-      // The path should be normalized (absolute) but not resolved through
-      // the restricted directory
-      expect(result).toContain('restricted')
+      const input = join(restrictedDir, 'secret.txt')
+      const result = resolvePath(input)
+      // EACCES on outer realpathSync → returns pathResolve(input)
+      expect(result).toBe(pathResolve(input))
     } finally {
-      // Restore permissions for cleanup
       chmodSync(restrictedDir, 0o755)
     }
   })
 
   test('circular symlink returns normalized path without partial resolution', () => {
-    // Create circular symlink: a → b → a
     const linkA = join(tmp, 'circular-a')
     const linkB = join(tmp, 'circular-b')
     try {
       symlinkSync(linkB, linkA)
     } catch {
-      // may exist
+      /* may exist */
     }
     try {
       symlinkSync(linkA, linkB)
     } catch {
-      // may exist
+      /* may exist */
     }
-    const result = resolvePath(join(linkA, 'file.txt'))
-    // Should not throw — returns normalized path
-    expect(typeof result).toBe('string')
+    const input = join(linkA, 'file.txt')
+    const result = resolvePath(input)
+    // ELOOP on outer realpathSync → returns pathResolve(input), not a walk-up
+    expect(result).toBe(pathResolve(input))
   })
 
   test('symlink escape is detected (link points outside boundary)', () => {
@@ -148,24 +165,47 @@ describe('security', () => {
     try {
       symlinkSync('/etc/passwd', escapePath)
     } catch {
-      // may exist
+      /* may exist */
     }
     const result = resolvePath(escapePath)
-    // Should resolve the symlink — path should point to /etc/passwd
     expect(result).toBe(realpathSync('/etc/passwd'))
   })
 
   test('non-existent path with symlink in parent chain resolves correctly', () => {
-    // Symlink in the middle of the path: tmp/link → subdir, then
-    // access tmp/link/nonexistent.txt
     const midLink = join(tmp, 'mid-link')
     try {
       symlinkSync(subdir, midLink)
     } catch {
-      // may exist
+      /* may exist */
     }
     const result = resolvePath(join(midLink, 'deeply', 'nested', 'nonexistent.txt'))
-    // midLink resolves to real subdir, then append the rest
     expect(result).toBe(join(realpathSync(subdir), 'deeply', 'nested', 'nonexistent.txt'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sandbox integration regression tests (issue #114)
+// ---------------------------------------------------------------------------
+
+describe('sandbox integration — issue #114', () => {
+  test('non-existent file under symlinked within path is allowed', () => {
+    // On macOS, /tmp → /private/tmp. Verifies that a within boundary
+    // specified as /tmp/ correctly allows paths like /tmp/nonexistent.txt
+    // even though the file doesn't exist on disk.
+    const rawTmp = tmpdir()
+    const sb = _sandbox({ within: [rawTmp] })
+    const nonexistent = join(rawTmp, 'edictum-does-not-exist-' + Date.now() + '.txt')
+    const env = _fileEnvelope('Read', nonexistent)
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('non-existent file outside symlinked within path is denied', () => {
+    const rawTmp = tmpdir()
+    const sb = _sandbox({ within: [join(rawTmp, 'allowed-subdir')] })
+    const nonexistent = join(rawTmp, 'forbidden-subdir', 'file.txt')
+    const env = _fileEnvelope('Read', nonexistent)
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
   })
 })
