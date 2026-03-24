@@ -4,11 +4,7 @@
  * All methods silently succeed so callers never need to check availability.
  */
 
-import type {
-  GovernanceTelemetryLike,
-  TelemetryEnvelope,
-  TelemetrySpan,
-} from "./types.js";
+import type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'
 
 /** Dummy span — all operations are no-ops. */
 export class NoOpSpan implements TelemetrySpan {
@@ -32,7 +28,7 @@ export class NoOpSpan implements TelemetrySpan {
 /** No-op telemetry — all span/metric methods are silent no-ops. */
 export class NoOpTelemetry implements GovernanceTelemetryLike {
   startToolSpan(_envelope: TelemetryEnvelope): NoOpSpan {
-    return new NoOpSpan();
+    return new NoOpSpan()
   }
 
   recordDenial(_envelope: TelemetryEnvelope, _reason?: string): void {

@@ -31,178 +31,162 @@
  * (which need only @opentelemetry/api).
  */
 
-import { EdictumConfigError } from "@edictum/core";
+import { EdictumConfigError } from '@edictum/core'
 
 /** Valid export protocols. */
-const VALID_PROTOCOLS = ["grpc", "http", "http/protobuf"] as const;
-type OtelProtocol = (typeof VALID_PROTOCOLS)[number];
+const VALID_PROTOCOLS = ['grpc', 'http', 'http/protobuf'] as const
+type OtelProtocol = (typeof VALID_PROTOCOLS)[number]
 
 export interface ConfigureOtelOptions {
   /** Service name reported in traces. Default: "edictum-agent" */
-  serviceName?: string;
+  serviceName?: string
   /** Collector endpoint. Default: "http://localhost:4317" */
-  endpoint?: string;
+  endpoint?: string
   /** Export protocol: "grpc" | "http" | "http/protobuf". Default: "grpc" */
-  protocol?: OtelProtocol;
+  protocol?: OtelProtocol
   /** Extra resource attributes merged into the Resource. */
-  resourceAttributes?: Record<string, string>;
+  resourceAttributes?: Record<string, string>
   /** Edictum version to include as `edictum.version` attribute. */
-  edictumVersion?: string;
+  edictumVersion?: string
   /** Override an existing provider. Default: false */
-  force?: boolean;
+  force?: boolean
 }
 
-export async function configureOtel(
-  options: ConfigureOtelOptions = {},
-): Promise<void> {
+export async function configureOtel(options: ConfigureOtelOptions = {}): Promise<void> {
   const {
-    serviceName = "edictum-agent",
-    endpoint = "http://localhost:4317",
-    protocol = "grpc",
+    serviceName = 'edictum-agent',
+    endpoint = 'http://localhost:4317',
+    protocol = 'grpc',
     resourceAttributes,
     edictumVersion,
     force = false,
-  } = options;
+  } = options
 
   // All imports are dynamic so that importing @edictum/otel does not crash
   // when the SDK packages are not installed. Only configureOtel() needs them.
-  const { ProxyTracerProvider, trace, metrics } = await import(
-    "@opentelemetry/api"
-  );
-  const { Resource } = await import("@opentelemetry/resources");
-  const { BasicTracerProvider, BatchSpanProcessor } = await import(
-    "@opentelemetry/sdk-trace-base"
-  );
+  const { ProxyTracerProvider, trace, metrics } = await import('@opentelemetry/api')
+  const { Resource } = await import('@opentelemetry/resources')
+  const { BasicTracerProvider, BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-base')
 
   // Check if a real provider is already set
-  const current = trace.getTracerProvider();
-  const isConfigured = !(current instanceof ProxyTracerProvider);
+  const current = trace.getTracerProvider()
+  const isConfigured = !(current instanceof ProxyTracerProvider)
   if (isConfigured && !force) {
-    return;
+    return
   }
 
   // Env overrides
-  const actualService =
-    process.env["OTEL_SERVICE_NAME"] ?? serviceName;
-  const actualEndpoint =
-    process.env["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? endpoint;
-  const rawProtocol =
-    process.env["OTEL_EXPORTER_OTLP_PROTOCOL"] ?? protocol;
+  const actualService = process.env['OTEL_SERVICE_NAME'] ?? serviceName
+  const actualEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? endpoint
+  const rawProtocol = process.env['OTEL_EXPORTER_OTLP_PROTOCOL'] ?? protocol
 
   // Validate protocol
-  const validSet: ReadonlySet<string> = new Set(VALID_PROTOCOLS);
+  const validSet: ReadonlySet<string> = new Set(VALID_PROTOCOLS)
   if (!validSet.has(rawProtocol)) {
     throw new EdictumConfigError(
       `Invalid OTel protocol: ${JSON.stringify(rawProtocol)}. ` +
-      `Must be one of: ${VALID_PROTOCOLS.join(", ")}`,
-    );
+        `Must be one of: ${VALID_PROTOCOLS.join(', ')}`,
+    )
   }
-  const actualProtocol = rawProtocol as OtelProtocol;
+  const actualProtocol = rawProtocol as OtelProtocol
 
   // "http/protobuf" and "http" both select HTTP exporter
-  const useGrpc = actualProtocol === "grpc";
+  const useGrpc = actualProtocol === 'grpc'
 
   // Adjust default endpoint for HTTP when the caller didn't override.
   // Normalize via URL to handle trailing slashes and case differences.
-  const DEFAULT_GRPC_ORIGIN = "http://localhost:4317";
+  const DEFAULT_GRPC_ORIGIN = 'http://localhost:4317'
   const isDefaultEndpoint = (() => {
     try {
-      return new URL(actualEndpoint).origin === new URL(DEFAULT_GRPC_ORIGIN).origin
-        && new URL(actualEndpoint).pathname.replace(/\/$/, "") === "";
+      return (
+        new URL(actualEndpoint).origin === new URL(DEFAULT_GRPC_ORIGIN).origin &&
+        new URL(actualEndpoint).pathname.replace(/\/$/, '') === ''
+      )
     } catch {
-      return false;
+      return false
     }
-  })();
+  })()
 
-  let resolvedEndpoint = actualEndpoint;
+  let resolvedEndpoint = actualEndpoint
   if (!useGrpc && isDefaultEndpoint) {
-    resolvedEndpoint = "http://localhost:4318/v1/traces";
+    resolvedEndpoint = 'http://localhost:4318/v1/traces'
   }
 
   // Build resource attributes.
   // Precedence: resourceAttributes < serviceName/edictumVersion < env vars
   // Exception: OTEL_SERVICE_NAME always wins over service.name in
   // OTEL_RESOURCE_ATTRIBUTES (per OTel spec).
-  const attrs: Record<string, string> = {};
+  const attrs: Record<string, string> = {}
   if (resourceAttributes) {
-    Object.assign(attrs, resourceAttributes);
+    Object.assign(attrs, resourceAttributes)
   }
   // serviceName (or its env override) always wins over resourceAttributes
-  attrs["service.name"] = actualService;
+  attrs['service.name'] = actualService
   if (edictumVersion) {
-    attrs["edictum.version"] = edictumVersion;
+    attrs['edictum.version'] = edictumVersion
   }
 
   // OTEL_RESOURCE_ATTRIBUTES — highest precedence for all keys EXCEPT
   // service.name when OTEL_SERVICE_NAME is explicitly set.
-  const envServiceNameSet = process.env["OTEL_SERVICE_NAME"] !== undefined;
-  const envAttrs = process.env["OTEL_RESOURCE_ATTRIBUTES"] ?? "";
+  const envServiceNameSet = process.env['OTEL_SERVICE_NAME'] !== undefined
+  const envAttrs = process.env['OTEL_RESOURCE_ATTRIBUTES'] ?? ''
   if (envAttrs) {
-    for (const pair of envAttrs.split(",")) {
-      if (pair.includes("=")) {
-        const eqIdx = pair.indexOf("=");
-        const k = pair.slice(0, eqIdx).trim();
-        const v = pair.slice(eqIdx + 1).trim();
-        if (!k) continue;
+    for (const pair of envAttrs.split(',')) {
+      if (pair.includes('=')) {
+        const eqIdx = pair.indexOf('=')
+        const k = pair.slice(0, eqIdx).trim()
+        const v = pair.slice(eqIdx + 1).trim()
+        if (!k) continue
         // OTEL_SERVICE_NAME takes precedence per OTel spec
-        if (k === "service.name" && envServiceNameSet) continue;
-        attrs[k] = v;
+        if (k === 'service.name' && envServiceNameSet) continue
+        attrs[k] = v
       }
     }
   }
 
-  const resource = new Resource(attrs);
+  const resource = new Resource(attrs)
 
   // --- Tracer Provider ---
-  const provider = new BasicTracerProvider({ resource });
+  const provider = new BasicTracerProvider({ resource })
 
   if (useGrpc) {
-    const { OTLPTraceExporter } = await import(
-      "@opentelemetry/exporter-trace-otlp-grpc"
-    );
+    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-grpc')
     const exporter = new OTLPTraceExporter({
       url: resolvedEndpoint,
-    });
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter));
+    })
+    provider.addSpanProcessor(new BatchSpanProcessor(exporter))
   } else {
-    const { OTLPTraceExporter } = await import(
-      "@opentelemetry/exporter-trace-otlp-http"
-    );
+    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
     const exporter = new OTLPTraceExporter({
       url: resolvedEndpoint,
-    });
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter));
+    })
+    provider.addSpanProcessor(new BatchSpanProcessor(exporter))
   }
 
-  provider.register();
+  provider.register()
 
   // --- Meter Provider ---
-  const { MeterProvider, PeriodicExportingMetricReader } = await import(
-    "@opentelemetry/sdk-metrics"
-  );
+  const { MeterProvider, PeriodicExportingMetricReader } =
+    await import('@opentelemetry/sdk-metrics')
 
   // Adjust default metrics endpoint for HTTP — mirror the trace endpoint logic
-  let metricsEndpoint = actualEndpoint;
+  let metricsEndpoint = actualEndpoint
   if (!useGrpc && isDefaultEndpoint) {
-    metricsEndpoint = "http://localhost:4318/v1/metrics";
+    metricsEndpoint = 'http://localhost:4318/v1/metrics'
   }
 
-  let metricExporter;
+  let metricExporter
   if (useGrpc) {
-    const { OTLPMetricExporter } = await import(
-      "@opentelemetry/exporter-metrics-otlp-grpc"
-    );
-    metricExporter = new OTLPMetricExporter({ url: metricsEndpoint });
+    const { OTLPMetricExporter } = await import('@opentelemetry/exporter-metrics-otlp-grpc')
+    metricExporter = new OTLPMetricExporter({ url: metricsEndpoint })
   } else {
-    const { OTLPMetricExporter } = await import(
-      "@opentelemetry/exporter-metrics-otlp-http"
-    );
-    metricExporter = new OTLPMetricExporter({ url: metricsEndpoint });
+    const { OTLPMetricExporter } = await import('@opentelemetry/exporter-metrics-otlp-http')
+    metricExporter = new OTLPMetricExporter({ url: metricsEndpoint })
   }
 
   const meterProvider = new MeterProvider({
     resource,
     readers: [new PeriodicExportingMetricReader({ exporter: metricExporter })],
-  });
-  metrics.setGlobalMeterProvider(meterProvider);
+  })
+  metrics.setGlobalMeterProvider(meterProvider)
 }

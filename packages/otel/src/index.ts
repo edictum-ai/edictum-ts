@@ -23,21 +23,17 @@
  */
 
 // Real implementation (requires @opentelemetry/api at runtime)
-export { GovernanceTelemetry } from "./telemetry.js";
+export { GovernanceTelemetry } from './telemetry.js'
 
 // No-op fallback
-export { NoOpSpan, NoOpTelemetry } from "./noop.js";
+export { NoOpSpan, NoOpTelemetry } from './noop.js'
 
 // Runtime detection + factory
-export { createTelemetry, hasOtel } from "./detect.js";
+export { createTelemetry, hasOtel } from './detect.js'
 
 // Setup helper
-export { configureOtel } from "./configure.js";
-export type { ConfigureOtelOptions } from "./configure.js";
+export { configureOtel } from './configure.js'
+export type { ConfigureOtelOptions } from './configure.js'
 
 // Shared types
-export type {
-  GovernanceTelemetryLike,
-  TelemetryEnvelope,
-  TelemetrySpan,
-} from "./types.js";
+export type { GovernanceTelemetryLike, TelemetryEnvelope, TelemetrySpan } from './types.js'

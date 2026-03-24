@@ -8,11 +8,11 @@
 
 /** Minimal envelope shape needed by the telemetry layer. */
 export interface TelemetryEnvelope {
-  readonly toolName: string;
-  readonly sideEffect: string;
-  readonly callIndex: number;
-  readonly environment: string;
-  readonly runId: string;
+  readonly toolName: string
+  readonly sideEffect: string
+  readonly callIndex: number
+  readonly environment: string
+  readonly runId: string
 }
 
 /**
@@ -23,17 +23,17 @@ export interface TelemetryEnvelope {
  * this interface. Methods match the OTel Span subset we actually use.
  */
 export interface TelemetrySpan {
-  setAttribute(key: string, value: unknown): void;
-  setStatus(status: { code: number; message?: string }): void;
-  addEvent(name: string, attributes?: Record<string, unknown>): void;
-  end(): void;
+  setAttribute(key: string, value: unknown): void
+  setStatus(status: { code: number; message?: string }): void
+  addEvent(name: string, attributes?: Record<string, unknown>): void
+  end(): void
 }
 
 /** Interface shared by GovernanceTelemetry and NoOpTelemetry. */
 export interface GovernanceTelemetryLike {
-  startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan;
-  recordDenial(envelope: TelemetryEnvelope, reason?: string): void;
-  recordAllowed(envelope: TelemetryEnvelope): void;
-  setSpanError(span: TelemetrySpan, reason: string): void;
-  setSpanOk(span: TelemetrySpan): void;
+  startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan
+  recordDenial(envelope: TelemetryEnvelope, reason?: string): void
+  recordAllowed(envelope: TelemetryEnvelope): void
+  setSpanError(span: TelemetrySpan, reason: string): void
+  setSpanOk(span: TelemetrySpan): void
 }

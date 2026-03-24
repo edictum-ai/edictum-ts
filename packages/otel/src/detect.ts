@@ -6,29 +6,29 @@
  * the appropriate telemetry instance (real or no-op).
  */
 
-import { createRequire } from "node:module";
+import { createRequire } from 'node:module'
 
-import type { GovernanceTelemetryLike } from "./types.js";
-import { NoOpTelemetry } from "./noop.js";
+import type { GovernanceTelemetryLike } from './types.js'
+import { NoOpTelemetry } from './noop.js'
 
 // createRequire works in both ESM and CJS (tsup transforms import.meta.url
 // for CJS output). This avoids the ESM ReferenceError on bare `require`.
-const _require = createRequire(import.meta.url);
+const _require = createRequire(import.meta.url)
 
-let _hasOtel: boolean | null = null;
+let _hasOtel: boolean | null = null
 
 /** Check if @opentelemetry/api is available at runtime. */
 export function hasOtel(): boolean {
   if (_hasOtel !== null) {
-    return _hasOtel;
+    return _hasOtel
   }
   try {
-    _require.resolve("@opentelemetry/api");
-    _hasOtel = true;
+    _require.resolve('@opentelemetry/api')
+    _hasOtel = true
   } catch {
-    _hasOtel = false;
+    _hasOtel = false
   }
-  return _hasOtel;
+  return _hasOtel
 }
 
 /**
@@ -36,7 +36,7 @@ export function hasOtel(): boolean {
  * @internal
  */
 export function _resetHasOtelCache(): void {
-  _hasOtel = null;
+  _hasOtel = null
 }
 
 /**
@@ -55,18 +55,18 @@ export function _resetHasOtelCache(): void {
  */
 export async function createTelemetry(): Promise<GovernanceTelemetryLike> {
   try {
-    const { GovernanceTelemetry } = await import("./telemetry.js");
-    return new GovernanceTelemetry();
+    const { GovernanceTelemetry } = await import('./telemetry.js')
+    return new GovernanceTelemetry()
   } catch (err: unknown) {
     // Only swallow module-not-found — OTel not installed.
     // All other errors (constructor bugs, etc.) propagate.
     if (
       err instanceof Error &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND"
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND'
     ) {
-      return new NoOpTelemetry();
+      return new NoOpTelemetry()
     }
-    throw err;
+    throw err
   }
 }
