@@ -30,7 +30,7 @@ export default defineConfig([
   {
     entry: ['src/index.ts'],
     format: ['esm'],
-    dts: false,
+    dts: true, // Must generate .d.ts for ESM consumers (package.json types entry)
     clean: false,
     sourcemap: true,
     external,
