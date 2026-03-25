@@ -9,14 +9,22 @@
 import type { GovernanceTelemetryLike } from './types.js'
 import { NoOpTelemetry } from './noop.js'
 
-// Dual CJS/ESM resolution: try synchronous require first (CJS), then fall
-// back to dynamic import (ESM). The previous approach used
-// `createRequire(import.meta.url)` which breaks in CJS because tsup
-// transforms `import.meta.url` to `undefined` (var import_meta = {}).
+// Dual CJS/ESM detection: hasOtel() tries synchronous require.resolve first
+// (CJS fast-path), then falls back to hasOtelAsync() which uses dynamic
+// import for ESM. createTelemetry() is the recommended entry point — it
+// handles both ESM and CJS transparently.
 
 let _hasOtel: boolean | null = null
 
-/** Check if @opentelemetry/api is available at runtime. */
+/**
+ * Check if @opentelemetry/api is available at runtime (synchronous).
+ *
+ * **CJS:** Returns accurate result (uses require.resolve).
+ * **ESM:** Always returns false — use {@link hasOtelAsync} instead.
+ *
+ * For code that must work in both ESM and CJS, prefer {@link hasOtelAsync}
+ * or just call {@link createTelemetry} directly.
+ */
 export function hasOtel(): boolean {
   if (_hasOtel !== null) {
     return _hasOtel
@@ -26,13 +34,39 @@ export function hasOtel(): boolean {
     require.resolve('@opentelemetry/api')
     _hasOtel = true
   } catch {
-    // In ESM, require is not defined — treat as unknown until createTelemetry
-    // attempts dynamic import. This means hasOtel() returns false in ESM when
-    // OTel IS installed, but createTelemetry() (the recommended entry point)
-    // handles ESM correctly via dynamic import.
+    // In ESM, require is not defined — returns false.
+    // Use hasOtelAsync() for accurate ESM detection.
     _hasOtel = false
   }
   return _hasOtel
+}
+
+/**
+ * Async check if @opentelemetry/api is available — works in both ESM and CJS.
+ *
+ * Prefer this over {@link hasOtel} when your code runs in ESM contexts.
+ */
+export async function hasOtelAsync(): Promise<boolean> {
+  if (_hasOtel !== null) {
+    return _hasOtel
+  }
+  // Try CJS first
+  try {
+    require.resolve('@opentelemetry/api')
+    _hasOtel = true
+    return true
+  } catch {
+    // Not in CJS or not installed via CJS
+  }
+  // Try ESM dynamic import
+  try {
+    await import('@opentelemetry/api')
+    _hasOtel = true
+    return true
+  } catch {
+    _hasOtel = false
+    return false
+  }
 }
 
 /**

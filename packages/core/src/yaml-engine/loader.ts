@@ -105,9 +105,23 @@ export function _resetYamlCache(): void {
   _yamlModule = null
 }
 
-/** Parse YAML content string, returning the parsed object. */
+/** Parse YAML content string synchronously, returning the parsed object. */
 function parseYaml(content: string): Record<string, unknown> {
   const yaml = requireYaml()
+  return _parseWithYaml(yaml, content)
+}
+
+/** Parse YAML content string asynchronously (ESM-safe), returning the parsed object. */
+async function parseYamlAsync(content: string): Promise<Record<string, unknown>> {
+  const yaml = await requireYamlAsync()
+  return _parseWithYaml(yaml, content)
+}
+
+/** Shared parse implementation. */
+function _parseWithYaml(
+  yaml: { load(input: string): unknown },
+  content: string,
+): Record<string, unknown> {
   let data: unknown
   try {
     data = yaml.load(content)
@@ -188,6 +202,56 @@ export function loadBundleString(
   const bundleHash = computeHash(rawBytes)
   const text = typeof content === 'string' ? content : new TextDecoder().decode(rawBytes)
   const data = parseYaml(text)
+
+  validateBundle(data)
+  return [data, bundleHash]
+}
+
+/**
+ * Async version of {@link loadBundleString} — works in both ESM and CJS.
+ *
+ * Use this instead of loadBundleString when importing @edictum/core as ESM.
+ * The sync loadBundleString uses require('js-yaml') which is not available
+ * in ESM contexts.
+ */
+export async function loadBundleStringAsync(
+  content: string | Uint8Array,
+): Promise<[Record<string, unknown>, BundleHash]> {
+  const rawBytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
+
+  if (rawBytes.length > MAX_BUNDLE_SIZE) {
+    throw new EdictumConfigError(
+      `Bundle content too large (${rawBytes.length} bytes, max ${MAX_BUNDLE_SIZE})`,
+    )
+  }
+
+  const bundleHash = computeHash(rawBytes)
+  const text = typeof content === 'string' ? content : new TextDecoder().decode(rawBytes)
+  const data = await parseYamlAsync(text)
+
+  validateBundle(data)
+  return [data, bundleHash]
+}
+
+/**
+ * Async version of {@link loadBundle} — works in both ESM and CJS.
+ *
+ * Use this instead of loadBundle when importing @edictum/core as ESM.
+ */
+export async function loadBundleAsync(
+  source: string,
+): Promise<[Record<string, unknown>, BundleHash]> {
+  const resolved = realpathSync(source)
+  const fileSize = statSync(resolved).size
+  if (fileSize > MAX_BUNDLE_SIZE) {
+    throw new EdictumConfigError(
+      `Bundle file too large (${fileSize} bytes, max ${MAX_BUNDLE_SIZE})`,
+    )
+  }
+
+  const rawBytes = readFileSync(resolved)
+  const bundleHash = computeHash(rawBytes)
+  const data = await parseYamlAsync(rawBytes.toString('utf-8'))
 
   validateBundle(data)
   return [data, bundleHash]

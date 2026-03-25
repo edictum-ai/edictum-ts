@@ -185,6 +185,18 @@ describe('compileSandbox — fail-closed path extraction', () => {
     expect(result.passed).toBe(true)
   })
 
+  test('allows URL with ../ in unknown arg key (no false positive)', () => {
+    // URLs like 'https://example.com/a/../b' contain '../' but are NOT paths
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      redirect_url: 'https://example.com/a/../b',
+      callback: 'http://localhost:3000/api/../hook',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
   test('denies embedded path traversal via ../ in unknown arg key', () => {
     const sb = _sandbox({ within: ['/workspace'] })
     const env = createEnvelope('tool', { ref: 'foo/../../../etc/passwd' })

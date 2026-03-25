@@ -166,11 +166,13 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   // non-path values like 'application/json', '1/2', etc.
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && !_PATH_ARG_KEYS.has(key)) {
+      // Exclude URLs — they are handled separately by extractUrls/domain checks
+      const isUrl = value.includes('://')
       if (
-        value.includes('../') || // embedded traversal: foo/../etc/passwd
+        (!isUrl && value.includes('../')) || // embedded traversal: foo/../etc/passwd
         value.startsWith('..') || // relative parent: ../../etc, ..hidden
         value.startsWith('~') ||
-        (value.startsWith('./') && !value.includes('://')) // relative child: ./subdir/file
+        (value.startsWith('./') && !isUrl) // relative child: ./subdir/file
       ) {
         add(value)
       }
