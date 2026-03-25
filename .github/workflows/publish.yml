@@ -10,12 +10,14 @@ jobs:
     environment: npm
     permissions:
       id-token: write # npm provenance (OIDC trusted publishing)
-      contents: write # upload release assets
+      contents: read # checkout only
       attestations: write # SLSA build provenance attestation
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
-      - uses: pnpm/action-setup@fe02b34f77f8bc703a5f83a7ebb3317f8fb49156 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -33,7 +35,7 @@ jobs:
         run: pnpm -r test
 
       - name: Publish all packages
-        run: pnpm -r publish --no-git-checks --access public
+        run: pnpm -r publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
