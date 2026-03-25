@@ -21,7 +21,12 @@ import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:p
  * partial resolution — fail closed when the true target is unknowable.
  */
 export function resolvePath(p: string): string {
-  const resolved = pathResolve(p)
+  // Strip null bytes before any path operation. A path like
+  // "/allowed/path\x00/../etc/passwd" would pass prefix checks
+  // (starts with /allowed/path) but C-based tools truncate at \0,
+  // reading /allowed/path instead. This is a sandbox escape vector.
+  const cleaned = p.replace(/\0/g, '')
+  const resolved = pathResolve(cleaned)
   try {
     return realpathSync(resolved)
   } catch (err: unknown) {
