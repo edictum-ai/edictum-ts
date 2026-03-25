@@ -11,34 +11,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: parity-check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  behavioral-fixtures:
-    if: false # TODO: enable when fixture runner is implemented
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          repository: edictum-ai/edictum-schemas
-          ref: main
-          path: edictum-schemas
-
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Run behavioral fixtures
-        run: |
-          echo "::warning::Parity fixture runner not yet implemented. This step is a placeholder."
-          ls edictum-schemas/fixtures/behavioral/ 2>/dev/null || echo "(no fixtures found)"
-
-      - name: Run adversarial fixtures
-        run: |
-          echo "::warning::Adversarial fixture runner not yet implemented. This step is a placeholder."
-          ls edictum-schemas/fixtures/adversarial/ 2>/dev/null || echo "(no fixtures found)"
+  gate:
+    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@a8b075f4d60354e79bd26e06353c5367b75296b2
+    with:
+      runner: blacksmith-2vcpu-ubuntu-2404-arm
+      runtime: node
+      runtime-version: '22'
+      setup-command: pnpm install --frozen-lockfile
+      test-command: pnpm -r build && pnpm -r test
+      conformance-command: >-
+        pnpm --filter @edictum/core build &&
+        EDICTUM_SCHEMAS_DIR=edictum-schemas
+        EDICTUM_CONFORMANCE_REQUIRED=1
+        pnpm --filter @edictum/core test -- tests/yaml-engine/shared-fixtures.test.ts
+      fixture-ref: 31bae70afaa0fa4e24475324a562acfdddf83341
