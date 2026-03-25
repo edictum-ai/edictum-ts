@@ -177,6 +177,34 @@ describe('security', () => {
   })
 })
 
+describe('security — null byte stripping', () => {
+  test('null bytes are stripped before resolution', () => {
+    const result = resolvePath('/allowed/path\x00')
+    // Null byte must not survive into the resolved path
+    expect(result).not.toContain('\x00')
+    expect(result).toBe('/allowed/path')
+  })
+
+  test('null byte sandbox escape is prevented', () => {
+    // Attack: "/allowed\x00/../etc/shadow" — C tools truncate at \0
+    // reading "/allowed" while sandbox sees "/allowed/../etc/shadow"
+    // After stripping \0, path becomes "/allowed/../etc/shadow"
+    // which resolves to "/etc/shadow" — now the sandbox correctly
+    // evaluates the TRUE target and denies it.
+    const result = resolvePath('/allowed\x00/../etc/shadow')
+    expect(result).not.toContain('\x00')
+    // The resolved path should point to /etc/shadow (the actual target),
+    // NOT /allowed (what a C tool would read with the null byte).
+    // On macOS, /etc resolves to /private/etc via symlink.
+    expect(result.endsWith('/etc/shadow')).toBe(true)
+  })
+
+  test('path with only null bytes resolves to cwd', () => {
+    const result = resolvePath('\x00\x00\x00')
+    expect(result).not.toContain('\x00')
+  })
+})
+
 describe('sandbox integration — issue #114', () => {
   test('non-existent file under symlinked within path is allowed', () => {
     const rawTmp = tmpdir()
