@@ -173,6 +173,25 @@ describe('compileSandbox — fail-closed path extraction', () => {
     expect(result.passed).toBe(false)
   })
 
+  test('allows ellipsis string in unknown arg key (no false positive)', () => {
+    // "loading..." contains ".." but is NOT a path — must not trigger denial
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      status: 'loading...',
+      message: 'Please wait...',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies embedded path traversal via ../ in unknown arg key', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', { ref: 'foo/../../../etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
   test('not_within still works without within (no fail-closed for not_within only)', () => {
     // Only not_within declared, no within — paths are checked against exclusion list
     // but empty paths should NOT trigger fail-closed (only within triggers that)

@@ -167,11 +167,10 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && !_PATH_ARG_KEYS.has(key)) {
       if (
-        value.includes('..') ||
+        value.includes('../') || // embedded traversal: foo/../etc/passwd
+        value.startsWith('..') || // relative parent: ../../etc, ..hidden
         value.startsWith('~') ||
-        (value.includes('/') &&
-          !value.includes('://') &&
-          (value.startsWith('./') || value.startsWith('../')))
+        (value.startsWith('./') && !value.includes('://')) // relative child: ./subdir/file
       ) {
         add(value)
       }

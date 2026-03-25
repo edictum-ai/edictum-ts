@@ -219,7 +219,7 @@ export class ClaudeAgentSDKAdapter {
           const toolResponse =
             hookInput.tool_response !== undefined ? hookInput.tool_response : hookInput.tool_result
 
-          // Correlate via tool_use_id first (exact match), then tool_name, then FIFO
+          // Correlate via tool_use_id (exact match), then tool_name (only if unambiguous)
           let callId: string | undefined
 
           // Finding 2: use tool_use_id for correlation if available
