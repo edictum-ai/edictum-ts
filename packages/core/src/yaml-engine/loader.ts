@@ -47,20 +47,62 @@ export function computeHash(rawBytes: Uint8Array): BundleHash {
 }
 
 // ---------------------------------------------------------------------------
-// YAML parsing helper
+// YAML parsing helper — dual CJS/ESM with module-level caching
 // ---------------------------------------------------------------------------
 
-/** Load js-yaml or throw a helpful error. */
-function requireYaml(): { load(input: string): unknown } {
+/** Cached js-yaml module. Set once, reused for all subsequent calls. */
+let _yamlModule: { load(input: string): unknown } | null = null
+
+/** Synchronous CJS fast-path. Returns null if not in CJS context or js-yaml not installed. */
+function requireYamlSync(): { load(input: string): unknown } | null {
+  if (_yamlModule) return _yamlModule
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const yaml = require('js-yaml') as { load(input: string): unknown }
-    return yaml
+    _yamlModule = require('js-yaml') as { load(input: string): unknown }
+    return _yamlModule
+  } catch {
+    return null
+  }
+}
+
+/** Async ESM fallback. Throws EdictumConfigError if js-yaml is not installed. */
+async function requireYamlAsync(): Promise<{ load(input: string): unknown }> {
+  if (_yamlModule) return _yamlModule
+  try {
+    const mod = await import('js-yaml')
+    _yamlModule = (mod.default ?? mod) as { load(input: string): unknown }
+    return _yamlModule
   } catch {
     throw new EdictumConfigError(
       'The YAML engine requires js-yaml. Install it with: npm install js-yaml',
     )
   }
+}
+
+/** Synchronous access — works in CJS or after ensureYamlLoaded() in ESM. */
+function requireYaml(): { load(input: string): unknown } {
+  const sync = requireYamlSync()
+  if (sync) return sync
+  throw new EdictumConfigError(
+    'The YAML engine requires js-yaml. Install it with: npm install js-yaml\n' +
+      'If using ESM, call ensureYamlLoaded() before loadBundle/loadBundleString.',
+  )
+}
+
+/**
+ * Pre-load js-yaml for ESM contexts. Call once at startup.
+ * In CJS contexts this is a no-op (require() works synchronously).
+ */
+export async function ensureYamlLoaded(): Promise<void> {
+  await requireYamlAsync()
+}
+
+/**
+ * Reset the cached yaml module. Intended for tests only.
+ * @internal
+ */
+export function _resetYamlCache(): void {
+  _yamlModule = null
 }
 
 /** Parse YAML content string, returning the parsed object. */

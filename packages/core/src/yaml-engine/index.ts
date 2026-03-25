@@ -41,6 +41,7 @@ export {
   loadBundle,
   loadBundleString,
   computeHash,
+  ensureYamlLoaded,
   MAX_BUNDLE_SIZE,
   validateSchema,
   validateContractFields,
@@ -49,6 +50,7 @@ export {
   validateRegexes,
   validatePreSelectors,
   validateSandboxContracts,
+  _resetYamlCache,
 } from './loader.js'
 export type { BundleHash } from './loader.js'
 

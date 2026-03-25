@@ -227,22 +227,23 @@ export class ClaudeAgentSDKAdapter {
             callId = hookInput.tool_use_id
           }
 
-          // Fall back to tool_name match
+          // Fall back to tool_name match — only if unambiguous (exactly one match)
           if (!callId) {
             const toolName = hookInput.tool_name
             if (toolName) {
+              let matchCount = 0
+              let matchedId: string | undefined
               for (const [id, pending] of this._pending) {
                 if (pending.envelope.toolName === toolName) {
-                  callId = id
-                  break
+                  matchCount++
+                  matchedId = id
                 }
               }
+              if (matchCount === 1 && matchedId) {
+                callId = matchedId
+              }
+              // If matchCount > 1 or 0, callId stays undefined → passthrough
             }
-          }
-
-          // Fall back to FIFO
-          if (!callId && this._pending.size > 0) {
-            callId = this._pending.keys().next().value as string
           }
 
           if (callId) {

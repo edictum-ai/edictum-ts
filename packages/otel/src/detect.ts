@@ -6,14 +6,13 @@
  * the appropriate telemetry instance (real or no-op).
  */
 
-import { createRequire } from 'node:module'
-
 import type { GovernanceTelemetryLike } from './types.js'
 import { NoOpTelemetry } from './noop.js'
 
-// createRequire works in both ESM and CJS (tsup transforms import.meta.url
-// for CJS output). This avoids the ESM ReferenceError on bare `require`.
-const _require = createRequire(import.meta.url)
+// Dual CJS/ESM resolution: try synchronous require first (CJS), then fall
+// back to dynamic import (ESM). The previous approach used
+// `createRequire(import.meta.url)` which breaks in CJS because tsup
+// transforms `import.meta.url` to `undefined` (var import_meta = {}).
 
 let _hasOtel: boolean | null = null
 
@@ -23,9 +22,14 @@ export function hasOtel(): boolean {
     return _hasOtel
   }
   try {
-    _require.resolve('@opentelemetry/api')
+    // CJS fast-path: require.resolve is synchronous and doesn't load the module.
+    require.resolve('@opentelemetry/api')
     _hasOtel = true
   } catch {
+    // In ESM, require is not defined — treat as unknown until createTelemetry
+    // attempts dynamic import. This means hasOtel() returns false in ESM when
+    // OTel IS installed, but createTelemetry() (the recommended entry point)
+    // handles ESM correctly via dynamic import.
     _hasOtel = false
   }
   return _hasOtel

@@ -118,6 +118,17 @@ const _PATH_ARG_KEYS = new Set([
   'source',
   'src',
   'dst',
+  // Common path-like arg names from AI framework tool calls.
+  // IMPORTANT: Only include keys that are unambiguously path-related.
+  // Generic keys like 'name', 'input', 'output', 'from', 'to' are excluded
+  // because they frequently hold non-path values (e.g., { from: "English" }),
+  // and resolvePath() would produce false positives. The heuristic loop below
+  // catches path-like VALUES in any key (containing '..', '~', or '/').
+  'filename',
+  'file',
+  'filepath',
+  'read_path',
+  'write_path',
 ])
 
 // ---------------------------------------------------------------------------
@@ -146,6 +157,15 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   }
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && value.startsWith('/') && !_PATH_ARG_KEYS.has(key)) add(value)
+  }
+
+  // Catch path-like values in unrecognized keys (relative paths, ~, etc.)
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string' && !_PATH_ARG_KEYS.has(key)) {
+      if (value.includes('..') || value.startsWith('~') || value.includes('/')) {
+        add(value)
+      }
+    }
   }
 
   const cmd = envelope.bashCommand ?? (args.command as string | undefined) ?? ''

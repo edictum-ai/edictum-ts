@@ -11,6 +11,7 @@ import {
   AuditAction,
   createAuditEvent,
   createEnvelope,
+  defaultSuccessCheck,
   EdictumConfigError,
   GovernancePipeline,
   Session,
@@ -453,7 +454,7 @@ export class EdictumOpenClawAdapter {
 
     const result = postDecision.outputSuppressed
       ? '[OUTPUT SUPPRESSED BY EDICTUM]'
-      : postDecision.redactedResponse !== undefined
+      : postDecision.redactedResponse != null
         ? postDecision.redactedResponse
         : toolResponse
 
@@ -571,25 +572,33 @@ export class EdictumOpenClawAdapter {
         return false
       }
     }
-    return !error
+    // If afterEvent.error is set, that's a definitive failure
+    if (error) return false
+    // Otherwise, inspect the result using the same heuristic as runner.ts
+    return defaultSuccessCheck(toolName, result)
   }
 
   /**
-   * Fallback lookup: find the first pending call whose toolName matches.
+   * Fallback lookup: find the pending call whose toolName matches, but only
+   * if exactly one match exists. When multiple same-name calls are pending,
+   * returns null to avoid misattribution — postconditions are skipped rather
+   * than evaluated against the wrong call's output.
    *
-   * **Limitation:** When multiple concurrent calls use the same tool, this
-   * returns the first match (insertion order). The correct pending entry may
-   * differ. Callers should always prefer an explicit callId when available;
-   * this fallback exists only for OpenClaw runtimes that omit toolCallId
-   * from the after_tool_call event.
+   * Callers should always prefer an explicit callId when available; this
+   * fallback exists only for OpenClaw runtimes that omit toolCallId from
+   * the after_tool_call event.
    */
   private _findPendingByToolName(toolName: string): string | null {
+    let matchCount = 0
+    let matchedCallId: string | null = null
     for (const [callId, pending] of this._pending) {
       if (pending.envelope.toolName === toolName) {
-        return callId
+        matchCount++
+        matchedCallId = callId
       }
     }
-    return null
+    // Only return if exactly one match — ambiguous = null (passthrough)
+    return matchCount === 1 ? matchedCallId : null
   }
 
   /**

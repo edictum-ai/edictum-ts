@@ -156,8 +156,8 @@ export class OpenAIAgentsAdapter {
         // Preserve structured output for postcondition/success inspection
         const toolOutput = agentOutput ?? ''
 
-        // Try FIFO correlation (insertion-order) for sequential execution
-        if (this._pending.size > 0) {
+        // Correlate to pending call — only if unambiguous (exactly one pending)
+        if (this._pending.size === 1) {
           const callId = this._pending.keys().next().value as string
           const postResult = await this._post(callId, toolOutput)
           if (postResult.outputSuppressed) {
@@ -167,6 +167,7 @@ export class OpenAIAgentsAdapter {
             }
           }
         }
+        // If multiple pending calls, skip postcondition rather than misattribute
 
         return { tripwireTriggered: false }
       },

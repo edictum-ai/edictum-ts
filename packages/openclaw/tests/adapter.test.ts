@@ -12,7 +12,7 @@ import type { ApprovalBackend, Precondition, Postcondition, Verdict } from '@edi
 
 import { EdictumOpenClawAdapter } from '../src/adapter.js'
 import { createEdictumPlugin, defaultPrincipalFromContext } from '../src/plugin.js'
-import { summarizeResult } from '../src/helpers.js'
+import { buildFindings, summarizeResult } from '../src/helpers.js'
 import type {
   ToolHookContext,
   BeforeToolCallEvent,
@@ -839,6 +839,101 @@ describe('EdictumOpenClawAdapter', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Finding #10 — ambiguous same-name call correlation
+  // -------------------------------------------------------------------------
+
+  describe('ambiguous same-name call correlation', () => {
+    it('skips postcondition when two same-name calls pending and no toolCallId', async () => {
+      const guard = new Edictum({
+        contracts: [detectSecrets],
+        auditSink: sink,
+      })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      // Two same-name calls pending
+      await adapter.pre('exec', { command: 'cat /a' }, 'tc-amb-1', ctx)
+      await adapter.pre('exec', { command: 'cat /b' }, 'tc-amb-2', ctx)
+
+      const eventCountBefore = sink.events.length
+
+      // handleAfterToolCall with no toolCallId on event or ctx — ambiguous
+      const afterEvent = makeAfterEvent({
+        toolCallId: undefined,
+        toolName: 'exec',
+        result: 'config: sk-secret-key-12345',
+      })
+      const afterCtx = makeCtx({ toolCallId: undefined })
+
+      await adapter.handleAfterToolCall(afterEvent, afterCtx)
+
+      // No CALL_EXECUTED/CALL_FAILED emitted — postcondition was skipped
+      const newEvents = sink.events.slice(eventCountBefore)
+      const postEvents = newEvents.filter(
+        (e) => e.action === AuditAction.CALL_EXECUTED || e.action === AuditAction.CALL_FAILED,
+      )
+      expect(postEvents).toHaveLength(0)
+    })
+
+    it('correlates correctly when only one same-name call pending and no toolCallId', async () => {
+      const guard = new Edictum({
+        contracts: [detectSecrets],
+        auditSink: sink,
+      })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      // Only one pending call
+      await adapter.pre('exec', { command: 'cat config' }, 'tc-unamb-1', ctx)
+
+      const afterEvent = makeAfterEvent({
+        toolCallId: undefined,
+        toolName: 'exec',
+        result: 'config: sk-secret-key-12345',
+      })
+      const afterCtx = makeCtx({ toolCallId: undefined })
+
+      await adapter.handleAfterToolCall(afterEvent, afterCtx)
+
+      // Unambiguous — postcondition should have run and produced CALL_EXECUTED/CALL_FAILED
+      const executed = sink.events.find(
+        (e) => e.action === AuditAction.CALL_EXECUTED || e.action === AuditAction.CALL_FAILED,
+      )
+      expect(executed).toBeDefined()
+    })
+
+    it('correlates correctly with explicit toolCallId even when ambiguous', async () => {
+      const guard = new Edictum({
+        contracts: [detectSecrets],
+        auditSink: sink,
+      })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      // Two same-name calls
+      await adapter.pre('exec', { command: 'cat /a' }, 'tc-expl-1', ctx)
+      await adapter.pre('exec', { command: 'cat /b' }, 'tc-expl-2', ctx)
+
+      // handleAfterToolCall WITH explicit toolCallId → should correlate
+      const afterEvent = makeAfterEvent({
+        toolCallId: 'tc-expl-2',
+        toolName: 'exec',
+        result: 'config: sk-secret-key-12345',
+      })
+      const afterCtx = makeCtx({ toolCallId: 'tc-expl-2' })
+
+      await adapter.handleAfterToolCall(afterEvent, afterCtx)
+
+      const executed = sink.events.find(
+        (e) =>
+          (e.action === AuditAction.CALL_EXECUTED || e.action === AuditAction.CALL_FAILED) &&
+          e.callId === 'tc-expl-2',
+      )
+      expect(executed).toBeDefined()
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // #41 — plugin behavior tests
   // -------------------------------------------------------------------------
 
@@ -910,6 +1005,218 @@ describe('EdictumOpenClawAdapter', () => {
       for (const call of onSpy.mock.calls) {
         expect(call[2]).toEqual({ priority: 42 })
       }
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // #5 — post() null return bug
+  // -------------------------------------------------------------------------
+
+  describe('post() result passthrough (#5)', () => {
+    it('returns tool response when no postconditions fire', async () => {
+      // No postconditions configured — postDecision.redactedResponse will be null (not undefined)
+      const guard = new Edictum({ auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'ls' }, 'tc-null-fix', ctx)
+
+      const postResult = await adapter.post(
+        'tc-null-fix',
+        'plain output',
+        makeAfterEvent({ toolCallId: 'tc-null-fix', result: 'plain output' }),
+      )
+
+      // Must be 'plain output', NOT null
+      expect(postResult.result).toBe('plain output')
+      expect(postResult.postconditionsPassed).toBe(true)
+      expect(postResult.outputSuppressed).toBe(false)
+    })
+
+    it('returns original response (not null) when postcondition fails without redaction', async () => {
+      // Postcondition that fails (warns) but doesn't redact — result should still be original
+      const warnOnly: Postcondition = {
+        contractType: 'post' as const,
+        tool: '*',
+        check: async (_envelope, response) => {
+          const text = typeof response === 'string' ? response : ''
+          if (text.includes('warning-pattern')) {
+            return { passed: false, message: 'Pattern found', metadata: Object.freeze({}) }
+          }
+          return { passed: true, message: null, metadata: Object.freeze({}) }
+        },
+      }
+      const guard = new Edictum({ contracts: [warnOnly], auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'cat config' }, 'tc-warn', ctx)
+
+      const postResult = await adapter.post(
+        'tc-warn',
+        'output with warning-pattern inside',
+        makeAfterEvent({
+          toolCallId: 'tc-warn',
+          result: 'output with warning-pattern inside',
+        }),
+      )
+
+      // postDecision.redactedResponse is null (no redaction contract), so result must be original
+      expect(postResult.result).toBe('output with warning-pattern inside')
+      expect(postResult.postconditionsPassed).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // #6 — buildFindings field mapping bug
+  // -------------------------------------------------------------------------
+
+  describe('buildFindings field mapping (#6)', () => {
+    it('maps pipeline field names correctly (name → contractId, metadata.tags → tags)', () => {
+      const findings = buildFindings({
+        postconditionsPassed: false,
+        warnings: [],
+        contractsEvaluated: [
+          {
+            passed: false,
+            name: 'secret-leak',
+            message: 'Secret detected',
+            metadata: { tags: ['dlp', 'security'] },
+            policyError: false,
+          },
+        ],
+        policyError: false,
+      })
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0].contractId).toBe('secret-leak')
+      expect(findings[0].tags).toEqual(['dlp', 'security'])
+    })
+
+    it('falls back to contractId when name is absent', () => {
+      const findings = buildFindings({
+        postconditionsPassed: false,
+        warnings: [],
+        contractsEvaluated: [
+          {
+            passed: false,
+            contractId: 'legacy-id',
+            message: 'Failed',
+            policyError: false,
+          },
+        ],
+        policyError: false,
+      })
+
+      expect(findings[0].contractId).toBe('legacy-id')
+    })
+
+    it('falls back to top-level tags when metadata.tags is absent', () => {
+      const findings = buildFindings({
+        postconditionsPassed: false,
+        warnings: [],
+        contractsEvaluated: [
+          {
+            passed: false,
+            name: 'test-contract',
+            message: 'Failed',
+            tags: ['fallback-tag'],
+            policyError: false,
+          },
+        ],
+        policyError: false,
+      })
+
+      expect(findings[0].tags).toEqual(['fallback-tag'])
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // #7 — _checkToolSuccess defaultSuccessCheck bug
+  // -------------------------------------------------------------------------
+
+  describe('defaultSuccessCheck fallback (#7)', () => {
+    it('tool result "error: boom" is classified as failure without afterEvent.error', async () => {
+      const guard = new Edictum({ auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'ls' }, 'tc-err-result', ctx)
+
+      await adapter.post(
+        'tc-err-result',
+        'error: boom',
+        makeAfterEvent({ toolCallId: 'tc-err-result', result: 'error: boom', error: undefined }),
+      )
+
+      // defaultSuccessCheck should detect "error:" prefix → CALL_FAILED
+      const failed = sink.events.find((e) => e.action === AuditAction.CALL_FAILED)
+      expect(failed).toBeDefined()
+      expect(failed!.toolName).toBe('exec')
+    })
+
+    it('tool result with is_error:true is classified as failure', async () => {
+      const guard = new Edictum({ auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'ls' }, 'tc-iserr', ctx)
+
+      await adapter.post(
+        'tc-iserr',
+        { is_error: true, message: 'something broke' },
+        makeAfterEvent({
+          toolCallId: 'tc-iserr',
+          result: { is_error: true, message: 'something broke' },
+          error: undefined,
+        }),
+      )
+
+      const failed = sink.events.find((e) => e.action === AuditAction.CALL_FAILED)
+      expect(failed).toBeDefined()
+    })
+
+    it('normal string result without afterEvent.error is classified as success', async () => {
+      const guard = new Edictum({ auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'ls' }, 'tc-ok-result', ctx)
+
+      await adapter.post(
+        'tc-ok-result',
+        'file1.txt\nfile2.txt',
+        makeAfterEvent({
+          toolCallId: 'tc-ok-result',
+          result: 'file1.txt\nfile2.txt',
+          error: undefined,
+        }),
+      )
+
+      const executed = sink.events.find((e) => e.action === AuditAction.CALL_EXECUTED)
+      expect(executed).toBeDefined()
+    })
+
+    it('afterEvent.error takes priority over result content', async () => {
+      const guard = new Edictum({ auditSink: sink })
+      const adapter = new EdictumOpenClawAdapter(guard)
+      const ctx = makeCtx()
+
+      await adapter.pre('exec', { command: 'ls' }, 'tc-err-prio', ctx)
+
+      // Result looks fine, but afterEvent.error is set
+      await adapter.post(
+        'tc-err-prio',
+        'looks good',
+        makeAfterEvent({
+          toolCallId: 'tc-err-prio',
+          result: 'looks good',
+          error: 'process crashed',
+        }),
+      )
+
+      const failed = sink.events.find((e) => e.action === AuditAction.CALL_FAILED)
+      expect(failed).toBeDefined()
     })
   })
 })
