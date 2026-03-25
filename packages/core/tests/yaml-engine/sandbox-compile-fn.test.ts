@@ -146,10 +146,29 @@ describe('compileSandbox — fail-closed path extraction', () => {
     expect(result.passed).toBe(true)
   })
 
-  test('denies slash-containing value in unknown arg key outside boundary', () => {
-    // Heuristic catches "/" in values for unknown keys
+  test('denies absolute path in unknown arg key outside boundary', () => {
+    // Absolute paths starting with "/" in unknown keys are caught by the existing loop
     const sb = _sandbox({ within: ['/workspace'] })
     const env = createEnvelope('tool', { custom_arg: '/etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('allows non-path slash-containing value (no false positive)', () => {
+    // Values like 'application/json', '1/2' must NOT trigger false positives
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt', // known path key within boundary
+      content_type: 'application/json', // NOT a path
+      version: '1/2', // NOT a path
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies relative path with ./ prefix in unknown arg key', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', { ref: './../../etc/shadow' })
     const result = _checkResult(sb, env)
     expect(result.passed).toBe(false)
   })

@@ -160,9 +160,19 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   }
 
   // Catch path-like values in unrecognized keys (relative paths, ~, etc.)
+  // NOTE: Absolute paths (starting with /) in unknown keys are already caught
+  // above at line 159. This loop covers relative path patterns only.
+  // The slash check requires './' or '../' prefix to avoid false positives on
+  // non-path values like 'application/json', '1/2', etc.
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && !_PATH_ARG_KEYS.has(key)) {
-      if (value.includes('..') || value.startsWith('~') || value.includes('/')) {
+      if (
+        value.includes('..') ||
+        value.startsWith('~') ||
+        (value.includes('/') &&
+          !value.includes('://') &&
+          (value.startsWith('./') || value.startsWith('../')))
+      ) {
         add(value)
       }
     }
