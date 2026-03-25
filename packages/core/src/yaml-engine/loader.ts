@@ -53,9 +53,33 @@ export function computeHash(rawBytes: Uint8Array): BundleHash {
 /** Cached js-yaml module. Set once, reused for all subsequent calls. */
 let _yamlModule: { load(input: string): unknown } | null = null
 
-/** Synchronous CJS fast-path. Returns null if not in CJS context or js-yaml not installed. */
+/**
+ * Synchronous js-yaml loader. Checks three sources in order:
+ * 1. Module-level cache (already loaded)
+ * 2. globalThis.__edictum_yaml (populated by ESM banner via top-level await)
+ * 3. CJS require('js-yaml') (only works in CJS contexts)
+ *
+ * Returns null if js-yaml is not available synchronously.
+ */
 function requireYamlSync(): { load(input: string): unknown } | null {
   if (_yamlModule) return _yamlModule
+
+  // Check ESM banner cache — populated by top-level await in the ESM build.
+  // Consume-and-delete: read once, then remove from globalThis to close the
+  // injection window. A compromised transitive dependency could otherwise
+  // overwrite this value to bypass contract enforcement.
+  const raw = (globalThis as Record<string, unknown>).__edictum_yaml
+  if (raw !== undefined) {
+    delete (globalThis as Record<string, unknown>).__edictum_yaml
+    // Runtime type guard — TypeScript cast alone is not validation.
+    if (typeof (raw as Record<string, unknown>).load === 'function') {
+      _yamlModule = raw as { load(input: string): unknown }
+      return _yamlModule
+    }
+    // Malformed value — fall through to CJS path or return null.
+  }
+
+  // CJS fast-path: require works synchronously in CommonJS contexts.
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     _yamlModule = require('js-yaml') as { load(input: string): unknown }
@@ -103,6 +127,8 @@ export async function ensureYamlLoaded(): Promise<void> {
  */
 export function _resetYamlCache(): void {
   _yamlModule = null
+  // Also clear the globalThis cache set by the ESM banner
+  delete (globalThis as Record<string, unknown>).__edictum_yaml
 }
 
 /** Parse YAML content string synchronously, returning the parsed object. */

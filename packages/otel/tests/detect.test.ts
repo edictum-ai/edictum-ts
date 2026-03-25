@@ -31,6 +31,32 @@ describe('hasOtel', () => {
   })
 })
 
+describe('security', () => {
+  it('rejects non-boolean globalThis.__edictum_has_otel injection', () => {
+    _resetHasOtelCache()
+    // Attacker tries to suppress telemetry with a non-boolean
+    ;(globalThis as Record<string, unknown>).__edictum_has_otel = 'false'
+    // Should fall through to CJS require.resolve (works in test env)
+    expect(hasOtel()).toBe(true)
+    // globalThis should be cleaned up
+    expect((globalThis as Record<string, unknown>).__edictum_has_otel).toBeUndefined()
+  })
+
+  it('consumes and deletes globalThis.__edictum_has_otel after first read', () => {
+    _resetHasOtelCache()
+    ;(globalThis as Record<string, unknown>).__edictum_has_otel = true
+    expect(hasOtel()).toBe(true)
+    // After consumption, globalThis entry must be deleted
+    expect((globalThis as Record<string, unknown>).__edictum_has_otel).toBeUndefined()
+  })
+
+  it('_resetHasOtelCache clears globalThis.__edictum_has_otel', () => {
+    ;(globalThis as Record<string, unknown>).__edictum_has_otel = false
+    _resetHasOtelCache()
+    expect((globalThis as Record<string, unknown>).__edictum_has_otel).toBeUndefined()
+  })
+})
+
 describe('createTelemetry', () => {
   it('returns GovernanceTelemetry when OTel is available', async () => {
     const telemetry = await createTelemetry()

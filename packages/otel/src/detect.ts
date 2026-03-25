@@ -25,22 +25,37 @@ let _hasOtelAsyncResult: boolean | null = null
  * Check if @opentelemetry/api is available at runtime (synchronous).
  *
  * **CJS:** Returns accurate result (uses require.resolve).
- * **ESM:** Always returns false — use {@link hasOtelAsync} instead.
+ * **ESM:** Always returns false — this is a known limitation because
+ * `require.resolve` is not available in ESM. The return value does NOT
+ * mean OTel is absent; it means this function cannot detect it.
  *
- * For code that must work in both ESM and CJS, prefer {@link hasOtelAsync}
- * or just call {@link createTelemetry} directly.
+ * @deprecated Use {@link hasOtelAsync} for accurate detection in both ESM
+ * and CJS, or call {@link createTelemetry} directly (recommended — it
+ * returns a real or no-op instance transparently).
  */
 export function hasOtel(): boolean {
   if (_hasOtelSync !== null) {
     return _hasOtelSync
   }
+
+  // Check ESM banner cache — populated by top-level await in the ESM build.
+  // Consume-and-delete: read once, remove from globalThis to close the
+  // injection window where a dependency could suppress telemetry detection.
+  const raw = (globalThis as Record<string, unknown>).__edictum_has_otel
+  if (raw !== undefined) {
+    delete (globalThis as Record<string, unknown>).__edictum_has_otel
+    if (typeof raw === 'boolean') {
+      _hasOtelSync = raw
+      return _hasOtelSync
+    }
+    // Non-boolean — fall through to CJS path.
+  }
+
+  // CJS fast-path: require.resolve is synchronous and doesn't load the module.
   try {
-    // CJS fast-path: require.resolve is synchronous and doesn't load the module.
     require.resolve('@opentelemetry/api')
     _hasOtelSync = true
   } catch {
-    // In ESM, require is not defined — returns false.
-    // Use hasOtelAsync() for accurate ESM detection.
     _hasOtelSync = false
   }
   return _hasOtelSync
@@ -83,6 +98,7 @@ export async function hasOtelAsync(): Promise<boolean> {
 export function _resetHasOtelCache(): void {
   _hasOtelSync = null
   _hasOtelAsyncResult = null
+  delete (globalThis as Record<string, unknown>).__edictum_has_otel
 }
 
 /**
