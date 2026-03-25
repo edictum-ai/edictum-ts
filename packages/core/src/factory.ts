@@ -24,7 +24,12 @@ import { composeBundles } from './yaml-engine/composer.js'
 import type { CompositionReport } from './yaml-engine/composer.js'
 import { compileContracts } from './yaml-engine/compiler.js'
 import type { CustomOperator, CustomSelector } from './yaml-engine/evaluator.js'
-import { loadBundle, loadBundleString } from './yaml-engine/loader.js'
+import {
+  loadBundle,
+  loadBundleString,
+  loadBundleAsync,
+  loadBundleStringAsync,
+} from './yaml-engine/loader.js'
 
 // ---------------------------------------------------------------------------
 // Shared options type
@@ -155,6 +160,99 @@ export function fromYamlString(
   })
 
   return _buildGuard(compiled, policyVersion, options)
+}
+
+// ---------------------------------------------------------------------------
+// fromYamlStringAsync — ESM-safe async version
+// ---------------------------------------------------------------------------
+
+/**
+ * Async version of fromYamlString — works in both ESM and CJS.
+ *
+ * Use this instead of fromYamlString when importing @edictum/core as ESM.
+ * The sync version uses require('js-yaml') which is not available in ESM.
+ */
+export async function fromYamlStringAsync(
+  content: string | Uint8Array,
+  options: YamlFactoryOptions = {},
+): Promise<Edictum> {
+  const [bundleData, bundleHash] = await loadBundleStringAsync(content)
+  const policyVersion = bundleHash.hex
+
+  const compiled = compileContracts(bundleData, {
+    customOperators: options.customOperators ?? null,
+    customSelectors: options.customSelectors ?? null,
+  })
+
+  return _buildGuard(compiled, policyVersion, options)
+}
+
+// ---------------------------------------------------------------------------
+// fromYamlAsync — ESM-safe async version
+// ---------------------------------------------------------------------------
+
+/**
+ * Async version of fromYaml — works in both ESM and CJS.
+ *
+ * Use this instead of fromYaml when importing @edictum/core as ESM.
+ */
+export async function fromYamlAsync(
+  ...args: [...string[], FromYamlOptions] | string[]
+): Promise<Edictum | [Edictum, CompositionReport]> {
+  let paths: string[]
+  let options: FromYamlOptions
+
+  const last = args[args.length - 1]
+  if (typeof last === 'object' && last !== null && !Array.isArray(last)) {
+    paths = args.slice(0, -1) as string[]
+    options = last as FromYamlOptions
+  } else {
+    paths = args as string[]
+    options = {}
+  }
+
+  if (paths.length === 0) {
+    throw new EdictumConfigError('fromYamlAsync() requires at least one path')
+  }
+
+  const loaded: [Record<string, unknown>, { hex: string }][] = []
+  for (const p of paths) {
+    loaded.push(await loadBundleAsync(p))
+  }
+
+  let bundleData: Record<string, unknown>
+  let policyVersion: string
+  let report: CompositionReport
+
+  if (loaded.length === 1) {
+    const entry = loaded[0] as [Record<string, unknown>, { hex: string }]
+    bundleData = entry[0]
+    policyVersion = entry[1].hex
+    report = { overriddenContracts: [], observeContracts: [] }
+  } else {
+    const bundleTuples: [Record<string, unknown>, string][] = loaded.map(([data], i) => [
+      data,
+      paths[i] as string,
+    ])
+    const composed = composeBundles(...bundleTuples)
+    bundleData = composed.bundle
+    report = composed.report
+    policyVersion = createHash('sha256')
+      .update(loaded.map(([, h]) => h.hex).join(':'))
+      .digest('hex')
+  }
+
+  const compiled = compileContracts(bundleData, {
+    customOperators: options.customOperators ?? null,
+    customSelectors: options.customSelectors ?? null,
+  })
+
+  const guard = _buildGuard(compiled, policyVersion, options)
+
+  if (options.returnReport) {
+    return [guard, report]
+  }
+  return guard
 }
 
 // ---------------------------------------------------------------------------

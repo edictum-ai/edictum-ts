@@ -156,8 +156,17 @@ export class OpenAIAgentsAdapter {
         // Preserve structured output for postcondition/success inspection
         const toolOutput = agentOutput ?? ''
 
-        // Try FIFO correlation (insertion-order) for sequential execution
-        if (this._pending.size > 0) {
+        // Correlate to pending call — only if unambiguous (exactly one pending).
+        //
+        // LIMITATION: The OpenAI Agents SDK output guardrail receives the agent's
+        // text output (agentOutput), not per-tool output. There is no callId or
+        // toolName in the guardrail context, so we can only correlate by pending
+        // count. When multiple tool calls are in-flight simultaneously,
+        // postcondition evaluation is skipped to avoid misattributing output to
+        // the wrong call. This means postconditions are not enforced under
+        // concurrent load. For guaranteed postcondition enforcement, use the
+        // wrapper integration path (_pre/_post with explicit callIds).
+        if (this._pending.size === 1) {
           const callId = this._pending.keys().next().value as string
           const postResult = await this._post(callId, toolOutput)
           if (postResult.outputSuppressed) {

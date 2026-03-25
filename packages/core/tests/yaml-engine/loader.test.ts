@@ -9,6 +9,8 @@ import {
   loadBundle,
   loadBundleString,
   computeHash,
+  ensureYamlLoaded,
+  _resetYamlCache,
   MAX_BUNDLE_SIZE,
   validateSchema,
   validateUniqueIds,
@@ -496,6 +498,18 @@ kind: ContractBundle
 contracts: []
 `
     expect(() => loadBundleString(yaml)).toThrow(EdictumConfigError)
+  })
+
+  test('ensureYamlLoaded resolves when js-yaml is installed', async () => {
+    await expect(ensureYamlLoaded()).resolves.toBeUndefined()
+  })
+
+  test('ensureYamlLoaded pre-caches module for subsequent sync calls', async () => {
+    _resetYamlCache()
+    await ensureYamlLoaded()
+    // After ensureYamlLoaded, sync loadBundleString should work
+    const [data] = loadBundleString(VALID_YAML)
+    expect(data.apiVersion).toBe('edictum/v1')
   })
 
   test('duplicate IDs in full load rejected', () => {

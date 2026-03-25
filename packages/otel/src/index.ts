@@ -29,7 +29,7 @@ export { GovernanceTelemetry } from './telemetry.js'
 export { NoOpSpan, NoOpTelemetry } from './noop.js'
 
 // Runtime detection + factory
-export { createTelemetry, hasOtel } from './detect.js'
+export { createTelemetry, hasOtel, hasOtelAsync } from './detect.js'
 
 // Setup helper
 export { configureOtel } from './configure.js'

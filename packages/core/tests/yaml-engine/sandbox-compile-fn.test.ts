@@ -88,6 +88,146 @@ describe('compileSandbox — within', () => {
 })
 
 // ---------------------------------------------------------------------------
+// security: fail-closed path extraction bypass
+// ---------------------------------------------------------------------------
+
+describe('compileSandbox — fail-closed path extraction', () => {
+  test('denies when no paths extractable and within declared', () => {
+    // within is declared but tool args have no path-like values at all → fail-closed
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('read_file', { data: 'hello', count: '42' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+    expect(result.message).toContain('no extractable paths')
+  })
+
+  test('allows when no within/not_within declared (no path boundaries)', () => {
+    // Sandbox has no path constraints — args don't matter for path check
+    const sb = _sandbox({})
+    const env = createEnvelope('read_file', { filename: '../etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('allows recognized path key within boundary', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('read_file', { path: '/workspace/file.txt' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies relative path traversal via unknown arg key', () => {
+    // "cmd_path" is not in _PATH_ARG_KEYS, but the heuristic catches ".."
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('exec', { cmd_path: '../../etc/shadow' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('denies tilde path in unknown arg key', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('read', { location: '~/secrets' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('denies newly-recognized path key outside boundary', () => {
+    // "filename" is now in _PATH_ARG_KEYS — verify it's extracted and checked
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('read_file', { filename: '/etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('allows newly-recognized path key within boundary', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('read_file', { filename: '/workspace/data.txt' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies absolute path in unknown arg key outside boundary', () => {
+    // Absolute paths starting with "/" in unknown keys are caught by the existing loop
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', { custom_arg: '/etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('allows non-path slash-containing value (no false positive)', () => {
+    // Values like 'application/json', '1/2' must NOT trigger false positives
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt', // known path key within boundary
+      content_type: 'application/json', // NOT a path
+      version: '1/2', // NOT a path
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies relative path with ./ prefix in unknown arg key', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', { ref: './../../etc/shadow' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('allows ellipsis string in unknown arg key (no false positive)', () => {
+    // "loading..." contains ".." but is NOT a path — must not trigger denial
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      status: 'loading...',
+      message: 'Please wait...',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('allows double-dot-prefixed non-path strings (no false positive)', () => {
+    // "..section" starts with ".." but is NOT a path traversal — must not trigger denial
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      label: '..section',
+      heading: '...notes',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('allows URL with ../ in unknown arg key (no false positive)', () => {
+    // URLs like 'https://example.com/a/../b' contain '../' but are NOT paths
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      redirect_url: 'https://example.com/a/../b',
+      callback: 'http://localhost:3000/api/../hook',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
+  test('denies embedded path traversal via ../ in unknown arg key', () => {
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', { ref: 'foo/../../../etc/passwd' })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(false)
+  })
+
+  test('not_within still works without within (no fail-closed for not_within only)', () => {
+    // Only not_within declared, no within — paths are checked against exclusion list
+    // but empty paths should NOT trigger fail-closed (only within triggers that)
+    const sb = _sandbox({ not_within: ['/etc'] })
+    const env = createEnvelope('tool', { data: 'hello' })
+    const result = _checkResult(sb, env)
+    // No paths extracted, no within declared → pass (not_within alone doesn't fail-closed)
+    expect(result.passed).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // commands boundary tests
 // ---------------------------------------------------------------------------
 

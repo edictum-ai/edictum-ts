@@ -14,7 +14,9 @@ import { randomUUID } from 'node:crypto'
 import type { ApprovalBackend } from './approval.js'
 import {
   fromYaml as _fromYaml,
+  fromYamlAsync as _fromYamlAsync,
   fromYamlString as _fromYamlString,
+  fromYamlStringAsync as _fromYamlStringAsync,
   reload as _reload,
 } from './factory.js'
 import type { FromYamlOptions, ReloadOptions, YamlFactoryOptions } from './factory.js'
@@ -578,6 +580,27 @@ export class Edictum implements GuardLike {
    */
   static fromYamlString(content: string | Uint8Array, options?: YamlFactoryOptions): Edictum {
     return _fromYamlString(content, options)
+  }
+
+  /**
+   * Async version of fromYamlString — works in both ESM and CJS.
+   * Use this when importing @edictum/core as ESM.
+   */
+  static async fromYamlStringAsync(
+    content: string | Uint8Array,
+    options?: YamlFactoryOptions,
+  ): Promise<Edictum> {
+    return _fromYamlStringAsync(content, options)
+  }
+
+  /**
+   * Async version of fromYaml — works in both ESM and CJS.
+   * Use this when importing @edictum/core as ESM.
+   */
+  static async fromYamlAsync(
+    ...args: [...string[], FromYamlOptions] | string[]
+  ): Promise<Edictum | [Edictum, CompositionReport]> {
+    return _fromYamlAsync(...args)
   }
 
   /**

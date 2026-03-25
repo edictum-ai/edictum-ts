@@ -31,9 +31,13 @@ export function buildFindings(postDecision: {
   for (const c of postDecision.contractsEvaluated) {
     if (c.passed === false || c.policyError === true) {
       findings.push({
-        contractId: (c.contractId as string) ?? null,
+        contractId: (c.name as string) ?? (c.contractId as string) ?? null,
         message: (c.message as string) ?? 'Postcondition failed.',
-        tags: Array.isArray(c.tags) ? c.tags.filter((t): t is string => typeof t === 'string') : [],
+        tags: (() => {
+          const meta = c.metadata as Record<string, unknown> | undefined
+          const tags = meta?.tags ?? c.tags
+          return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : []
+        })(),
         severity: (c.policyError as boolean) ? 'error' : 'warn',
       })
     }

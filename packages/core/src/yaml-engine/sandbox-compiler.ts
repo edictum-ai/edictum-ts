@@ -118,6 +118,17 @@ const _PATH_ARG_KEYS = new Set([
   'source',
   'src',
   'dst',
+  // Common path-like arg names from AI framework tool calls.
+  // IMPORTANT: Only include keys that are unambiguously path-related.
+  // Generic keys like 'name', 'input', 'output', 'from', 'to' are excluded
+  // because they frequently hold non-path values (e.g., { from: "English" }),
+  // and resolvePath() would produce false positives. The heuristic loop below
+  // catches path-like VALUES in any key (containing '..', '~', or '/').
+  'filename',
+  'file',
+  'filepath',
+  'read_path',
+  'write_path',
 ])
 
 // ---------------------------------------------------------------------------
@@ -146,6 +157,27 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   }
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && value.startsWith('/') && !_PATH_ARG_KEYS.has(key)) add(value)
+  }
+
+  // Catch path-like values in unrecognized keys (relative paths, ~, etc.)
+  // NOTE: Absolute paths (starting with /) in unknown keys are already caught
+  // above at line 159. This loop covers relative path patterns only.
+  // The slash check requires './' or '../' prefix to avoid false positives on
+  // non-path values like 'application/json', '1/2', etc.
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string' && !_PATH_ARG_KEYS.has(key)) {
+      // Exclude URLs — they are handled separately by extractUrls/domain checks
+      const isUrl = value.includes('://')
+      if (
+        (!isUrl && value.includes('../')) || // embedded traversal: foo/../etc/passwd
+        value === '..' || // bare parent reference
+        value.startsWith('../') || // parent traversal prefix: ../../etc/passwd
+        value.startsWith('~') ||
+        (value.startsWith('./') && !isUrl) // relative child: ./subdir/file
+      ) {
+        add(value)
+      }
+    }
   }
 
   const cmd = envelope.bashCommand ?? (args.command as string | undefined) ?? ''

@@ -615,6 +615,123 @@ describe('toSdkHooks', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Ambiguous same-name call correlation (Finding #9)
+// ---------------------------------------------------------------------------
+
+describe('ambiguous same-name call correlation', () => {
+  it('skips postcondition when two same-name calls pending and no tool_use_id', async () => {
+    const postContract: Postcondition = {
+      tool: '*',
+      contractType: 'post',
+      check: async () => Verdict.fail('should not run'),
+    }
+    const sink = makeSink()
+    const guard = makeGuard({ contracts: [postContract], auditSink: sink })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const hooks = adapter.toSdkHooks()
+
+    // Two Read calls pending
+    await hooks.PreToolUse[0]!({
+      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/a' } },
+    })
+    await hooks.PreToolUse[0]!({
+      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/b' } },
+    })
+
+    // PostToolUse without tool_use_id — ambiguous, should passthrough
+    const result = await hooks.PostToolUse[0]!({
+      input: {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read',
+        tool_response: 'file contents',
+      },
+    })
+
+    // Passthrough: empty object (no postcondition evaluation)
+    expect(result).toEqual({})
+  })
+
+  it('correlates correctly when only one same-name call pending', async () => {
+    const postContract: Postcondition = {
+      tool: '*',
+      contractType: 'post',
+      check: async () => Verdict.fail('postcondition ran'),
+    }
+    const sink = makeSink()
+    const guard = makeGuard({
+      contracts: [postContract],
+      auditSink: sink,
+      tools: { Read: { side_effect: 'pure' } },
+    })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const hooks = adapter.toSdkHooks()
+
+    // Only one Read call pending
+    await hooks.PreToolUse[0]!({
+      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/a' } },
+    })
+
+    // PostToolUse without tool_use_id — unambiguous, should correlate
+    const result = (await hooks.PostToolUse[0]!({
+      input: {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read',
+        tool_response: 'file contents',
+      },
+    })) as { hookSpecificOutput?: { additionalContext?: string } }
+
+    // Postcondition ran and produced findings
+    expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
+  })
+
+  it('correlates correctly with explicit tool_use_id even when ambiguous', async () => {
+    const postContract: Postcondition = {
+      tool: '*',
+      contractType: 'post',
+      check: async () => Verdict.fail('postcondition ran'),
+    }
+    const sink = makeSink()
+    const guard = makeGuard({
+      contracts: [postContract],
+      auditSink: sink,
+      tools: { Read: { side_effect: 'pure' } },
+    })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const hooks = adapter.toSdkHooks()
+
+    // Two Read calls with explicit IDs
+    await hooks.PreToolUse[0]!({
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Read',
+        tool_input: { path: '/a' },
+        tool_use_id: 'id-1',
+      },
+    })
+    await hooks.PreToolUse[0]!({
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Read',
+        tool_input: { path: '/b' },
+        tool_use_id: 'id-2',
+      },
+    })
+
+    // PostToolUse WITH explicit tool_use_id → should correlate correctly
+    const result = (await hooks.PostToolUse[0]!({
+      input: {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read',
+        tool_use_id: 'id-2',
+        tool_response: 'file contents',
+      },
+    })) as { hookSpecificOutput?: { additionalContext?: string } }
+
+    expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Postcondition output suppression
 // ---------------------------------------------------------------------------
 

@@ -47,19 +47,21 @@ export function compileSandbox(
   const timeoutEffect = (contract.timeout_effect as string) ?? 'deny'
 
   const check = (envelope: ToolEnvelope): Verdict => {
-    // Path checks
-    // SECURITY LIMITATION (Python parity — intentional fail-open on empty paths):
-    // If extractPaths() returns empty (e.g., relative paths, ~, $HOME, or args
-    // that don't match known path keys), within/not_within enforcement is silently
-    // skipped. This matches Python's behavior — sandbox only checks paths it can
-    // extract. A tool call with unrecognized path arguments will pass through
-    // unchecked. This is a known gap: an attacker who crafts args that bypass
-    // extractPaths() can evade sandbox path restrictions.
-    // Mitigations: (1) use command allowlists as a complementary control,
-    // (2) restrict tool access at the adapter level, (3) validate tool args
-    // via precondition contracts that match the specific arg patterns.
+    // Path checks — FAIL-CLOSED when sandbox declares path boundaries
     if (within.length > 0 || notWithin.length > 0) {
       const paths = extractPaths(envelope)
+
+      // FAIL-CLOSED: If the sandbox declares path boundaries (within/not_within)
+      // but we couldn't extract any paths from the tool call, we DENY.
+      // Rationale: we can't verify what we can't see. An attacker who crafts
+      // args that bypass extractPaths() should not get a free pass.
+      if (paths.length === 0 && within.length > 0) {
+        return Verdict.fail(
+          expandMessage(messageTemplate, envelope) +
+            ' (no extractable paths — sandbox cannot verify boundary compliance)',
+        )
+      }
+
       if (paths.length > 0) {
         for (const p of paths) {
           for (const excluded of notWithin) {

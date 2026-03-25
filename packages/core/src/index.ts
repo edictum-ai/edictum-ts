@@ -98,7 +98,7 @@ export type { BatchCall, EvaluateOptions } from './dry-run.js'
 export { fnmatch } from './fnmatch.js'
 
 // YAML Factory
-export { fromYaml, fromYamlString, reload } from './factory.js'
+export { fromYaml, fromYamlAsync, fromYamlString, fromYamlStringAsync, reload } from './factory.js'
 export type { YamlFactoryOptions, FromYamlOptions, ReloadOptions } from './factory.js'
 
 // YAML Engine (public API)
@@ -113,8 +113,11 @@ export type { CustomOperator, CustomSelector } from './yaml-engine/index.js'
 export {
   compileContracts,
   loadBundle,
+  loadBundleAsync,
   loadBundleString,
+  loadBundleStringAsync,
   computeHash,
+  ensureYamlLoaded,
   MAX_BUNDLE_SIZE,
   composeBundles,
   expandMessage,
