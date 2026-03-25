@@ -14,7 +14,12 @@ import { NoOpTelemetry } from './noop.js'
 // import for ESM. createTelemetry() is the recommended entry point — it
 // handles both ESM and CJS transparently.
 
-let _hasOtel: boolean | null = null
+// Separate caches to prevent hasOtel() (sync, CJS-only) from poisoning
+// hasOtelAsync() (async, works in both). In ESM, hasOtel() sets
+// _hasOtelSync = false because require is unavailable — but OTel may still
+// be installed and detectable via dynamic import.
+let _hasOtelSync: boolean | null = null
+let _hasOtelAsyncResult: boolean | null = null
 
 /**
  * Check if @opentelemetry/api is available at runtime (synchronous).
@@ -26,34 +31,36 @@ let _hasOtel: boolean | null = null
  * or just call {@link createTelemetry} directly.
  */
 export function hasOtel(): boolean {
-  if (_hasOtel !== null) {
-    return _hasOtel
+  if (_hasOtelSync !== null) {
+    return _hasOtelSync
   }
   try {
     // CJS fast-path: require.resolve is synchronous and doesn't load the module.
     require.resolve('@opentelemetry/api')
-    _hasOtel = true
+    _hasOtelSync = true
   } catch {
     // In ESM, require is not defined — returns false.
     // Use hasOtelAsync() for accurate ESM detection.
-    _hasOtel = false
+    _hasOtelSync = false
   }
-  return _hasOtel
+  return _hasOtelSync
 }
 
 /**
  * Async check if @opentelemetry/api is available — works in both ESM and CJS.
  *
- * Prefer this over {@link hasOtel} when your code runs in ESM contexts.
+ * Uses its own cache, independent of {@link hasOtel}. Safe to call after
+ * hasOtel() — the async path will still attempt dynamic import even if
+ * hasOtel() returned false (which it always does in ESM).
  */
 export async function hasOtelAsync(): Promise<boolean> {
-  if (_hasOtel !== null) {
-    return _hasOtel
+  if (_hasOtelAsyncResult !== null) {
+    return _hasOtelAsyncResult
   }
   // Try CJS first
   try {
     require.resolve('@opentelemetry/api')
-    _hasOtel = true
+    _hasOtelAsyncResult = true
     return true
   } catch {
     // Not in CJS or not installed via CJS
@@ -61,10 +68,10 @@ export async function hasOtelAsync(): Promise<boolean> {
   // Try ESM dynamic import
   try {
     await import('@opentelemetry/api')
-    _hasOtel = true
+    _hasOtelAsyncResult = true
     return true
   } catch {
-    _hasOtel = false
+    _hasOtelAsyncResult = false
     return false
   }
 }
@@ -74,7 +81,8 @@ export async function hasOtelAsync(): Promise<boolean> {
  * @internal
  */
 export function _resetHasOtelCache(): void {
-  _hasOtel = null
+  _hasOtelSync = null
+  _hasOtelAsyncResult = null
 }
 
 /**
