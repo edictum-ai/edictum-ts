@@ -185,6 +185,18 @@ describe('compileSandbox — fail-closed path extraction', () => {
     expect(result.passed).toBe(true)
   })
 
+  test('allows double-dot-prefixed non-path strings (no false positive)', () => {
+    // "..section" starts with ".." but is NOT a path traversal — must not trigger denial
+    const sb = _sandbox({ within: ['/workspace'] })
+    const env = createEnvelope('tool', {
+      path: '/workspace/file.txt',
+      label: '..section',
+      heading: '...notes',
+    })
+    const result = _checkResult(sb, env)
+    expect(result.passed).toBe(true)
+  })
+
   test('allows URL with ../ in unknown arg key (no false positive)', () => {
     // URLs like 'https://example.com/a/../b' contain '../' but are NOT paths
     const sb = _sandbox({ within: ['/workspace'] })

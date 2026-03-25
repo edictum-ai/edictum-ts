@@ -170,7 +170,8 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
       const isUrl = value.includes('://')
       if (
         (!isUrl && value.includes('../')) || // embedded traversal: foo/../etc/passwd
-        value.startsWith('..') || // relative parent: ../../etc, ..hidden
+        value === '..' || // bare parent reference
+        value.startsWith('../') || // parent traversal prefix: ../../etc/passwd
         value.startsWith('~') ||
         (value.startsWith('./') && !isUrl) // relative child: ./subdir/file
       ) {
