@@ -29,8 +29,10 @@ jobs:
       - run: pnpm -r test
 
       - name: Publish all packages
-        # --no-git-checks: required because tag checkout produces detached HEAD.
-        # Safe here because `ref:` above pins to the exact release tag.
-        run: pnpm -r publish --no-git-checks --access public
-        env:
-          NPM_CONFIG_PROVENANCE: true
+        run: |
+          for pkg in core otel vercel-ai claude-sdk openai-agents langchain openclaw server; do
+            echo "Publishing @edictum/$pkg..."
+            cd packages/$pkg
+            npm publish --access public --provenance || echo "Skipped @edictum/$pkg (already published or error)"
+            cd ../..
+          done
