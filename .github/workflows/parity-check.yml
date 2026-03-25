@@ -17,8 +17,9 @@ concurrency:
 
 jobs:
   gate:
-    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@c3681294b8bcad3505a61c04f0eaae845648cb24
+    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@a8b075f4d60354e79bd26e06353c5367b75296b2
     with:
+      runner: blacksmith-2vcpu-ubuntu-2404-arm
       runtime: node
       runtime-version: '22'
       setup-command: pnpm install --frozen-lockfile
