@@ -39,10 +39,16 @@ export function hasOtel(): boolean {
   }
 
   // Check ESM banner cache — populated by top-level await in the ESM build.
-  const globalHasOtel = (globalThis as Record<string, unknown>).__edictum_has_otel
-  if (typeof globalHasOtel === 'boolean') {
-    _hasOtelSync = globalHasOtel
-    return _hasOtelSync
+  // Consume-and-delete: read once, remove from globalThis to close the
+  // injection window where a dependency could suppress telemetry detection.
+  const raw = (globalThis as Record<string, unknown>).__edictum_has_otel
+  if (raw !== undefined) {
+    delete (globalThis as Record<string, unknown>).__edictum_has_otel
+    if (typeof raw === 'boolean') {
+      _hasOtelSync = raw
+      return _hasOtelSync
+    }
+    // Non-boolean — fall through to CJS path.
   }
 
   // CJS fast-path: require.resolve is synchronous and doesn't load the module.

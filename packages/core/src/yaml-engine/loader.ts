@@ -65,14 +65,18 @@ function requireYamlSync(): { load(input: string): unknown } | null {
   if (_yamlModule) return _yamlModule
 
   // Check ESM banner cache — populated by top-level await in the ESM build.
-  // This is set before any module code runs, so fromYamlString() works
-  // transparently in ESM without needing ensureYamlLoaded().
-  const globalYaml = (globalThis as Record<string, unknown>).__edictum_yaml as
-    | { load(input: string): unknown }
-    | undefined
-  if (globalYaml) {
-    _yamlModule = globalYaml
-    return _yamlModule
+  // Consume-and-delete: read once, then remove from globalThis to close the
+  // injection window. A compromised transitive dependency could otherwise
+  // overwrite this value to bypass contract enforcement.
+  const raw = (globalThis as Record<string, unknown>).__edictum_yaml
+  if (raw !== undefined) {
+    delete (globalThis as Record<string, unknown>).__edictum_yaml
+    // Runtime type guard — TypeScript cast alone is not validation.
+    if (typeof (raw as Record<string, unknown>).load === 'function') {
+      _yamlModule = raw as { load(input: string): unknown }
+      return _yamlModule
+    }
+    // Malformed value — fall through to CJS path or return null.
   }
 
   // CJS fast-path: require works synchronously in CommonJS contexts.
