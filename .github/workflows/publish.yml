@@ -29,6 +29,8 @@ jobs:
       - run: pnpm -r test
 
       - name: Publish all packages
-        run: pnpm -r publish --access public
+        # --no-git-checks: required because tag checkout produces detached HEAD.
+        # Safe here because `ref:` above pins to the exact release tag.
+        run: pnpm -r publish --no-git-checks --access public
         env:
           NPM_CONFIG_PROVENANCE: true
