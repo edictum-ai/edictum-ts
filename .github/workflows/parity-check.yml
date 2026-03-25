@@ -6,7 +6,10 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 4 * * 1'  # Weekly Monday 4am UTC
+    - cron: '0 4 * * 1' # Weekly Monday 4am UTC
+
+permissions:
+  contents: read
 
 concurrency:
   group: parity-check-${{ github.ref }}
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
   gate:
-    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@d2639be3da819f53ad4b9c0854bbe379ae150298
+    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@c3681294b8bcad3505a61c04f0eaae845648cb24
     with:
       runtime: node
       runtime-version: '22'
