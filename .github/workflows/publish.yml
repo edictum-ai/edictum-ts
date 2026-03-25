@@ -33,6 +33,14 @@ jobs:
           for pkg in core otel vercel-ai claude-sdk openai-agents langchain openclaw server; do
             echo "Publishing @edictum/$pkg..."
             cd packages/$pkg
-            npm publish --access public --provenance || echo "Skipped @edictum/$pkg (already published or error)"
+            output=$(npm publish --access public --provenance 2>&1) && echo "$output" || {
+              exit_code=$?
+              if echo "$output" | grep -qE "EPUBLISHCONFLICT|E409|already exists|cannot publish over"; then
+                echo "Skipped @edictum/$pkg (already published)"
+              else
+                echo "$output" >&2
+                exit $exit_code
+              fi
+            }
             cd ../..
           done
