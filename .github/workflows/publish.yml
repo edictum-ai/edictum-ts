@@ -30,6 +30,11 @@ jobs:
       - run: pnpm -r test
 
       - name: Publish all packages
+        env:
+          # Clear the default NODE_AUTH_TOKEN set by actions/setup-node
+          # (github.token). It overrides the OIDC provenance flow.
+          # https://github.com/orgs/community/discussions/176761
+          NODE_AUTH_TOKEN: ''
         run: |
           for pkg in core otel vercel-ai claude-sdk openai-agents langchain openclaw server; do
             echo "Publishing @edictum/$pkg..."
