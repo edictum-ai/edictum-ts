@@ -16,9 +16,16 @@ The LLM cannot talk its way past a contract.
 pnpm add @edictum/core
 ```
 
+YAML contract parsing requires `js-yaml` as an optional peer:
+
+```bash
+pnpm add js-yaml
+```
+
 ## Quick Start
 
 ```typescript
+import { readFile } from 'node:fs/promises'
 import { Edictum, EdictumDenied } from '@edictum/core'
 
 const guard = Edictum.fromYaml('contracts.yaml')
@@ -109,6 +116,8 @@ export default createEdictumPlugin(guard)
 ```
 
 Adapters are thin wrappers. All governance logic lives in the pipeline.
+
+> **Postcondition enforcement:** `guard.run()` guarantees full postcondition enforcement. Native adapter hooks enforce preconditions deterministically; postcondition redact behavior depends on SDK support. See adapter docs for per-SDK details.
 
 ## What You Can Do
 

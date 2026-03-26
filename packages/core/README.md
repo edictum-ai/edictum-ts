@@ -19,6 +19,7 @@ pnpm add @edictum/core js-yaml
 ## Usage
 
 ```typescript
+import { readFile } from 'node:fs/promises'
 import { Edictum, EdictumDenied } from '@edictum/core'
 
 const guard = Edictum.fromYaml('contracts.yaml')
@@ -34,7 +35,7 @@ try {
 
 - `Edictum` -- main guard class (`fromYaml`, `fromYamlString`, `run`, `evaluate`)
 - `EdictumDenied`, `EdictumConfigError`, `EdictumToolError` -- error types
-- `GovernancePipeline` -- evaluation engine (used by adapters)
+- `GovernancePipeline` -- governance pipeline (used by adapters)
 - `Verdict` -- contract result builder (`pass()`, `fail(reason)`)
 - `Session`, `MemoryBackend` -- session tracking and storage
 - `RedactionPolicy` -- sensitive field redaction for audit events
