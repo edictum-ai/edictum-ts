@@ -24,8 +24,10 @@ import { Edictum, EdictumDenied } from '@edictum/core'
 
 const guard = Edictum.fromYaml('contracts.yaml')
 
+const governedReadFile = (args: Record<string, unknown>) => readFile(args.path as string, 'utf8')
+
 try {
-  await guard.run('readFile', { path: '.env' }, readFile)
+  await guard.run('readFile', { path: '.env' }, governedReadFile)
 } catch (e) {
   if (e instanceof EdictumDenied) console.log(e.reason)
 }
