@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -33,7 +33,7 @@ jobs:
           for pkg in core otel vercel-ai claude-sdk openai-agents langchain openclaw server; do
             echo "Publishing @edictum/$pkg..."
             cd packages/$pkg
-            output=$(npm publish --access public --provenance 2>&1) && echo "$output" || {
+            output=$(npm publish --access public 2>&1) && echo "$output" || {
               exit_code=$?
               if echo "$output" | grep -qE "EPUBLISHCONFLICT|E409|already exists|cannot publish over"; then
                 echo "Skipped @edictum/$pkg (already published)"
