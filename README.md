@@ -73,7 +73,6 @@ Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation pat
 | [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                            |
 | [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                             |
 | [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                 |
-| [`@edictum/openclaw`](packages/openclaw)           | OpenClaw adapter                                                     |
 | [`@edictum/server`](packages/server)               | Server SDK -- HTTP client, SSE hot-reload, audit sink                |
 | [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                      |
 
@@ -111,11 +110,11 @@ const adapter = new LangChainAdapter(guard)
 const middleware = adapter.asMiddleware()
 ```
 
-**OpenClaw** -- plugin for governed tool calls:
+**OpenClaw** -- see [`@edictum/openclaw`](https://github.com/edictum-ai/edictum-openclaw):
 
-```typescript
-import { createEdictumPlugin } from '@edictum/openclaw'
-export default createEdictumPlugin(guard)
+```bash
+openclaw plugins install @edictum/openclaw
+# Zero config — ships with bundled governance contracts
 ```
 
 Adapters are thin wrappers. All governance logic lives in the pipeline.
