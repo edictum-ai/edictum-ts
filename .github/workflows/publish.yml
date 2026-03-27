@@ -35,20 +35,41 @@ jobs:
           node -e '
             const fs = require("fs");
             const path = require("path");
-            const coreVersion = JSON.parse(
-              fs.readFileSync("packages/core/package.json", "utf8")
-            ).version;
-            const pkgs = fs.readdirSync("packages").filter(d =>
-              d !== "core" && fs.existsSync(path.join("packages", d, "package.json"))
+            const versions = {};
+            const pkgDirs = fs.readdirSync("packages").filter(d =>
+              fs.existsSync(path.join("packages", d, "package.json"))
             );
-            for (const pkg of pkgs) {
-              const fp = path.join("packages", pkg, "package.json");
-              const raw = fs.readFileSync(fp, "utf8");
-              const replaced = raw.replace(/"workspace:\*"/g, JSON.stringify("^" + coreVersion))
-                                  .replace(/"workspace:~"/g, JSON.stringify("~" + coreVersion));
-              if (raw !== replaced) {
-                fs.writeFileSync(fp, replaced);
-                console.log(`Resolved workspace refs in ${fp} → ^${coreVersion}`);
+            for (const d of pkgDirs) {
+              const json = JSON.parse(fs.readFileSync(path.join("packages", d, "package.json"), "utf8"));
+              versions[json.name] = json.version;
+            }
+            for (const d of pkgDirs) {
+              const fp = path.join("packages", d, "package.json");
+              const json = JSON.parse(fs.readFileSync(fp, "utf8"));
+              let changed = false;
+              for (const field of ["dependencies", "peerDependencies", "optionalDependencies", "devDependencies"]) {
+                const deps = json[field];
+                if (!deps) continue;
+                for (const [name, version] of Object.entries(deps)) {
+                  if (!String(version).startsWith("workspace:")) continue;
+                  const resolved = versions[name];
+                  if (!resolved) {
+                    console.error("ERROR: " + fp + " " + field + "[" + name + "] = " + version + " but no workspace package found");
+                    process.exit(1);
+                  }
+                  const protocol = version.replace("workspace:", "");
+                  if (protocol === "*" || protocol === "^") deps[name] = "^" + resolved;
+                  else if (protocol === "~") deps[name] = "~" + resolved;
+                  else {
+                    console.error("ERROR: unhandled workspace protocol: " + version);
+                    process.exit(1);
+                  }
+                  changed = true;
+                }
+              }
+              if (changed) {
+                fs.writeFileSync(fp, JSON.stringify(json, null, 2) + "\n");
+                console.log("Resolved workspace refs in " + fp);
               }
             }
           '
