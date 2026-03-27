@@ -2,15 +2,15 @@
  * Server guard factory — connects an Edictum guard to edictum-console.
  *
  * This is the TypeScript equivalent of Python's Edictum.from_server().
- * It lives in @edictum/server (not @edictum/core) because core has zero
- * runtime deps and cannot import server classes.
+ * It lives in @edictum/server (not @edictum/core) because core does not
+ * depend on server-specific I/O classes (HTTP client, SSE, audit sink).
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's
  * _server_factory.py (228 LOC) — validation, bundle fetch, SSE watcher
  * startup, assignment waiting, and cleanup form a cohesive factory.
  */
 
-import { Edictum, EdictumConfigError, compileContracts, loadBundleStringAsync } from '@edictum/core'
+import { Edictum, EdictumConfigError, compileContracts, loadBundleString } from '@edictum/core'
 import type {
   AuditSink,
   ApprovalBackend,
@@ -118,7 +118,7 @@ const DEFAULT_ASSIGNMENT_TIMEOUT_MS = 30_000
 /**
  * Max base64-encoded bundle size (682 KB ≈ 512 KB decoded).
  * Guards against unbounded memory allocation from a malicious server.
- * loadBundleStringAsync() applies its own MAX_BUNDLE_SIZE check on the decoded
+ * loadBundleString() applies its own MAX_BUNDLE_SIZE check on the decoded
  * YAML, but we reject oversized base64 before allocating the decode buffer.
  */
 const MAX_BUNDLE_B64_LENGTH = Math.ceil((512 * 1024 * 4) / 3)
@@ -390,7 +390,7 @@ async function _fetchAndBuildGuard(
 
   // Compile contracts
   const yamlContent = new TextDecoder().decode(yamlBytes)
-  const [bundleData, bundleHash] = await loadBundleStringAsync(yamlContent)
+  const [bundleData, bundleHash] = loadBundleString(yamlContent)
   const compiled = compileContracts(bundleData)
 
   // Prefer explicit mode, fall back to bundle's defaults.mode

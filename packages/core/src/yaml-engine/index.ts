@@ -39,11 +39,8 @@ export { compilePre, compilePost, compileSession, mergeSessionLimits } from './c
 // Loader
 export {
   loadBundle,
-  loadBundleAsync,
   loadBundleString,
-  loadBundleStringAsync,
   computeHash,
-  ensureYamlLoaded,
   MAX_BUNDLE_SIZE,
   validateSchema,
   validateContractFields,
@@ -52,7 +49,6 @@ export {
   validateRegexes,
   validatePreSelectors,
   validateSandboxContracts,
-  _resetYamlCache,
 } from './loader.js'
 export type { BundleHash } from './loader.js'
 
