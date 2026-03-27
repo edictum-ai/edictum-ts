@@ -56,5 +56,10 @@
     "contracts",
     "tool-calling",
     "guardrails"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edictum-ai/edictum-ts.git",
+    "directory": "packages/core"
+  }
 }

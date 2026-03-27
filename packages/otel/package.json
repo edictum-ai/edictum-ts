@@ -90,5 +90,10 @@
     "otel",
     "observability",
     "governance"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edictum-ai/edictum-ts.git",
+    "directory": "packages/otel"
+  }
 }
