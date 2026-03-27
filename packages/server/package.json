@@ -1,6 +1,6 @@
 {
   "name": "@edictum/server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Server SDK (HTTP client, SSE, audit sink) for edictum",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@edictum/core": "workspace:*"
+    "@edictum/core": "^0.2.0"
   },
   "devDependencies": {
     "@edictum/core": "workspace:*",
