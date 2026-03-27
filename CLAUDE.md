@@ -21,7 +21,7 @@ packages/
 ├── core/              # @edictum/core — pipeline, contracts, audit, session, YAML engine
 ├── vercel-ai/         # @edictum/vercel-ai — Vercel AI SDK adapter
 ├── openai-agents/     # @edictum/openai-agents — OpenAI Agents SDK adapter
-├── openclaw/          # @edictum/openclaw — OpenClaw adapter
+├── openclaw/          # @edictum/edictum — OpenClaw adapter
 ├── claude-sdk/        # @edictum/claude-sdk — Claude Agent SDK adapter
 ├── langchain/         # @edictum/langchain — LangChain.js adapter
 └── server/            # @edictum/server — Server SDK (HTTP client, SSE, audit sink)

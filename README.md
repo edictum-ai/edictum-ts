@@ -104,10 +104,10 @@ const adapter = new LangChainAdapter(guard)
 const middleware = adapter.asMiddleware()
 ```
 
-**OpenClaw** -- see [`@edictum/openclaw`](https://github.com/edictum-ai/edictum-openclaw):
+**OpenClaw** -- see [`@edictum/edictum`](https://github.com/edictum-ai/edictum-openclaw):
 
 ```bash
-openclaw plugins install @edictum/openclaw
+openclaw plugins install @edictum/edictum
 # Zero config — ships with bundled governance contracts
 ```
 
