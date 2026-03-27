@@ -36,6 +36,37 @@ jobs:
         run: pnpm -r test
       - name: Security boundary tests
         run: pnpm --filter @edictum/core test -- --grep "security"
+      - name: Check for workspace protocol leaks in published fields
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            let leaked = false;
+            const pkgs = fs.readdirSync("packages").filter(d =>
+              fs.existsSync(path.join("packages", d, "package.json"))
+            );
+            for (const pkg of pkgs) {
+              const fp = path.join("packages", pkg, "package.json");
+              const json = JSON.parse(fs.readFileSync(fp, "utf8"));
+              for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+                const deps = json[field];
+                if (!deps) continue;
+                for (const [name, version] of Object.entries(deps)) {
+                  if (String(version).startsWith("workspace:")) {
+                    console.error("FAIL: " + json.name + " " + field + "[\"" + name + "\"] = \"" + version + "\"");
+                    leaked = true;
+                  }
+                }
+              }
+              if (!leaked) console.log("OK: " + json.name);
+            }
+            if (leaked) {
+              console.error("ERROR: workspace: protocol in consumer-facing dependency fields");
+              process.exit(1);
+            }
+            console.log("All packages clean — no workspace: protocol leaks in published fields");
+          '
+
       - name: Audit npm dependencies
         run: pnpm audit --audit-level=critical
       - name: Audit npm dependencies (high — advisory)

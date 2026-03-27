@@ -30,6 +30,37 @@ jobs:
       - run: pnpm -r build
       - run: pnpm -r test
 
+      - name: Resolve workspace protocol references
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const coreVersion = JSON.parse(
+              fs.readFileSync("packages/core/package.json", "utf8")
+            ).version;
+            const pkgs = fs.readdirSync("packages").filter(d =>
+              d !== "core" && fs.existsSync(path.join("packages", d, "package.json"))
+            );
+            for (const pkg of pkgs) {
+              const fp = path.join("packages", pkg, "package.json");
+              const raw = fs.readFileSync(fp, "utf8");
+              const replaced = raw.replace(/"workspace:\*"/g, JSON.stringify("^" + coreVersion))
+                                  .replace(/"workspace:~"/g, JSON.stringify("~" + coreVersion));
+              if (raw !== replaced) {
+                fs.writeFileSync(fp, replaced);
+                console.log(`Resolved workspace refs in ${fp} → ^${coreVersion}`);
+              }
+            }
+          '
+
+      - name: Verify no workspace refs remain
+        run: |
+          if grep -r '"workspace:' packages/*/package.json; then
+            echo "ERROR: workspace: protocol references found in package.json files"
+            exit 1
+          fi
+          echo "All workspace references resolved"
+
       - name: Publish all packages
         run: |
           for pkg in core otel vercel-ai claude-sdk openai-agents langchain server; do

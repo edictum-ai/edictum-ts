@@ -1,6 +1,6 @@
 {
   "name": "@edictum/vercel-ai",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Vercel AI SDK adapter for edictum",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@edictum/core": "workspace:*",
+    "@edictum/core": "^0.2.0",
     "ai": ">=5.0.0"
   },
   "devDependencies": {
