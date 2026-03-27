@@ -55,6 +55,10 @@ importers:
         version: 3.2.4(@types/node@25.5.0)(jiti@2.6.1)(yaml@2.8.2)
 
   packages/core:
+    dependencies:
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.1.1
     devDependencies:
       '@types/js-yaml':
         specifier: ^4.0.0
@@ -65,9 +69,6 @@ importers:
       eslint:
         specifier: ^10.1.0
         version: 10.1.0(jiti@2.6.1)
-      js-yaml:
-        specifier: ^4.1.1
-        version: 4.1.1
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)(yaml@2.8.2)

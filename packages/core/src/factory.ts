@@ -163,14 +163,15 @@ export function fromYamlString(
 }
 
 // ---------------------------------------------------------------------------
-// fromYamlStringAsync — ESM-safe async version
+// fromYamlStringAsync
 // ---------------------------------------------------------------------------
 
 /**
- * Async version of fromYamlString — works in both ESM and CJS.
+ * Async version of fromYamlString.
  *
- * Use this instead of fromYamlString when importing @edictum/core as ESM.
- * The sync version uses require('js-yaml') which is not available in ESM.
+ * @deprecated Since js-yaml is now a direct dependency with a static import,
+ * the sync {@link fromYamlString} works in both ESM and CJS. This async
+ * variant is kept for backward compatibility.
  */
 export async function fromYamlStringAsync(
   content: string | Uint8Array,
@@ -188,13 +189,15 @@ export async function fromYamlStringAsync(
 }
 
 // ---------------------------------------------------------------------------
-// fromYamlAsync — ESM-safe async version
+// fromYamlAsync
 // ---------------------------------------------------------------------------
 
 /**
- * Async version of fromYaml — works in both ESM and CJS.
+ * Async version of fromYaml.
  *
- * Use this instead of fromYaml when importing @edictum/core as ESM.
+ * @deprecated Since js-yaml is now a direct dependency with a static import,
+ * the sync {@link fromYaml} works in both ESM and CJS. This async
+ * variant is kept for backward compatibility.
  */
 export async function fromYamlAsync(
   ...args: [...string[], FromYamlOptions] | string[]

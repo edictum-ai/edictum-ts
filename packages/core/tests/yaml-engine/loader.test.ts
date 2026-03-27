@@ -9,8 +9,6 @@ import {
   loadBundle,
   loadBundleString,
   computeHash,
-  ensureYamlLoaded,
-  _resetYamlCache,
   MAX_BUNDLE_SIZE,
   validateSchema,
   validateUniqueIds,
@@ -498,49 +496,6 @@ kind: ContractBundle
 contracts: []
 `
     expect(() => loadBundleString(yaml)).toThrow(EdictumConfigError)
-  })
-
-  test('ensureYamlLoaded resolves when js-yaml is installed', async () => {
-    await expect(ensureYamlLoaded()).resolves.toBeUndefined()
-  })
-
-  test('ensureYamlLoaded pre-caches module for subsequent sync calls', async () => {
-    _resetYamlCache()
-    await ensureYamlLoaded()
-    // After ensureYamlLoaded, sync loadBundleString should work
-    const [data] = loadBundleString(VALID_YAML)
-    expect(data.apiVersion).toBe('edictum/v1')
-  })
-
-  describe('security', () => {
-    test('rejects injected globalThis.__edictum_yaml with no load function', () => {
-      _resetYamlCache()
-      // Attacker injects a truthy non-function value
-      ;(globalThis as Record<string, unknown>).__edictum_yaml = { notLoad: true }
-      // Should fall through to CJS require (which works in test env)
-      const [data] = loadBundleString(VALID_YAML)
-      expect(data.apiVersion).toBe('edictum/v1')
-      // globalThis should be cleaned up
-      expect((globalThis as Record<string, unknown>).__edictum_yaml).toBeUndefined()
-    })
-
-    test('consumes and deletes globalThis.__edictum_yaml after first read', async () => {
-      _resetYamlCache()
-      // Simulate the ESM banner by setting globalThis
-      const jsYaml = await import('js-yaml')
-      ;(globalThis as Record<string, unknown>).__edictum_yaml = jsYaml.default ?? jsYaml
-      // First call should consume it
-      const [data] = loadBundleString(VALID_YAML)
-      expect(data.apiVersion).toBe('edictum/v1')
-      // After consumption, globalThis entry must be deleted
-      expect((globalThis as Record<string, unknown>).__edictum_yaml).toBeUndefined()
-    })
-
-    test('_resetYamlCache clears globalThis.__edictum_yaml', () => {
-      ;(globalThis as Record<string, unknown>).__edictum_yaml = { load: () => ({}) }
-      _resetYamlCache()
-      expect((globalThis as Record<string, unknown>).__edictum_yaml).toBeUndefined()
-    })
   })
 
   test('duplicate IDs in full load rejected', () => {

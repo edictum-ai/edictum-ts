@@ -117,7 +117,6 @@ export {
   loadBundleString,
   loadBundleStringAsync,
   computeHash,
-  ensureYamlLoaded,
   MAX_BUNDLE_SIZE,
   composeBundles,
   expandMessage,
