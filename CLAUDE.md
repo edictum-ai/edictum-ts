@@ -6,7 +6,7 @@
 
 Runtime contract enforcement for AI agent tool calls. Deterministic pipeline: preconditions, postconditions, session contracts, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
 
-Current version: 0.1.0 (npm: `@edictum/core`)
+Current version: 0.2.0 (npm: `@edictum/core`)
 
 ## THE ONE RULE
 
