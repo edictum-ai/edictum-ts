@@ -47,5 +47,10 @@
     "edictum",
     "claude-sdk",
     "adapter"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edictum-ai/edictum-ts.git",
+    "directory": "packages/claude-sdk"
+  }
 }
