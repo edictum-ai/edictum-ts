@@ -10,7 +10,7 @@ TypeScript SDK for runtime contract enforcement on AI agent tool calls.
 Prompts are suggestions. Contracts are enforcement.
 The LLM cannot talk its way past a contract.
 
-**55us overhead** · **18 adapters across Python, TypeScript, Go** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml), 0 transitive deps) · **Fail-closed by default**
+**55us overhead** · **18 adapters across Python, TypeScript, Go** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml)) · **Fail-closed by default**
 
 ```bash
 pnpm add @edictum/core

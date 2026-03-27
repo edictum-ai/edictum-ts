@@ -1,6 +1,6 @@
 # @edictum/core
 
-Runtime contract enforcement for AI agent tool calls. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml), 0 transitive deps).
+Runtime contract enforcement for AI agent tool calls. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml)).
 
 Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
 
