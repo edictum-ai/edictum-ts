@@ -56,7 +56,7 @@ export function computeHash(rawBytes: Uint8Array): BundleHash {
 function parseYaml(content: string): Record<string, unknown> {
   let data: unknown
   try {
-    data = yaml.load(content)
+    data = yaml.load(content, { schema: yaml.CORE_SCHEMA })
   } catch (e) {
     throw new EdictumConfigError(`YAML parse error: ${String(e)}`)
   }
