@@ -352,6 +352,17 @@ describe('validateSandboxContracts', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Security note: globalThis.__edictum_yaml injection tests removed
+//
+// The old globalThis.__edictum_yaml injection mechanism was removed in favor
+// of a static `import yaml from 'js-yaml'`. The static import is resolved
+// once at module load time by the module system — there is no runtime window
+// where a transitive dependency could swap the yaml module. Therefore no
+// bypass test is needed; the security property is guaranteed by the ES module
+// spec.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Security: adversarial loader inputs
 // ---------------------------------------------------------------------------
 

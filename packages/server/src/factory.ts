@@ -2,8 +2,8 @@
  * Server guard factory — connects an Edictum guard to edictum-console.
  *
  * This is the TypeScript equivalent of Python's Edictum.from_server().
- * It lives in @edictum/server (not @edictum/core) because core has zero
- * runtime deps and cannot import server classes.
+ * It lives in @edictum/server (not @edictum/core) because core does not
+ * depend on server-specific I/O classes (HTTP client, SSE, audit sink).
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's
  * _server_factory.py (228 LOC) — validation, bundle fetch, SSE watcher
