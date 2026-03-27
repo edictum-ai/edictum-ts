@@ -1,6 +1,6 @@
 {
   "name": "@edictum/langchain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LangChain.js adapter for edictum",
   "license": "MIT",
   "type": "module",
