@@ -138,29 +138,3 @@ export function loadBundleString(
   validateBundle(data)
   return [data, bundleHash]
 }
-
-/**
- * Async version of {@link loadBundleString}.
- *
- * @deprecated Since js-yaml is now a direct dependency with a static import,
- * the sync {@link loadBundleString} works in both ESM and CJS. This async
- * variant is kept for backward compatibility.
- */
-export async function loadBundleStringAsync(
-  content: string | Uint8Array,
-): Promise<[Record<string, unknown>, BundleHash]> {
-  return loadBundleString(content)
-}
-
-/**
- * Async version of {@link loadBundle}.
- *
- * @deprecated Since js-yaml is now a direct dependency with a static import,
- * the sync {@link loadBundle} works in both ESM and CJS. This async
- * variant is kept for backward compatibility.
- */
-export async function loadBundleAsync(
-  source: string,
-): Promise<[Record<string, unknown>, BundleHash]> {
-  return loadBundle(source)
-}

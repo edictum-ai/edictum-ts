@@ -4,7 +4,7 @@
 
 ## What is Edictum
 
-Runtime contract enforcement for AI agent tool calls. Deterministic pipeline: preconditions, postconditions, session contracts, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). Zero runtime deps in core. Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
+Runtime contract enforcement for AI agent tool calls. Deterministic pipeline: preconditions, postconditions, session contracts, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml, 0 transitive deps). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
 
 Current version: 0.1.0 (npm: `@edictum/core`)
 
@@ -43,7 +43,7 @@ packages/
 
 1. **Full feature parity with Python.** 147 features across 12 categories. Every feature has a parity test ID. If Python passes and TS fails, it's a bug.
 2. **Security is non-negotiable.** This is a security product. No shortcuts, no "good enough", no deferred fixes for vulnerabilities. Fail closed on every error path.
-3. **Zero runtime deps in core.** Optional: js-yaml, ajv, @opentelemetry/\*, @noble/ed25519. Core runs with nothing.
+3. **Minimal runtime deps in core.** js-yaml is a direct dependency (0 transitive deps). Optional: ajv, @opentelemetry/\*, @noble/ed25519.
 4. **Plain objects for contracts.** Interfaces define the shape. TypeScript validates at compile time. No decorators, no builders, no hidden metadata.
 5. **All async.** Every pipeline, session, and audit sink method is async. No sync variants.
 6. **Immutability by default.** ToolEnvelope is `Readonly<T>` + `Object.freeze()` + deep freeze. Principal is frozen. Contract state swaps atomically.

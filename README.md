@@ -10,16 +10,10 @@ TypeScript SDK for runtime contract enforcement on AI agent tool calls.
 Prompts are suggestions. Contracts are enforcement.
 The LLM cannot talk its way past a contract.
 
-**55us overhead** · **18 adapters across Python, TypeScript, Go** · **Zero runtime deps** · **Fail-closed by default**
+**55us overhead** · **18 adapters across Python, TypeScript, Go** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml), 0 transitive deps) · **Fail-closed by default**
 
 ```bash
 pnpm add @edictum/core
-```
-
-YAML contract parsing requires `js-yaml` as an optional peer:
-
-```bash
-pnpm add js-yaml
 ```
 
 ## Quick Start
@@ -66,15 +60,15 @@ Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation pat
 
 ## Packages
 
-| Package                                            | Description                                                          |
-| -------------------------------------------------- | -------------------------------------------------------------------- |
-| [`@edictum/core`](packages/core)                   | Pipeline, contracts, audit, session, YAML engine. Zero runtime deps. |
-| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                |
-| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                            |
-| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                             |
-| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                 |
-| [`@edictum/server`](packages/server)               | Server SDK -- HTTP client, SSE hot-reload, audit sink                |
-| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                      |
+| Package                                            | Description                                                                  |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`@edictum/core`](packages/core)                   | Pipeline, contracts, audit, session, YAML engine. One runtime dep (js-yaml). |
+| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                        |
+| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                                    |
+| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                                     |
+| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                         |
+| [`@edictum/server`](packages/server)               | Server SDK -- HTTP client, SSE hot-reload, audit sink                        |
+| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                              |
 
 ## Works With Your Framework
 

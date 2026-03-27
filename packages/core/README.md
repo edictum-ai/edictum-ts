@@ -1,6 +1,6 @@
 # @edictum/core
 
-Runtime contract enforcement for AI agent tool calls. Zero runtime deps.
+Runtime contract enforcement for AI agent tool calls. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml), 0 transitive deps).
 
 Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
 
@@ -8,12 +8,6 @@ Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract 
 
 ```bash
 pnpm add @edictum/core
-```
-
-YAML contract parsing requires `js-yaml` as an optional peer dependency:
-
-```bash
-pnpm add @edictum/core js-yaml
 ```
 
 ## Usage

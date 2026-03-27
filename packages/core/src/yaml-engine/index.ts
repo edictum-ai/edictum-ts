@@ -39,9 +39,7 @@ export { compilePre, compilePost, compileSession, mergeSessionLimits } from './c
 // Loader
 export {
   loadBundle,
-  loadBundleAsync,
   loadBundleString,
-  loadBundleStringAsync,
   computeHash,
   MAX_BUNDLE_SIZE,
   validateSchema,
