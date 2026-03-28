@@ -14,7 +14,7 @@ export class TestMetricReader extends MetricReader {
   }
 }
 
-/** Standard test envelope fixture. */
+/** Standard test toolCall fixture. */
 export const ENVELOPE: TelemetryEnvelope = {
   toolName: 'Bash',
   sideEffect: 'irreversible',

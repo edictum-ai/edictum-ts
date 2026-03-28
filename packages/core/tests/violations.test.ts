@@ -1,34 +1,34 @@
-/** Tests for postcondition findings interface. */
+/** Tests for postcondition violations interface. */
 
 import { describe, expect, test } from 'vitest'
 
 import {
-  buildFindings,
-  classifyFinding,
-  createFinding,
+  buildViolations,
+  classifyViolation,
+  createViolation,
   createPostCallResult,
 } from '../src/index.js'
-import type { Finding, PostCallResult, PostDecisionLike } from '../src/index.js'
+import type { Violation, PostCallResult, PostDecisionLike } from '../src/index.js'
 
 describe('TestFinding', () => {
   test('creation', () => {
-    const f = createFinding({
+    const f = createViolation({
       type: 'pii_detected',
-      contractId: 'pii-in-output',
+      ruleId: 'pii-in-output',
       field: 'output.text',
       message: 'SSN pattern found',
     })
     expect(f.type).toBe('pii_detected')
-    expect(f.contractId).toBe('pii-in-output')
+    expect(f.ruleId).toBe('pii-in-output')
     expect(f.field).toBe('output.text')
     expect(f.message).toBe('SSN pattern found')
     expect(f.metadata).toEqual({})
   })
 
   test('frozen', () => {
-    const f = createFinding({
+    const f = createViolation({
       type: 'pii',
-      contractId: 'x',
+      ruleId: 'x',
       field: 'y',
       message: 'z',
     })
@@ -38,9 +38,9 @@ describe('TestFinding', () => {
   })
 
   test('with_metadata', () => {
-    const f = createFinding({
+    const f = createViolation({
       type: 'pii_detected',
-      contractId: 'pii-check',
+      ruleId: 'pii-check',
       field: 'output.text',
       message: 'SSN found',
       metadata: { pattern: '\\d{3}-\\d{2}-\\d{4}', match_count: 2 },
@@ -49,15 +49,15 @@ describe('TestFinding', () => {
   })
 
   test('equality', () => {
-    const f1 = createFinding({
+    const f1 = createViolation({
       type: 'pii',
-      contractId: 'c1',
+      ruleId: 'c1',
       field: 'output',
       message: 'm',
     })
-    const f2 = createFinding({
+    const f2 = createViolation({
       type: 'pii',
-      contractId: 'c1',
+      ruleId: 'c1',
       field: 'output',
       message: 'm',
     })
@@ -69,20 +69,20 @@ describe('TestPostCallResult', () => {
   test('default_passed', () => {
     const r = createPostCallResult({ result: 'hello' })
     expect(r.postconditionsPassed).toBe(true)
-    expect(r.findings).toEqual([])
+    expect(r.violations).toEqual([])
   })
 
   test('with_findings', () => {
-    const findings: Finding[] = [
-      createFinding({
+    const violations: Violation[] = [
+      createViolation({
         type: 'pii_detected',
-        contractId: 'c1',
+        ruleId: 'c1',
         field: 'output',
         message: 'SSN',
       }),
-      createFinding({
+      createViolation({
         type: 'secret_detected',
-        contractId: 'c2',
+        ruleId: 'c2',
         field: 'output',
         message: 'API key',
       }),
@@ -90,11 +90,11 @@ describe('TestPostCallResult', () => {
     const r = createPostCallResult({
       result: 'raw output',
       postconditionsPassed: false,
-      findings,
+      violations,
     })
     expect(r.postconditionsPassed).toBe(false)
-    expect(r.findings).toHaveLength(2)
-    expect(r.findings[0]!.type).toBe('pii_detected')
+    expect(r.violations).toHaveLength(2)
+    expect(r.violations[0]!.type).toBe('pii_detected')
   })
 
   test('result_preserved', () => {
@@ -106,26 +106,26 @@ describe('TestPostCallResult', () => {
 
 describe('TestClassifyFinding', () => {
   test('pii', () => {
-    expect(classifyFinding('pii-in-output', 'SSN detected')).toBe('pii_detected')
-    expect(classifyFinding('check-patient-data', 'found patient ID')).toBe('pii_detected')
+    expect(classifyViolation('pii-in-output', 'SSN detected')).toBe('pii_detected')
+    expect(classifyViolation('check-patient-data', 'found patient ID')).toBe('pii_detected')
   })
 
   test('secret', () => {
-    expect(classifyFinding('no-secrets', 'API key in output')).toBe('secret_detected')
-    expect(classifyFinding('credential-check', '')).toBe('secret_detected')
+    expect(classifyViolation('no-secrets', 'API key in output')).toBe('secret_detected')
+    expect(classifyViolation('credential-check', '')).toBe('secret_detected')
   })
 
   test('limit', () => {
-    expect(classifyFinding('session-limit', 'max calls exceeded')).toBe('limit_exceeded')
+    expect(classifyViolation('session-limit', 'max calls exceeded')).toBe('limit_exceeded')
   })
 
   test('default', () => {
-    expect(classifyFinding('some-rule', 'something happened')).toBe('policy_violation')
+    expect(classifyViolation('some-rule', 'something happened')).toBe('policy_violation')
   })
 
   test('case_insensitive', () => {
-    expect(classifyFinding('PII-Check', 'Found SSN')).toBe('pii_detected')
-    expect(classifyFinding('SECRET-SCAN', 'Token found')).toBe('secret_detected')
+    expect(classifyViolation('PII-Check', 'Found SSN')).toBe('pii_detected')
+    expect(classifyViolation('SECRET-SCAN', 'Token found')).toBe('secret_detected')
   })
 })
 
@@ -134,9 +134,9 @@ describe('TestBuildFindings', () => {
     const decision: PostDecisionLike = {
       contractsEvaluated: [{ name: 'pii-check', passed: false, message: 'SSN found' }],
     }
-    const findings = buildFindings(decision)
-    expect(findings).toHaveLength(1)
-    expect(findings[0]!.field).toBe('output')
+    const violations = buildViolations(decision)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.field).toBe('output')
   })
 
   test('field_extracted_from_metadata', () => {
@@ -150,17 +150,17 @@ describe('TestBuildFindings', () => {
         },
       ],
     }
-    const findings = buildFindings(decision)
-    expect(findings).toHaveLength(1)
-    expect(findings[0]!.field).toBe('output.text')
+    const violations = buildViolations(decision)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.field).toBe('output.text')
   })
 
   test('skips_passed_contracts', () => {
     const decision: PostDecisionLike = {
       contractsEvaluated: [{ name: 'ok-check', passed: true, message: undefined }],
     }
-    const findings = buildFindings(decision)
-    expect(findings).toEqual([])
+    const violations = buildViolations(decision)
+    expect(violations).toEqual([])
   })
 
   test('metadata_preserved_in_finding', () => {
@@ -174,8 +174,8 @@ describe('TestBuildFindings', () => {
         },
       ],
     }
-    const findings = buildFindings(decision)
-    expect(findings[0]!.metadata['match_count']).toBe(3)
-    expect(findings[0]!.metadata['field']).toBe('output.text')
+    const violations = buildViolations(decision)
+    expect(violations[0]!.metadata['match_count']).toBe(3)
+    expect(violations[0]!.metadata['field']).toBe('output.text')
   })
 })

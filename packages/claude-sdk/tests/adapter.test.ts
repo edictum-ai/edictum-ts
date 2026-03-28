@@ -3,7 +3,7 @@
  *
  * Covers: allow, deny, observe mode, callbacks, audit events,
  * tool success/failure, postcondition warnings, session counting,
- * setPrincipal, toSdkHooks interface, per-contract observe mode.
+ * setPrincipal, toSdkHooks interface, per-rule observe mode.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -11,11 +11,11 @@ import {
   AuditAction,
   CollectingAuditSink,
   Edictum,
-  Verdict,
+  Decision,
   createPrincipal,
   type Precondition,
   type Postcondition,
-  type ToolEnvelope,
+  type ToolCall,
 } from '@edictum/core'
 
 import { ClaudeAgentSDKAdapter } from '../src/index.js'
@@ -37,7 +37,7 @@ function makeGuard(options: ConstructorParameters<typeof Edictum>[0] = {}): Edic
 // ---------------------------------------------------------------------------
 
 describe('ClaudeAgentSDKAdapter', () => {
-  it('allows with no contracts', async () => {
+  it('allows with no rules', async () => {
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -53,15 +53,15 @@ describe('ClaudeAgentSDKAdapter', () => {
   it('denies when precondition fails', async () => {
     const noRm: Precondition = {
       tool: '*',
-      check: async (envelope: ToolEnvelope) => {
-        if ((envelope.args as Record<string, unknown>)['dangerous']) {
-          return Verdict.fail('Too dangerous')
+      check: async (toolCall: ToolCall) => {
+        if ((toolCall.args as Record<string, unknown>)['dangerous']) {
+          return Decision.fail('Too dangerous')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const sink = makeSink()
-    const guard = makeGuard({ contracts: [noRm], auditSink: sink })
+    const guard = makeGuard({ rules: [noRm], auditSink: sink })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     const result = await adapter._pre('MyTool', { dangerous: true }, 'call-1')
@@ -74,9 +74,9 @@ describe('ClaudeAgentSDKAdapter', () => {
   it('returns null for allowed calls', async () => {
     const alwaysPass: Precondition = {
       tool: '*',
-      check: async () => Verdict.pass_(),
+      check: async () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [alwaysPass] })
+    const guard = makeGuard({ rules: [alwaysPass] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
@@ -92,12 +92,12 @@ describe('observe mode', () => {
   it('converts deny to allow in observe mode', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Blocked'),
+      check: async () => Decision.fail('Blocked'),
     }
     const sink = makeSink()
     const guard = makeGuard({
       mode: 'observe',
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       auditSink: sink,
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -113,9 +113,9 @@ describe('observe mode', () => {
   it('emits CALL_WOULD_DENY audit event in observe mode', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('always deny'),
+      check: async () => Decision.fail('always deny'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [alwaysDeny] })
+    const guard = makeGuard({ mode: 'observe', rules: [alwaysDeny] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -135,10 +135,10 @@ describe('callbacks', () => {
     const denyFn = vi.fn()
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Nope'),
+      check: async () => Decision.fail('Nope'),
     }
     const guard = makeGuard({
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       onDeny: denyFn,
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -165,10 +165,10 @@ describe('callbacks', () => {
     })
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Nope'),
+      check: async () => Decision.fail('Nope'),
     }
     const guard = makeGuard({
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       onDeny: denyFn,
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -197,10 +197,10 @@ describe('callbacks', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('output issue'),
+      check: async () => Decision.fail('output issue'),
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -235,10 +235,10 @@ describe('audit events', () => {
   it('emits CALL_DENIED on pre deny', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('No'),
+      check: async () => Decision.fail('No'),
     }
     const sink = makeSink()
-    const guard = makeGuard({ contracts: [alwaysDeny], auditSink: sink })
+    const guard = makeGuard({ rules: [alwaysDeny], auditSink: sink })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -331,38 +331,38 @@ describe('postcondition warnings', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('secret')) {
-          return Verdict.fail('Contains secret data')
+          return Decision.fail('Contains secret data')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'the secret is 42')
 
     expect(result.postconditionsPassed).toBe(false)
-    expect(result.findings.length).toBeGreaterThan(0)
-    expect(result.findings[0]?.message).toBe('Contains secret data')
+    expect(result.violations.length).toBeGreaterThan(0)
+    expect(result.violations[0]?.message).toBe('Contains secret data')
   })
 
   it('returns postconditionsPassed=true when postcondition passes', async () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.pass_(),
+      check: async () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'safe output')
 
     expect(result.postconditionsPassed).toBe(true)
-    expect(result.findings.length).toBe(0)
+    expect(result.violations.length).toBe(0)
   })
 })
 
@@ -504,7 +504,7 @@ describe('toSdkHooks', () => {
     expect(typeof hooks.PostToolUse[0]).toBe('function')
   })
 
-  it('PreToolUse hook returns allow for passing contracts', async () => {
+  it('PreToolUse hook returns allow for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
     const hooks = adapter.toSdkHooks()
@@ -525,12 +525,12 @@ describe('toSdkHooks', () => {
     })
   })
 
-  it('PreToolUse hook returns deny for failing contracts', async () => {
+  it('PreToolUse hook returns deny for failing rules', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Blocked by policy'),
+      check: async () => Decision.fail('Blocked by policy'),
     }
-    const guard = makeGuard({ contracts: [alwaysDeny] })
+    const guard = makeGuard({ rules: [alwaysDeny] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
     const hooks = adapter.toSdkHooks()
 
@@ -580,15 +580,15 @@ describe('toSdkHooks', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('secret')) {
-          return Verdict.fail('Contains secret data')
+          return Decision.fail('Contains secret data')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -615,7 +615,7 @@ describe('toSdkHooks', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Ambiguous same-name call correlation (Finding #9)
+// Ambiguous same-name call correlation (Violation #9)
 // ---------------------------------------------------------------------------
 
 describe('ambiguous same-name call correlation', () => {
@@ -623,10 +623,10 @@ describe('ambiguous same-name call correlation', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('should not run'),
+      check: async () => Decision.fail('should not run'),
     }
     const sink = makeSink()
-    const guard = makeGuard({ contracts: [postContract], auditSink: sink })
+    const guard = makeGuard({ rules: [postContract], auditSink: sink })
     const adapter = new ClaudeAgentSDKAdapter(guard)
     const hooks = adapter.toSdkHooks()
 
@@ -655,11 +655,11 @@ describe('ambiguous same-name call correlation', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('postcondition ran'),
+      check: async () => Decision.fail('postcondition ran'),
     }
     const sink = makeSink()
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       auditSink: sink,
       tools: { Read: { side_effect: 'pure' } },
     })
@@ -680,7 +680,7 @@ describe('ambiguous same-name call correlation', () => {
       },
     })) as { hookSpecificOutput?: { additionalContext?: string } }
 
-    // Postcondition ran and produced findings
+    // Postcondition ran and produced violations
     expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
   })
 
@@ -688,11 +688,11 @@ describe('ambiguous same-name call correlation', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('postcondition ran'),
+      check: async () => Decision.fail('postcondition ran'),
     }
     const sink = makeSink()
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       auditSink: sink,
       tools: { Read: { side_effect: 'pure' } },
     })
@@ -743,10 +743,10 @@ describe('postcondition output suppression', () => {
       name: 'suppress_test',
       tool: '*',
       effect: 'deny',
-      check: async () => Verdict.fail('sensitive data detected'),
+      check: async () => Decision.fail('sensitive data detected'),
     }
     const guard = makeGuard({
-      contracts: [postContract as unknown as Postcondition],
+      rules: [postContract as unknown as Postcondition],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -760,11 +760,11 @@ describe('postcondition output suppression', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Per-contract observe mode
+// Per-rule observe mode
 // ---------------------------------------------------------------------------
 
-describe('per-contract observe mode', () => {
-  it('per-contract observe mode allows through with audit', async () => {
+describe('per-rule observe mode', () => {
+  it('per-rule observe mode allows through with audit', async () => {
     const internalContract = {
       _edictum_type: 'precondition',
       _edictum_observe: false,
@@ -772,10 +772,10 @@ describe('per-contract observe mode', () => {
       name: 'observe_test',
       tool: '*',
       mode: 'observe',
-      check: async () => Verdict.fail('would deny'),
+      check: async () => Decision.fail('would deny'),
     }
     const guard = makeGuard({
-      contracts: [internalContract as unknown as Precondition],
+      rules: [internalContract as unknown as Precondition],
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
 

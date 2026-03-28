@@ -1,6 +1,6 @@
-/** Selector resolution — map YAML selector paths to ToolEnvelope values. */
+/** Selector resolution — map YAML selector paths to ToolCall values. */
 
-import type { ToolEnvelope } from '../envelope.js'
+import type { ToolCall } from '../tool-call.js'
 import type { CustomSelector } from './evaluator.js'
 
 // ---------------------------------------------------------------------------
@@ -30,37 +30,37 @@ export const BUILTIN_SELECTOR_PREFIXES: ReadonlySet<string> = new Set([
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a dotted selector path to a value from the envelope.
+ * Resolve a dotted selector path to a value from the toolCall.
  * Returns `_MISSING` if the field is not found at any level.
  *
- * NOTE: ToolEnvelope uses camelCase (toolName, userId, serviceId, orgId,
+ * NOTE: ToolCall uses camelCase (toolName, userId, serviceId, orgId,
  * ticketRef) but YAML selectors use snake_case (tool.name, principal.user_id).
  * This function maps between the two.
  */
 export function resolveSelector(
   selector: string,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText?: string | null,
   customSelectors?: Readonly<Record<string, CustomSelector>> | null,
 ): unknown {
-  if (selector === 'environment') return envelope.environment
-  if (selector === 'tool.name') return envelope.toolName
+  if (selector === 'environment') return toolCall.environment
+  if (selector === 'tool.name') return toolCall.toolName
 
   if (selector.startsWith('args.')) {
-    return resolveNested(selector.slice(5), envelope.args as Record<string, unknown>)
+    return resolveNested(selector.slice(5), toolCall.args as Record<string, unknown>)
   }
 
   if (selector.startsWith('principal.')) {
-    if (envelope.principal == null) return _MISSING
+    if (toolCall.principal == null) return _MISSING
     const rest = selector.slice(10)
     // Map YAML snake_case selectors to TS camelCase properties
-    if (rest === 'user_id') return envelope.principal.userId
-    if (rest === 'service_id') return envelope.principal.serviceId
-    if (rest === 'org_id') return envelope.principal.orgId
-    if (rest === 'role') return envelope.principal.role
-    if (rest === 'ticket_ref') return envelope.principal.ticketRef
+    if (rest === 'user_id') return toolCall.principal.userId
+    if (rest === 'service_id') return toolCall.principal.serviceId
+    if (rest === 'org_id') return toolCall.principal.orgId
+    if (rest === 'role') return toolCall.principal.role
+    if (rest === 'ticket_ref') return toolCall.principal.ticketRef
     if (rest.startsWith('claims.')) {
-      return resolveNested(rest.slice(7), envelope.principal.claims as Record<string, unknown>)
+      return resolveNested(rest.slice(7), toolCall.principal.claims as Record<string, unknown>)
     }
     return _MISSING
   }
@@ -71,7 +71,7 @@ export function resolveSelector(
 
   // SECURITY NOTE (Python parity): env.* selector intentionally reads from
   // process.env, matching Python's os.environ.get(). This is by design — YAML
-  // contracts use env.* to gate behavior on environment variables (e.g.,
+  // rules use env.* to gate behavior on environment variables (e.g.,
   // env.EDICTUM_MODE). The message template expansion layer handles secret
   // redaction. Bundle authors control which env vars are referenced; untrusted
   // YAML bundles should not be loaded without review.
@@ -83,7 +83,7 @@ export function resolveSelector(
   }
 
   if (selector.startsWith('metadata.')) {
-    return resolveNested(selector.slice(9), envelope.metadata as Record<string, unknown>)
+    return resolveNested(selector.slice(9), toolCall.metadata as Record<string, unknown>)
   }
 
   // Custom selectors: match prefix before first dot
@@ -93,7 +93,7 @@ export function resolveSelector(
       const prefix = selector.slice(0, dotPos)
       if (Object.hasOwn(customSelectors, prefix)) {
         const resolver = customSelectors[prefix] as CustomSelector
-        const data = resolver(envelope)
+        const data = resolver(toolCall)
         const rest = selector.slice(dotPos + 1)
         return resolveNested(rest, data)
       }

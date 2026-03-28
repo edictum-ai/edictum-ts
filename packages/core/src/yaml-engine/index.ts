@@ -1,4 +1,4 @@
-/** YAML Engine — condition evaluator and contract compiler. */
+/** YAML Engine — condition evaluator and rule compiler. */
 
 // Evaluator
 export {
@@ -33,8 +33,8 @@ export {
   validateOperators,
 } from './compiler-utils.js'
 
-// Contract compilation (direct access for advanced usage)
-export { compilePre, compilePost, compileSession, mergeSessionLimits } from './compile-contracts.js'
+// Rule compilation (direct access for advanced usage)
+export { compilePre, compilePost, compileSession, mergeSessionLimits } from './compile-rules.js'
 
 // Loader
 export {

@@ -2,12 +2,12 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { Verdict } from '../../src/contracts.js'
-import type { Precondition, Postcondition } from '../../src/contracts.js'
+import { Decision } from '../../src/rules.js'
+import type { Precondition, Postcondition } from '../../src/rules.js'
 import { Edictum } from '../../src/guard.js'
 import { MemoryBackend } from '../../src/storage.js'
 import { NullAuditSink } from '../helpers.js'
-import { createPrincipal } from '../../src/envelope.js'
+import { createPrincipal } from '../../src/tool-call.js'
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -15,7 +15,7 @@ import { createPrincipal } from '../../src/envelope.js'
 
 function makeGuard(
   opts: {
-    contracts?: (Precondition | Postcondition)[]
+    rules?: (Precondition | Postcondition)[]
     mode?: 'enforce' | 'observe'
   } = {},
 ): Edictum {
@@ -24,7 +24,7 @@ function makeGuard(
     mode: opts.mode,
     auditSink: new NullAuditSink(),
     backend: new MemoryBackend(),
-    contracts: opts.contracts,
+    rules: opts.rules,
   })
 }
 
@@ -37,9 +37,9 @@ describe('EvaluateBasicVerdicts', () => {
     const guard = makeGuard()
     const result = await guard.evaluate('UnknownTool', { x: 1 })
 
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.contractsEvaluated).toBe(0)
-    expect(result.contracts).toEqual([])
+    expect(result.rules).toEqual([])
     expect(result.denyReasons).toEqual([])
     expect(result.warnReasons).toEqual([])
   })
@@ -48,28 +48,28 @@ describe('EvaluateBasicVerdicts', () => {
     const denyAll: Precondition = {
       name: 'block-all',
       tool: '*',
-      check: () => Verdict.fail('not allowed'),
+      check: () => Decision.fail('not allowed'),
     }
-    const guard = makeGuard({ contracts: [denyAll] })
+    const guard = makeGuard({ rules: [denyAll] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(result.verdict).toBe('deny')
+    expect(result.decision).toBe('deny')
     expect(result.denyReasons.length).toBe(1)
     expect(result.denyReasons[0]).toContain('not allowed')
-    expect(result.contracts[0]!.contractId).toBe('block-all')
-    expect(result.contracts[0]!.contractType).toBe('precondition')
-    expect(result.contracts[0]!.passed).toBe(false)
+    expect(result.rules[0]!.ruleId).toBe('block-all')
+    expect(result.rules[0]!.contractType).toBe('precondition')
+    expect(result.rules[0]!.passed).toBe(false)
   })
 
   test('precondition_pass_returns_allow', async () => {
     const passAll: Precondition = {
       tool: '*',
-      check: () => Verdict.pass_(),
+      check: () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [passAll] })
+    const guard = makeGuard({ rules: [passAll] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.denyReasons).toEqual([])
   })
 })
@@ -86,12 +86,12 @@ describe('EvaluatePostconditions', () => {
       tool: '*',
       check: (_envelope, response) => {
         if (String(response).includes('SSN')) {
-          return Verdict.fail('PII detected')
+          return Decision.fail('PII detected')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [warnPost] })
+    const guard = makeGuard({ rules: [warnPost] })
     const result = await guard.evaluate(
       'TestTool',
       {},
@@ -100,22 +100,22 @@ describe('EvaluatePostconditions', () => {
       },
     )
 
-    expect(result.verdict).toBe('warn')
+    expect(result.decision).toBe('warn')
     expect(result.warnReasons.length).toBeGreaterThanOrEqual(1)
-    expect(result.contracts[0]!.contractType).toBe('postcondition')
-    expect(result.contracts[0]!.passed).toBe(false)
+    expect(result.rules[0]!.contractType).toBe('postcondition')
+    expect(result.rules[0]!.passed).toBe(false)
   })
 
   test('postcondition_skipped_when_no_output', async () => {
     const warnPost: Postcondition = {
       contractType: 'post',
       tool: '*',
-      check: () => Verdict.fail('should not fire'),
+      check: () => Decision.fail('should not fire'),
     }
-    const guard = makeGuard({ contracts: [warnPost] })
+    const guard = makeGuard({ rules: [warnPost] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.contractsEvaluated).toBe(0)
   })
 
@@ -123,18 +123,18 @@ describe('EvaluatePostconditions', () => {
     const passPost: Postcondition = {
       contractType: 'post',
       tool: '*',
-      check: () => Verdict.pass_(),
+      check: () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [passPost] })
+    const guard = makeGuard({ rules: [passPost] })
     const result = await guard.evaluate('TestTool', {}, { output: 'safe' })
 
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.warnReasons).toEqual([])
   })
 })
 
 // ---------------------------------------------------------------------------
-// evaluate() — postcondition effect: deny → verdict "deny"
+// evaluate() — postcondition effect: deny → decision "deny"
 // ---------------------------------------------------------------------------
 
 describe('EvaluatePostconditionDenyEffect', () => {
@@ -145,11 +145,11 @@ describe('EvaluatePostconditionDenyEffect', () => {
       name: 'block-pii',
       tool: '*',
       effect: 'deny',
-      check: (_envelope: unknown, _response: unknown) => Verdict.fail('PII detected'),
+      check: (_envelope: unknown, _response: unknown) => Decision.fail('PII detected'),
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ contracts: [denyPost as any] })
+    const guard = makeGuard({ rules: [denyPost as any] })
     const result = await guard.evaluate(
       'TestTool',
       {},
@@ -158,7 +158,7 @@ describe('EvaluatePostconditionDenyEffect', () => {
       },
     )
 
-    expect(result.verdict).toBe('deny')
+    expect(result.decision).toBe('deny')
     expect(result.denyReasons.length).toBe(1)
     expect(result.denyReasons[0]).toContain('PII detected')
   })
@@ -168,12 +168,12 @@ describe('EvaluatePostconditionDenyEffect', () => {
       _edictum_type: 'postcondition',
       name: 'warn-pii',
       tool: '*',
-      effect: 'warn',
-      check: (_envelope: unknown, _response: unknown) => Verdict.fail('PII detected'),
+      action: 'warn',
+      check: (_envelope: unknown, _response: unknown) => Decision.fail('PII detected'),
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ contracts: [warnPost as any] })
+    const guard = makeGuard({ rules: [warnPost as any] })
     const result = await guard.evaluate(
       'TestTool',
       {},
@@ -182,7 +182,7 @@ describe('EvaluatePostconditionDenyEffect', () => {
       },
     )
 
-    expect(result.verdict).toBe('warn')
+    expect(result.decision).toBe('warn')
     expect(result.warnReasons.length).toBe(1)
   })
 })
@@ -194,21 +194,21 @@ describe('EvaluatePostconditionDenyEffect', () => {
 describe('EvaluateExhaustive', () => {
   test('multiple_contracts_evaluated_exhaustively', async () => {
     const contractA: Precondition = {
-      name: 'contract-a',
+      name: 'rule-a',
       tool: '*',
-      check: () => Verdict.fail('Contract A denied'),
+      check: () => Decision.fail('Rule A denied'),
     }
     const contractB: Precondition = {
-      name: 'contract-b',
+      name: 'rule-b',
       tool: '*',
-      check: () => Verdict.fail('Contract B denied'),
+      check: () => Decision.fail('Rule B denied'),
     }
-    const guard = makeGuard({ contracts: [contractA, contractB] })
+    const guard = makeGuard({ rules: [contractA, contractB] })
     const result = await guard.evaluate('TestTool', {})
 
     expect(result.contractsEvaluated).toBe(2)
-    expect(result.contracts[0]!.passed).toBe(false)
-    expect(result.contracts[1]!.passed).toBe(false)
+    expect(result.rules[0]!.passed).toBe(false)
+    expect(result.rules[1]!.passed).toBe(false)
     expect(result.denyReasons.length).toBe(2)
   })
 })
@@ -219,31 +219,31 @@ describe('EvaluateExhaustive', () => {
 
 describe('EvaluateObserveMode', () => {
   test('observe_mode_contract_failure_excluded_from_deny_reasons', async () => {
-    // Per-contract observe mode: stays in enforce list but has mode: "observe".
+    // Per-rule observe mode: stays in enforce list but has mode: "observe".
     // _edictum_observe=false keeps it in getPreconditions(); mode="observe"
     // makes evaluate() mark it as observed and exclude from deny_reasons.
     const observePre = {
       _edictum_type: 'precondition',
       _edictum_observe: false,
-      name: 'observe-contract',
+      name: 'observe-rule',
       tool: '*',
       mode: 'observe',
-      check: () => Verdict.fail('would deny'),
+      check: () => Decision.fail('would deny'),
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ contracts: [observePre as any] })
+    const guard = makeGuard({ rules: [observePre as any] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.denyReasons).toEqual([])
-    expect(result.contracts.length).toBe(1)
-    expect(result.contracts[0]!.observed).toBe(true)
-    expect(result.contracts[0]!.passed).toBe(false)
+    expect(result.rules.length).toBe(1)
+    expect(result.rules[0]!.observed).toBe(true)
+    expect(result.rules[0]!.passed).toBe(false)
   })
 })
 
 // ---------------------------------------------------------------------------
-// evaluate() — contract exception
+// evaluate() — rule exception
 // ---------------------------------------------------------------------------
 
 describe('EvaluateContractException', () => {
@@ -255,33 +255,33 @@ describe('EvaluateContractException', () => {
         throw new Error('boom')
       },
     }
-    const guard = makeGuard({ contracts: [broken] })
+    const guard = makeGuard({ rules: [broken] })
     const result = await guard.evaluate('TestTool', {})
 
     expect(result.policyError).toBe(true)
-    expect(result.verdict).toBe('deny')
-    expect(result.contracts[0]!.policyError).toBe(true)
-    expect(result.contracts[0]!.passed).toBe(false)
-    expect(result.contracts[0]!.message).toContain('boom')
+    expect(result.decision).toBe('deny')
+    expect(result.rules[0]!.policyError).toBe(true)
+    expect(result.rules[0]!.passed).toBe(false)
+    expect(result.rules[0]!.message).toContain('boom')
   })
 })
 
 // ---------------------------------------------------------------------------
-// evaluate() — ContractResult fields
+// evaluate() — RuleResult fields
 // ---------------------------------------------------------------------------
 
-describe('EvaluateContractResultFields', () => {
+describe('EvaluateRuleResultFields', () => {
   test('contract_result_has_correct_fields', async () => {
     const tagged: Precondition = {
-      name: 'tagged-contract',
+      name: 'tagged-rule',
       tool: '*',
-      check: () => Verdict.fail('denied', { tags: ['safety', 'security'] }),
+      check: () => Decision.fail('denied', { tags: ['safety', 'security'] }),
     }
-    const guard = makeGuard({ contracts: [tagged] })
+    const guard = makeGuard({ rules: [tagged] })
     const result = await guard.evaluate('TestTool', {})
 
-    const cr = result.contracts[0]!
-    expect(cr.contractId).toBe('tagged-contract')
+    const cr = result.rules[0]!
+    expect(cr.ruleId).toBe('tagged-rule')
     expect(cr.contractType).toBe('precondition')
     expect(cr.passed).toBe(false)
     expect(cr.message).toContain('denied')
@@ -297,12 +297,12 @@ describe('EvaluateContractResultFields', () => {
       contractType: 'post',
       name: 'warn-post',
       tool: '*',
-      check: () => Verdict.fail('warned'),
+      check: () => Decision.fail('warned'),
     }
-    const guard = makeGuard({ contracts: [warnPost] })
+    const guard = makeGuard({ rules: [warnPost] })
     const result = await guard.evaluate('TestTool', {}, { output: 'text' })
 
-    const cr = result.contracts[0]!
+    const cr = result.rules[0]!
     expect(cr.effect).toBe('warn')
     expect(cr.contractType).toBe('postcondition')
   })
@@ -323,12 +323,12 @@ describe('EvaluateFrozenResults', () => {
   test('contracts_array_is_frozen', async () => {
     const pre: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('x'),
+      check: () => Decision.fail('x'),
     }
-    const guard = makeGuard({ contracts: [pre] })
+    const guard = makeGuard({ rules: [pre] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(Object.isFrozen(result.contracts)).toBe(true)
+    expect(Object.isFrozen(result.rules)).toBe(true)
   })
 
   test('deny_reasons_array_is_frozen', async () => {
@@ -342,12 +342,12 @@ describe('EvaluateFrozenResults', () => {
   test('individual_contract_result_is_frozen', async () => {
     const pre: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('x'),
+      check: () => Decision.fail('x'),
     }
-    const guard = makeGuard({ contracts: [pre] })
+    const guard = makeGuard({ rules: [pre] })
     const result = await guard.evaluate('TestTool', {})
 
-    expect(Object.isFrozen(result.contracts[0])).toBe(true)
+    expect(Object.isFrozen(result.rules[0])).toBe(true)
   })
 })
 

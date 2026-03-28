@@ -2,8 +2,8 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { Verdict } from '../../src/contracts.js'
-import type { Precondition, Postcondition } from '../../src/contracts.js'
+import { Decision } from '../../src/rules.js'
+import type { Precondition, Postcondition } from '../../src/rules.js'
 import { Edictum } from '../../src/guard.js'
 import { MemoryBackend } from '../../src/storage.js'
 import { NullAuditSink } from '../helpers.js'
@@ -14,7 +14,7 @@ import { NullAuditSink } from '../helpers.js'
 
 function makeGuard(
   opts: {
-    contracts?: (Precondition | Postcondition)[]
+    rules?: (Precondition | Postcondition)[]
     mode?: 'enforce' | 'observe'
   } = {},
 ): Edictum {
@@ -23,7 +23,7 @@ function makeGuard(
     mode: opts.mode,
     auditSink: new NullAuditSink(),
     backend: new MemoryBackend(),
-    contracts: opts.contracts,
+    rules: opts.rules,
   })
 }
 
@@ -47,31 +47,31 @@ describe('EvaluateBatch', () => {
     const denyBash: Precondition = {
       name: 'deny-bash',
       tool: 'Bash',
-      check: () => Verdict.fail('bash denied'),
+      check: () => Decision.fail('bash denied'),
     }
-    const guard = makeGuard({ contracts: [denyBash] })
+    const guard = makeGuard({ rules: [denyBash] })
     const results = await guard.evaluateBatch([
       { tool: 'Bash', args: { command: 'ls' } },
       { tool: 'Read', args: { path: 'x' } },
     ])
 
     expect(results.length).toBe(2)
-    expect(results[0]!.verdict).toBe('deny')
-    expect(results[1]!.verdict).toBe('allow')
+    expect(results[0]!.decision).toBe('deny')
+    expect(results[1]!.decision).toBe('allow')
   })
 
   test('batch_principal_dict_conversion', async () => {
     const requireTicket: Precondition = {
       name: 'require-ticket',
       tool: '*',
-      check: (envelope) => {
-        if (envelope.principal?.ticketRef == null) {
-          return Verdict.fail('Ticket required')
+      check: (toolCall) => {
+        if (toolCall.principal?.ticketRef == null) {
+          return Decision.fail('Ticket required')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [requireTicket] })
+    const guard = makeGuard({ rules: [requireTicket] })
     const results = await guard.evaluateBatch([
       {
         tool: 'Deploy',
@@ -81,7 +81,7 @@ describe('EvaluateBatch', () => {
     ])
 
     expect(results.length).toBe(1)
-    expect(results[0]!.verdict).toBe('allow')
+    expect(results[0]!.decision).toBe('allow')
   })
 
   test('batch_output_dict_serialized_to_json', async () => {
@@ -90,12 +90,12 @@ describe('EvaluateBatch', () => {
       tool: '*',
       check: (_envelope, response) => {
         if (typeof response === 'string' && response.includes('secret')) {
-          return Verdict.fail('secret found')
+          return Decision.fail('secret found')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [checkOutput] })
+    const guard = makeGuard({ rules: [checkOutput] })
     const results = await guard.evaluateBatch([
       {
         tool: 'Search',
@@ -105,7 +105,7 @@ describe('EvaluateBatch', () => {
     ])
 
     expect(results.length).toBe(1)
-    expect(results[0]!.verdict).toBe('warn')
+    expect(results[0]!.decision).toBe('warn')
   })
 
   test('batch_empty_list', async () => {
@@ -121,23 +121,23 @@ describe('EvaluateBatch', () => {
       tool: '*',
       check: (_envelope, response) => {
         if (String(response).includes('PII')) {
-          return Verdict.fail('PII detected')
+          return Decision.fail('PII detected')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [checkOutput] })
+    const guard = makeGuard({ rules: [checkOutput] })
     const results = await guard.evaluateBatch([
       { tool: 'Read', args: {}, output: 'contains PII data' },
     ])
 
     expect(results.length).toBe(1)
-    expect(results[0]!.verdict).toBe('warn')
+    expect(results[0]!.decision).toBe('warn')
   })
 })
 
 // ---------------------------------------------------------------------------
-// Security: postcondition deny-effect exception must produce deny verdict
+// Security: postcondition deny-effect exception must produce deny decision
 // ---------------------------------------------------------------------------
 
 describe('security', () => {
@@ -153,7 +153,7 @@ describe('security', () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ contracts: [throwingDeny as any] })
+    const guard = makeGuard({ rules: [throwingDeny as any] })
     const result = await guard.evaluate(
       'TestTool',
       {},
@@ -162,7 +162,7 @@ describe('security', () => {
       },
     )
 
-    expect(result.verdict).toBe('deny')
+    expect(result.decision).toBe('deny')
     expect(result.denyReasons.length).toBe(1)
     expect(result.policyError).toBe(true)
   })
@@ -172,14 +172,14 @@ describe('security', () => {
       _edictum_type: 'postcondition',
       name: 'warn-on-pii',
       tool: '*',
-      effect: 'warn',
+      action: 'warn',
       check: () => {
         throw new Error('check crashed')
       },
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ contracts: [throwingWarn as any] })
+    const guard = makeGuard({ rules: [throwingWarn as any] })
     const result = await guard.evaluate(
       'TestTool',
       {},
@@ -188,7 +188,7 @@ describe('security', () => {
       },
     )
 
-    expect(result.verdict).toBe('warn')
+    expect(result.decision).toBe('warn')
     expect(result.warnReasons.length).toBe(1)
   })
 })

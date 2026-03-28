@@ -1,14 +1,14 @@
-/** Tests for GovernancePipeline.postExecute — post-execution governance flows. */
+/** Tests for CheckPipeline.postExecute — post-execution governance flows. */
 
 import { describe, expect, test } from 'vitest'
 
-import { Verdict } from '../../src/contracts.js'
-import type { Precondition, Postcondition, SessionContract } from '../../src/contracts.js'
-import { createEnvelope } from '../../src/envelope.js'
-import type { ToolEnvelope } from '../../src/envelope.js'
+import { Decision } from '../../src/rules.js'
+import type { Precondition, Postcondition, SessionRule } from '../../src/rules.js'
+import { createEnvelope } from '../../src/tool-call.js'
+import type { ToolCall } from '../../src/tool-call.js'
 import { Edictum } from '../../src/guard.js'
 import type { OperationLimits } from '../../src/limits.js'
-import { GovernancePipeline } from '../../src/pipeline.js'
+import { CheckPipeline } from '../../src/pipeline.js'
 import { MemoryBackend } from '../../src/storage.js'
 import type { HookRegistration } from '../../src/types.js'
 import { NullAuditSink } from '../helpers.js'
@@ -21,7 +21,7 @@ interface MakeGuardOptions {
   environment?: string
   mode?: 'enforce' | 'observe'
   limits?: OperationLimits
-  contracts?: (Precondition | Postcondition | SessionContract)[]
+  rules?: (Precondition | Postcondition | SessionRule)[]
   hooks?: HookRegistration[]
   backend?: MemoryBackend
   tools?: Record<string, { side_effect?: string; idempotent?: boolean }>
@@ -33,7 +33,7 @@ function makeGuard(opts: MakeGuardOptions = {}): Edictum {
     mode: opts.mode,
     auditSink: new NullAuditSink(),
     backend: opts.backend ?? new MemoryBackend(),
-    contracts: opts.contracts,
+    rules: opts.rules,
     hooks: opts.hooks,
     limits: opts.limits,
     tools: opts.tools,
@@ -46,7 +46,7 @@ function makeGuard(opts: MakeGuardOptions = {}): Edictum {
  */
 function makeObservePostcondition(
   name: string,
-  checkFn: (envelope: ToolEnvelope, response: unknown) => Verdict,
+  checkFn: (toolCall: ToolCall, response: unknown) => Decision,
 ) {
   return {
     _edictum_type: 'postcondition',
@@ -66,10 +66,10 @@ describe('TestPostExecute', () => {
   test('success_no_postconditions', async () => {
     const backend = new MemoryBackend()
     const guard = makeGuard({ backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'ok', true)
+    const decision = await pipeline.postExecute(toolCall, 'ok', true)
     expect(decision.toolSuccess).toBe(true)
     expect(decision.postconditionsPassed).toBe(true)
     expect(decision.warnings).toEqual([])
@@ -82,19 +82,19 @@ describe('TestPostExecute', () => {
       tool: 'TestTool',
       check: (_envelope, result) => {
         if (result !== 'expected') {
-          return Verdict.fail('Unexpected result')
+          return Decision.fail('Unexpected result')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
 
     const guard = makeGuard({
-      contracts: [checkResult],
+      rules: [checkResult],
       backend,
       tools: { TestTool: { side_effect: 'pure' } },
     })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope(
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope(
       'TestTool',
       {},
       {
@@ -102,7 +102,7 @@ describe('TestPostExecute', () => {
       },
     )
 
-    const decision = await pipeline.postExecute(envelope, 'wrong', true)
+    const decision = await pipeline.postExecute(toolCall, 'wrong', true)
     expect(decision.postconditionsPassed).toBe(false)
     expect(decision.warnings).toHaveLength(1)
     expect(decision.warnings[0]!.toLowerCase()).toContain('consider retrying')
@@ -114,15 +114,15 @@ describe('TestPostExecute', () => {
       contractType: 'post',
       tool: 'WriteTool',
       check: (_envelope, _result) => {
-        return Verdict.fail('Write verification failed')
+        return Decision.fail('Write verification failed')
       },
     }
 
-    const guard = makeGuard({ contracts: [checkWrite], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('WriteTool', {})
+    const guard = makeGuard({ rules: [checkWrite], backend })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('WriteTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'result', true)
+    const decision = await pipeline.postExecute(toolCall, 'result', true)
     expect(decision.postconditionsPassed).toBe(false)
     expect(decision.warnings[0]!.toLowerCase()).toContain('assess before proceeding')
   })
@@ -131,7 +131,7 @@ describe('TestPostExecute', () => {
     const backend = new MemoryBackend()
     const called: unknown[] = []
 
-    function afterHook(_envelope: ToolEnvelope, result: unknown): void {
+    function afterHook(_envelope: ToolCall, result: unknown): void {
       called.push(result)
     }
 
@@ -141,20 +141,20 @@ describe('TestPostExecute', () => {
       callback: afterHook,
     }
     const guard = makeGuard({ hooks: [hook], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    await pipeline.postExecute(envelope, 'the_result', true)
+    await pipeline.postExecute(toolCall, 'the_result', true)
     expect(called).toEqual(['the_result'])
   })
 
   test('tool_failure_reported', async () => {
     const backend = new MemoryBackend()
     const guard = makeGuard({ backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'Error: failed', false)
+    const decision = await pipeline.postExecute(toolCall, 'Error: failed', false)
     expect(decision.toolSuccess).toBe(false)
   })
 })
@@ -168,20 +168,20 @@ describe('TestObserveAlongsidePostconditions', () => {
     const backend = new MemoryBackend()
     const observePost = makeObservePostcondition(
       'observe-pii-check',
-      (_envelope: ToolEnvelope, response: unknown) => {
+      (_envelope: ToolCall, response: unknown) => {
         if (String(response).includes('SSN')) {
-          return Verdict.fail('PII detected in output')
+          return Decision.fail('PII detected in output')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     )
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ backend, contracts: [observePost as any] })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ backend, rules: [observePost as any] })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'Patient SSN: 123-45-6789', true)
+    const decision = await pipeline.postExecute(toolCall, 'Patient SSN: 123-45-6789', true)
 
     expect(decision.warnings.some((w: string) => w.includes('[observe]'))).toBe(true)
     expect(decision.warnings.some((w: string) => w.includes('PII detected'))).toBe(true)
@@ -199,15 +199,15 @@ describe('TestObserveAlongsidePostconditions', () => {
     const backend = new MemoryBackend()
     const observePost = makeObservePostcondition(
       'observe-check',
-      (_envelope: ToolEnvelope, _response: unknown) => Verdict.pass_(),
+      (_envelope: ToolCall, _response: unknown) => Decision.pass_(),
     )
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ backend, contracts: [observePost as any] })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ backend, rules: [observePost as any] })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'safe output', true)
+    const decision = await pipeline.postExecute(toolCall, 'safe output', true)
 
     expect(decision.warnings.length).toBe(0)
     expect(decision.postconditionsPassed).toBe(true)
@@ -220,11 +220,11 @@ describe('TestObserveAlongsidePostconditions', () => {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guard = makeGuard({ backend, contracts: [observePost as any] })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ backend, rules: [observePost as any] })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
-    const decision = await pipeline.postExecute(envelope, 'output', true)
+    const decision = await pipeline.postExecute(toolCall, 'output', true)
 
     expect(decision.warnings.some((w: string) => w.includes('[observe]'))).toBe(true)
     expect(decision.postconditionsPassed).toBe(true)

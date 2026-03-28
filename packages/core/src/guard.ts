@@ -1,11 +1,11 @@
 /**
- * Core Edictum class -- construction, contract registry, and accessor methods.
+ * Core Edictum class -- construction, rule registry, and accessor methods.
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's _guard.py
  * (314 LOC) which is already the decomposed version of the original god class.
- * The contract classification + accessor methods form a cohesive unit.
+ * The rule classification + accessor methods form a cohesive unit.
  *
- * Minimum viable guard: constructor + contract classification + accessors.
+ * Minimum viable guard: constructor + rule classification + accessors.
  * run(), from_yaml(), from_server() are delegated methods added later.
  */
 
@@ -24,18 +24,18 @@ import type { AuditSink } from './audit.js'
 import { createCompiledState } from './compiled-state.js'
 import { EdictumConfigError } from './errors.js'
 import type { CompiledState } from './compiled-state.js'
-import type { Precondition, Postcondition, SessionContract } from './contracts.js'
-import { SideEffect, ToolRegistry } from './envelope.js'
-import type { Principal, ToolEnvelope } from './envelope.js'
+import type { Precondition, Postcondition, SessionRule } from './rules.js'
+import { SideEffect, ToolRegistry } from './tool-call.js'
+import type { Principal, ToolCall } from './tool-call.js'
 import type { EvaluationResult } from './evaluation.js'
 import { fnmatch } from './fnmatch.js'
 import type {
   GuardLike,
   InternalPrecondition,
   InternalPostcondition,
-  InternalSessionContract,
-  InternalSandboxContract,
-} from './internal-contracts.js'
+  InternalSessionRule,
+  InternalSandboxRule,
+} from './internal-rules.js'
 import { DEFAULT_LIMITS } from './limits.js'
 import type { OperationLimits } from './limits.js'
 import { RedactionPolicy } from './redaction.js'
@@ -44,15 +44,13 @@ import type { StorageBackend } from './storage.js'
 import type { HookRegistration } from './types.js'
 
 // ---------------------------------------------------------------------------
-// User contract type discrimination
+// User rule type discrimination
 // ---------------------------------------------------------------------------
 
-/** User-facing contract with optional name (not in interface, but allowed). */
+/** User-facing rule with optional name (not in interface, but allowed). */
 type NamedContract = { readonly name?: string }
 
-function isSessionContract(
-  c: Precondition | Postcondition | SessionContract,
-): c is SessionContract {
+function isSessionRule(c: Precondition | Postcondition | SessionRule): c is SessionRule {
   return !('tool' in c)
 }
 
@@ -66,14 +64,14 @@ export interface EdictumOptions {
   readonly mode?: 'enforce' | 'observe'
   readonly limits?: OperationLimits
   readonly tools?: Record<string, { side_effect?: string; idempotent?: boolean }>
-  readonly contracts?: ReadonlyArray<Precondition | Postcondition | SessionContract>
+  readonly rules?: ReadonlyArray<Precondition | Postcondition | SessionRule>
   readonly hooks?: ReadonlyArray<HookRegistration>
   readonly auditSink?: AuditSink | AuditSink[]
   readonly redaction?: RedactionPolicy
   readonly backend?: StorageBackend
   readonly policyVersion?: string
-  readonly onDeny?: (envelope: ToolEnvelope, reason: string, source: string | null) => void
-  readonly onAllow?: (envelope: ToolEnvelope) => void
+  readonly onDeny?: (toolCall: ToolCall, reason: string, source: string | null) => void
+  readonly onAllow?: (toolCall: ToolCall) => void
   readonly successCheck?: (toolName: string, result: unknown) => boolean
   readonly principal?: Principal
   readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
@@ -108,9 +106,9 @@ export class Edictum implements GuardLike {
   // Callbacks and resolution — not private because _runner.ts needs access
   // (Python's _runner.py accesses self._on_deny etc. directly)
   /** @internal */ readonly _onDeny:
-    | ((envelope: ToolEnvelope, reason: string, source: string | null) => void)
+    | ((toolCall: ToolCall, reason: string, source: string | null) => void)
     | null
-  /** @internal */ readonly _onAllow: ((envelope: ToolEnvelope) => void) | null
+  /** @internal */ readonly _onAllow: ((toolCall: ToolCall) => void) | null
   /** @internal */ readonly _successCheck: ((toolName: string, result: unknown) => boolean) | null
   private _principal: Principal | null
   private readonly _principalResolver:
@@ -152,9 +150,9 @@ export class Edictum implements GuardLike {
       }
     }
 
-    // Classify contracts and build compiled state
+    // Classify rules and build compiled state
     this._state = Edictum._classifyContracts(
-      options.contracts ?? [],
+      options.rules ?? [],
       options.limits ?? DEFAULT_LIMITS,
       options.policyVersion ?? null,
     )
@@ -179,7 +177,7 @@ export class Edictum implements GuardLike {
     return this._localSink
   }
 
-  /** Operation limits for the current contract set. */
+  /** Operation limits for the current rule set. */
   get limits(): OperationLimits {
     return this._state.limits
   }
@@ -189,7 +187,7 @@ export class Edictum implements GuardLike {
     this._state = createCompiledState({ ...this._state, limits: value })
   }
 
-  /** SHA256 hash identifying the active contract bundle. */
+  /** SHA256 hash identifying the active rule bundle. */
   get policyVersion(): string | null {
     return this._state.policyVersion
   }
@@ -254,60 +252,57 @@ export class Edictum implements GuardLike {
     }
   }
 
-  getHooks(phase: 'before' | 'after', envelope: ToolEnvelope): HookRegistration[] {
+  getHooks(phase: 'before' | 'after', toolCall: ToolCall): HookRegistration[] {
     const hooks = phase === 'before' ? this._beforeHooks : this._afterHooks
-    return hooks.filter((h) => h.tool === '*' || fnmatch(envelope.toolName, h.tool))
+    return hooks.filter((h) => h.tool === '*' || fnmatch(toolCall.toolName, h.tool))
   }
 
   // -----------------------------------------------------------------------
-  // Contract accessors -- enforce mode
+  // Rule accessors -- enforce mode
   // -----------------------------------------------------------------------
 
-  getPreconditions(envelope: ToolEnvelope): InternalPrecondition[] {
-    return Edictum._filterByTool(this._state.preconditions as InternalPrecondition[], envelope)
+  getPreconditions(toolCall: ToolCall): InternalPrecondition[] {
+    return Edictum._filterByTool(this._state.preconditions as InternalPrecondition[], toolCall)
   }
 
-  getPostconditions(envelope: ToolEnvelope): InternalPostcondition[] {
-    return Edictum._filterByTool(this._state.postconditions as InternalPostcondition[], envelope)
+  getPostconditions(toolCall: ToolCall): InternalPostcondition[] {
+    return Edictum._filterByTool(this._state.postconditions as InternalPostcondition[], toolCall)
   }
 
-  getSessionContracts(): InternalSessionContract[] {
+  getSessionContracts(): InternalSessionRule[] {
     return [...this._state.sessionContracts]
   }
 
-  getSandboxContracts(envelope: ToolEnvelope): InternalSandboxContract[] {
-    return Edictum._filterSandbox(
-      this._state.sandboxContracts as InternalSandboxContract[],
-      envelope,
-    )
+  getSandboxContracts(toolCall: ToolCall): InternalSandboxRule[] {
+    return Edictum._filterSandbox(this._state.sandboxContracts as InternalSandboxRule[], toolCall)
   }
 
   // -----------------------------------------------------------------------
-  // Contract accessors -- observe mode
+  // Rule accessors -- observe mode
   // -----------------------------------------------------------------------
 
-  getObservePreconditions(envelope: ToolEnvelope): InternalPrecondition[] {
+  getObservePreconditions(toolCall: ToolCall): InternalPrecondition[] {
     return Edictum._filterByTool(
       this._state.observePreconditions as InternalPrecondition[],
-      envelope,
+      toolCall,
     )
   }
 
-  getObservePostconditions(envelope: ToolEnvelope): InternalPostcondition[] {
+  getObservePostconditions(toolCall: ToolCall): InternalPostcondition[] {
     return Edictum._filterByTool(
       this._state.observePostconditions as InternalPostcondition[],
-      envelope,
+      toolCall,
     )
   }
 
-  getObserveSessionContracts(): InternalSessionContract[] {
+  getObserveSessionContracts(): InternalSessionRule[] {
     return [...this._state.observeSessionContracts]
   }
 
-  getObserveSandboxContracts(envelope: ToolEnvelope): InternalSandboxContract[] {
+  getObserveSandboxContracts(toolCall: ToolCall): InternalSandboxRule[] {
     return Edictum._filterSandbox(
-      this._state.observeSandboxContracts as InternalSandboxContract[],
-      envelope,
+      this._state.observeSandboxContracts as InternalSandboxRule[],
+      toolCall,
     )
   }
 
@@ -316,28 +311,28 @@ export class Edictum implements GuardLike {
   // -----------------------------------------------------------------------
 
   /**
-   * Classify user-facing and internal contracts into enforce/observe lists.
+   * Classify user-facing and internal rules into enforce/observe lists.
    *
-   * User-facing contracts (Precondition, Postcondition, SessionContract)
-   * are converted to internal representations. Internal contracts (from
+   * User-facing rules (Precondition, Postcondition, SessionRule)
+   * are converted to internal representations. Internal rules (from
    * YAML compiler) carry _edictum_* metadata and are classified by their
    * _edictum_observe flag (Python uses _edictum_shadow — wire-format parity).
    */
   private static _classifyContracts(
-    contracts: ReadonlyArray<Precondition | Postcondition | SessionContract>,
+    rules: ReadonlyArray<Precondition | Postcondition | SessionRule>,
     limits: OperationLimits,
     policyVersion: string | null,
   ): CompiledState {
     const pre: InternalPrecondition[] = []
     const post: InternalPostcondition[] = []
-    const session: InternalSessionContract[] = []
-    const sandbox: InternalSandboxContract[] = []
+    const session: InternalSessionRule[] = []
+    const sandbox: InternalSandboxRule[] = []
     const oPre: InternalPrecondition[] = []
     const oPost: InternalPostcondition[] = []
-    const oSession: InternalSessionContract[] = []
-    const oSandbox: InternalSandboxContract[] = []
+    const oSession: InternalSessionRule[] = []
+    const oSandbox: InternalSandboxRule[] = []
 
-    for (const item of contracts) {
+    for (const item of rules) {
       const raw = item as unknown as Record<string, unknown>
       const edictumType = raw._edictum_type as string | undefined
       // Python YAML compiler emits _edictum_shadow; we accept both for wire-format parity
@@ -345,7 +340,7 @@ export class Edictum implements GuardLike {
         (raw._edictum_observe as boolean) ?? (raw._edictum_shadow as boolean) ?? false
 
       if (edictumType != null) {
-        // Internal contract (from YAML compiler)
+        // Internal rule (from YAML compiler)
         Edictum._classifyInternal(raw, edictumType, isObserve, {
           pre,
           post,
@@ -356,12 +351,12 @@ export class Edictum implements GuardLike {
           oSession,
           oSandbox,
         })
-      } else if (isSessionContract(item)) {
+      } else if (isSessionRule(item)) {
         const name = (raw as NamedContract).name ?? 'anonymous'
         session.push({
           type: 'session_contract',
           name,
-          check: (item as SessionContract).check,
+          check: (item as SessionRule).check,
         })
       } else if ('tool' in item && (item as { contractType?: string }).contractType === 'post') {
         const postItem = item as Postcondition
@@ -378,18 +373,18 @@ export class Edictum implements GuardLike {
         const ct = (raw as { contractType?: unknown }).contractType
         if (ct != null && ct !== 'pre') {
           throw new EdictumConfigError(
-            `Contract with tool "${(item as Precondition).tool}" has unknown contractType ` +
+            `Rule with tool "${(item as Precondition).tool}" has unknown contractType ` +
               `"${String(ct)}". Expected "pre" or omitted for Precondition, "post" for Postcondition.`,
           )
         }
         // Best-effort heuristic for JS consumers who forget contractType: "post".
         // NOTE: Function.length is unreliable for rest parameters (...args) and
         // default-valued params — both give length 0. This catches the common
-        // case (explicit (envelope, output)) but cannot guarantee detection.
+        // case (explicit (toolCall, output)) but cannot guarantee detection.
         // Always set contractType: "post" explicitly.
         if (ct == null && item.check.length >= 2) {
           throw new EdictumConfigError(
-            `Contract with tool "${(item as Precondition).tool}" has a check function with ` +
+            `Rule with tool "${(item as Precondition).tool}" has a check function with ` +
               `${item.check.length} parameters (looks like a Postcondition) but is missing ` +
               `contractType: "post". Add it to prevent misclassification.`,
           )
@@ -420,7 +415,7 @@ export class Edictum implements GuardLike {
     })
   }
 
-  /** Route an internal contract to the appropriate enforce/observe list. */
+  /** Route an internal rule to the appropriate enforce/observe list. */
   private static _classifyInternal(
     raw: Record<string, unknown>,
     edictumType: string,
@@ -428,12 +423,12 @@ export class Edictum implements GuardLike {
     lists: {
       pre: InternalPrecondition[]
       post: InternalPostcondition[]
-      session: InternalSessionContract[]
-      sandbox: InternalSandboxContract[]
+      session: InternalSessionRule[]
+      sandbox: InternalSandboxRule[]
       oPre: InternalPrecondition[]
       oPost: InternalPostcondition[]
-      oSession: InternalSessionContract[]
-      oSandbox: InternalSandboxContract[]
+      oSession: InternalSessionRule[]
+      oSandbox: InternalSandboxRule[]
     },
   ): void {
     const target = isObserve
@@ -444,9 +439,8 @@ export class Edictum implements GuardLike {
     else if (edictumType === 'postcondition')
       target.post.push(raw as unknown as InternalPostcondition)
     else if (edictumType === 'session_contract')
-      target.session.push(raw as unknown as InternalSessionContract)
-    else if (edictumType === 'sandbox')
-      target.sandbox.push(raw as unknown as InternalSandboxContract)
+      target.session.push(raw as unknown as InternalSessionRule)
+    else if (edictumType === 'sandbox') target.sandbox.push(raw as unknown as InternalSandboxRule)
     else {
       throw new EdictumConfigError(
         `Unknown _edictum_type "${edictumType}". ` +
@@ -455,25 +449,25 @@ export class Edictum implements GuardLike {
     }
   }
 
-  /** Filter contracts by tool pattern and optional `when` guard. */
+  /** Filter rules by tool pattern and optional `when` guard. */
   private static _filterByTool<
     T extends {
       readonly tool: string
-      readonly when?: ((envelope: ToolEnvelope) => boolean) | null
+      readonly when?: ((toolCall: ToolCall) => boolean) | null
     },
-  >(contracts: T[], envelope: ToolEnvelope): T[] {
+  >(rules: T[], toolCall: ToolCall): T[] {
     const result: T[] = []
-    for (const p of contracts) {
+    for (const p of rules) {
       const tool = p.tool ?? '*'
       const when = p.when ?? null
-      if (tool !== '*' && !fnmatch(envelope.toolName, tool)) {
+      if (tool !== '*' && !fnmatch(toolCall.toolName, tool)) {
         continue
       }
       if (when != null) {
         try {
-          if (!when(envelope)) continue
+          if (!when(toolCall)) continue
         } catch {
-          // Fail-closed: throwing predicate includes the contract (not excludes)
+          // Fail-closed: throwing predicate includes the rule (not excludes)
           // so it gets evaluated and can deny — safer than silently skipping.
         }
       }
@@ -482,15 +476,15 @@ export class Edictum implements GuardLike {
     return result
   }
 
-  /** Filter sandbox contracts by tool patterns array. */
+  /** Filter sandbox rules by tool patterns array. */
   private static _filterSandbox(
-    contracts: InternalSandboxContract[],
-    envelope: ToolEnvelope,
-  ): InternalSandboxContract[] {
-    const result: InternalSandboxContract[] = []
-    for (const s of contracts) {
+    rules: InternalSandboxRule[],
+    toolCall: ToolCall,
+  ): InternalSandboxRule[] {
+    const result: InternalSandboxRule[] = []
+    for (const s of rules) {
       const tools = s.tools ?? ['*']
-      if (tools.some((p) => fnmatch(envelope.toolName, p))) {
+      if (tools.some((p) => fnmatch(toolCall.toolName, p))) {
         result.push(s)
       }
     }
@@ -517,10 +511,10 @@ export class Edictum implements GuardLike {
   }
 
   /**
-   * Dry-run evaluation of a tool call against all matching contracts.
+   * Dry-run evaluation of a tool call against all matching rules.
    *
    * Never executes the tool. Evaluates exhaustively (no short-circuit).
-   * Session contracts are skipped.
+   * Session rules are skipped.
    */
   evaluate(
     toolName: string,
@@ -555,7 +549,7 @@ export class Edictum implements GuardLike {
   // -----------------------------------------------------------------------
 
   /**
-   * Create an Edictum instance from one or more YAML contract bundle paths.
+   * Create an Edictum instance from one or more YAML rule bundle paths.
    *
    * When multiple paths are given, bundles are composed left-to-right
    * (later layers override earlier ones).
@@ -581,7 +575,7 @@ export class Edictum implements GuardLike {
   }
 
   /**
-   * Atomically replace this guard's contracts from a YAML string.
+   * Atomically replace this guard's rules from a YAML string.
    *
    * Pass customOperators/customSelectors if the new YAML uses custom
    * operators or selectors that were passed to fromYaml/fromYamlString.

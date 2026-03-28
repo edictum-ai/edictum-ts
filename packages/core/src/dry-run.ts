@@ -1,27 +1,27 @@
 /**
  * Dry-run evaluation logic for Edictum.evaluate() and evaluateBatch().
  *
- * Ports Python's _dry_run.py. Exhaustive contract evaluation without
- * tool execution. Session contracts are skipped (no session state).
+ * Ports Python's _dry_run.py. Exhaustive rule evaluation without
+ * tool execution. Session rules are skipped (no session state).
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's
  * _dry_run.py (205 LOC). evaluate() + evaluateBatch() are a cohesive unit.
  */
 
 import type { Edictum } from './guard.js'
-import type { Principal } from './envelope.js'
+import type { Principal } from './tool-call.js'
 
-import { createEnvelope, createPrincipal } from './envelope.js'
+import { createEnvelope, createPrincipal } from './tool-call.js'
 
-/** Safely extract tags array from verdict metadata. */
+/** Safely extract tags array from decision metadata. */
 function safeTags(metadata: Readonly<Record<string, unknown>> | null | undefined): string[] {
   if (!metadata) return []
   const raw = metadata['tags']
   if (!Array.isArray(raw)) return []
   return raw.filter((t): t is string => typeof t === 'string')
 }
-import { createContractResult, createEvaluationResult } from './evaluation.js'
-import type { ContractResult, EvaluationResult } from './evaluation.js'
+import { createRuleResult, createEvaluationResult } from './evaluation.js'
+import type { RuleResult, EvaluationResult } from './evaluation.js'
 
 // ---------------------------------------------------------------------------
 // EvaluateOptions
@@ -39,11 +39,11 @@ export interface EvaluateOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Dry-run evaluation of a tool call against all matching contracts.
+ * Dry-run evaluation of a tool call against all matching rules.
  *
  * Unlike run(), this never executes the tool and evaluates all
- * matching contracts exhaustively (no short-circuit on first deny).
- * Session contracts are skipped (no session state in dry-run).
+ * matching rules exhaustively (no short-circuit on first deny).
+ * Session rules are skipped (no session state in dry-run).
  */
 export async function evaluate(
   guard: Edictum,
@@ -52,113 +52,113 @@ export async function evaluate(
   options?: EvaluateOptions,
 ): Promise<EvaluationResult> {
   const env = options?.environment ?? guard.environment
-  const envelope = createEnvelope(toolName, args, {
+  const toolCall = createEnvelope(toolName, args, {
     environment: env,
     principal: options?.principal ?? null,
     registry: guard.toolRegistry,
   })
 
-  const contracts: ContractResult[] = []
+  const rules: RuleResult[] = []
   const denyReasons: string[] = []
   const warnReasons: string[] = []
 
   // Evaluate all matching preconditions (exhaustive, no short-circuit)
-  for (const contract of guard.getPreconditions(envelope)) {
-    const contractId = contract.name ?? 'unknown'
-    let verdict
+  for (const rule of guard.getPreconditions(toolCall)) {
+    const ruleId = rule.name ?? 'unknown'
+    let decision
     try {
-      verdict = await contract.check(envelope)
+      decision = await rule.check(toolCall)
     } catch (exc: unknown) {
-      const contractResult = createContractResult({
-        contractId,
+      const contractResult = createRuleResult({
+        ruleId,
         contractType: 'precondition',
         passed: false,
         message: `Precondition error: ${exc}`,
         policyError: true,
       })
-      contracts.push(contractResult)
+      rules.push(contractResult)
       denyReasons.push(contractResult.message ?? '')
       continue
     }
 
-    const tags = safeTags(verdict.metadata)
-    const isObserved = contract.mode === 'observe' && !verdict.passed
-    const pe = verdict.metadata ? ((verdict.metadata['policy_error'] as boolean) ?? false) : false
+    const tags = safeTags(decision.metadata)
+    const isObserved = rule.mode === 'observe' && !decision.passed
+    const pe = decision.metadata ? ((decision.metadata['policy_error'] as boolean) ?? false) : false
 
-    const contractResult = createContractResult({
-      contractId,
+    const contractResult = createRuleResult({
+      ruleId,
       contractType: 'precondition',
-      passed: verdict.passed,
-      message: verdict.message,
+      passed: decision.passed,
+      message: decision.message,
       tags,
       observed: isObserved,
       policyError: pe,
     })
-    contracts.push(contractResult)
+    rules.push(contractResult)
 
-    if (!verdict.passed && !isObserved) {
-      denyReasons.push(verdict.message ?? '')
+    if (!decision.passed && !isObserved) {
+      denyReasons.push(decision.message ?? '')
     }
   }
 
-  // Evaluate sandbox contracts (exhaustive, no short-circuit)
-  for (const contract of guard.getSandboxContracts(envelope)) {
-    const contractId = contract.name ?? 'unknown'
-    let verdict
+  // Evaluate sandbox rules (exhaustive, no short-circuit)
+  for (const rule of guard.getSandboxContracts(toolCall)) {
+    const ruleId = rule.name ?? 'unknown'
+    let decision
     try {
-      verdict = await contract.check(envelope)
+      decision = await rule.check(toolCall)
     } catch (exc: unknown) {
-      const contractResult = createContractResult({
-        contractId,
+      const contractResult = createRuleResult({
+        ruleId,
         contractType: 'sandbox',
         passed: false,
         message: `Sandbox error: ${exc}`,
         policyError: true,
       })
-      contracts.push(contractResult)
+      rules.push(contractResult)
       denyReasons.push(contractResult.message ?? '')
       continue
     }
 
-    const tags = safeTags(verdict.metadata)
-    const isObserved = contract.mode === 'observe' && !verdict.passed
-    const pe = verdict.metadata ? ((verdict.metadata['policy_error'] as boolean) ?? false) : false
+    const tags = safeTags(decision.metadata)
+    const isObserved = rule.mode === 'observe' && !decision.passed
+    const pe = decision.metadata ? ((decision.metadata['policy_error'] as boolean) ?? false) : false
 
-    const contractResult = createContractResult({
-      contractId,
+    const contractResult = createRuleResult({
+      ruleId,
       contractType: 'sandbox',
-      passed: verdict.passed,
-      message: verdict.message,
+      passed: decision.passed,
+      message: decision.message,
       tags,
       observed: isObserved,
       policyError: pe,
     })
-    contracts.push(contractResult)
+    rules.push(contractResult)
 
-    if (!verdict.passed && !isObserved) {
-      denyReasons.push(verdict.message ?? '')
+    if (!decision.passed && !isObserved) {
+      denyReasons.push(decision.message ?? '')
     }
   }
 
   // Evaluate postconditions only when output is provided
   if (options?.output != null) {
-    for (const contract of guard.getPostconditions(envelope)) {
-      const contractId = contract.name ?? 'unknown'
-      let verdict
+    for (const rule of guard.getPostconditions(toolCall)) {
+      const ruleId = rule.name ?? 'unknown'
+      let decision
       try {
-        verdict = await contract.check(envelope, options.output)
+        decision = await rule.check(toolCall, options.output)
       } catch (exc: unknown) {
-        const contractResult = createContractResult({
-          contractId,
+        const contractResult = createRuleResult({
+          ruleId,
           contractType: 'postcondition',
           passed: false,
           message: `Postcondition error: ${exc}`,
           policyError: true,
         })
-        contracts.push(contractResult)
+        rules.push(contractResult)
         // Route to correct bucket based on effect — deny-effect errors
-        // must produce deny verdict, not warn
-        const excEffect = contract.effect ?? 'warn'
+        // must produce deny decision, not warn
+        const excEffect = rule.effect ?? 'warn'
         if (excEffect === 'deny') {
           denyReasons.push(contractResult.message ?? '')
         } else {
@@ -167,34 +167,36 @@ export async function evaluate(
         continue
       }
 
-      const tags = safeTags(verdict.metadata)
-      const isObserved = contract.mode === 'observe' && !verdict.passed
-      const pe = verdict.metadata ? ((verdict.metadata['policy_error'] as boolean) ?? false) : false
-      const effect = contract.effect ?? 'warn'
+      const tags = safeTags(decision.metadata)
+      const isObserved = rule.mode === 'observe' && !decision.passed
+      const pe = decision.metadata
+        ? ((decision.metadata['policy_error'] as boolean) ?? false)
+        : false
+      const effect = rule.effect ?? 'warn'
 
-      const contractResult = createContractResult({
-        contractId,
+      const contractResult = createRuleResult({
+        ruleId,
         contractType: 'postcondition',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
         tags,
         observed: isObserved,
         effect,
         policyError: pe,
       })
-      contracts.push(contractResult)
+      rules.push(contractResult)
 
-      if (!verdict.passed && !isObserved) {
+      if (!decision.passed && !isObserved) {
         if (effect === 'deny') {
-          denyReasons.push(verdict.message ?? '')
+          denyReasons.push(decision.message ?? '')
         } else {
-          warnReasons.push(verdict.message ?? '')
+          warnReasons.push(decision.message ?? '')
         }
       }
     }
   }
 
-  // Compute verdict: deny > warn > allow
+  // Compute decision: deny > warn > allow
   let verdictStr: string
   if (denyReasons.length > 0) {
     verdictStr = 'deny'
@@ -205,13 +207,13 @@ export async function evaluate(
   }
 
   return createEvaluationResult({
-    verdict: verdictStr,
+    decision: verdictStr,
     toolName,
-    contracts,
+    rules,
     denyReasons,
     warnReasons,
-    contractsEvaluated: contracts.length,
-    policyError: contracts.some((r) => r.policyError),
+    contractsEvaluated: rules.length,
+    policyError: rules.some((r) => r.policyError),
   })
 }
 

@@ -77,12 +77,12 @@ describe('GovernanceTelemetry', () => {
   it('setSpanError sets ERROR status with reason and ends the span', () => {
     const telemetry = new GovernanceTelemetry()
     const span = telemetry.startToolSpan(ENVELOPE)
-    telemetry.setSpanError(span, 'contract denied: no rm -rf')
+    telemetry.setSpanError(span, 'rule denied: no rm -rf')
 
     const spans = spanExporter.getFinishedSpans()
     expect(spans).toHaveLength(1)
     expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR)
-    expect(spans[0]!.status.message).toBe('contract denied: no rm -rf')
+    expect(spans[0]!.status.message).toBe('rule denied: no rm -rf')
   })
 
   it('recordDenial increments the denied counter', async () => {

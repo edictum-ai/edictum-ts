@@ -12,10 +12,10 @@ function fail(msg: string): never {
 
 /** Validate expression tree shapes and operator value types. */
 export function validateExpressionShapes(data: Record<string, unknown>): void {
-  for (const c of (data.contracts ?? []) as unknown[]) {
+  for (const c of (data.rules ?? []) as unknown[]) {
     if (c == null || typeof c !== 'object') continue
-    const contract = c as Record<string, unknown>
-    if (contract.when != null) checkExprShape(contract.when, (contract.id as string) ?? '?')
+    const rule = c as Record<string, unknown>
+    if (rule.when != null) checkExprShape(rule.when, (rule.id as string) ?? '?')
   }
 }
 
@@ -23,28 +23,26 @@ const MAX_EXPR_DEPTH = 50
 
 function checkExprShape(expr: unknown, cid: string, depth = 0): void {
   if (depth > MAX_EXPR_DEPTH)
-    fail(`contract '${cid}': expression nesting exceeds maximum depth (${MAX_EXPR_DEPTH})`)
+    fail(`rule '${cid}': expression nesting exceeds maximum depth (${MAX_EXPR_DEPTH})`)
   if (expr == null || typeof expr !== 'object') return
   const e = expr as Record<string, unknown>
 
   if ('all' in e) {
     const a = e.all
-    if (!Array.isArray(a) || a.length === 0)
-      fail(`contract '${cid}': 'all' requires a non-empty array`)
+    if (!Array.isArray(a) || a.length === 0) fail(`rule '${cid}': 'all' requires a non-empty array`)
     for (const s of a) checkExprShape(s, cid, depth + 1)
     return
   }
   if ('any' in e) {
     const a = e.any
-    if (!Array.isArray(a) || a.length === 0)
-      fail(`contract '${cid}': 'any' requires a non-empty array`)
+    if (!Array.isArray(a) || a.length === 0) fail(`rule '${cid}': 'any' requires a non-empty array`)
     for (const s of a) checkExprShape(s, cid, depth + 1)
     return
   }
   if ('not' in e) {
     if (e.not == null || typeof e.not !== 'object' || Array.isArray(e.not)) {
       fail(
-        `contract '${cid}': 'not' requires an expression mapping (got ${e.not === null ? 'null' : Array.isArray(e.not) ? 'array' : typeof e.not})`,
+        `rule '${cid}': 'not' requires an expression mapping (got ${e.not === null ? 'null' : Array.isArray(e.not) ? 'array' : typeof e.not})`,
       )
     }
     checkExprShape(e.not, cid, depth + 1)
@@ -55,18 +53,18 @@ function checkExprShape(expr: unknown, cid: string, depth = 0): void {
   for (const v of Object.values(e)) {
     if (v == null || typeof v !== 'object') continue
     if (Array.isArray(v)) {
-      fail(`contract '${cid}': selector value must be an operator mapping, not an array`)
+      fail(`rule '${cid}': selector value must be an operator mapping, not an array`)
     }
     const op = v as Record<string, unknown>
     for (const [name, val] of Object.entries(op)) {
       if (NUMERIC_OPS.has(name) && typeof val !== 'number') {
-        fail(`contract '${cid}': operator '${name}' requires a number, got ${typeof val}`)
+        fail(`rule '${cid}': operator '${name}' requires a number, got ${typeof val}`)
       }
       if (STRING_OPS.has(name) && typeof val !== 'string') {
-        fail(`contract '${cid}': operator '${name}' requires a string, got ${typeof val}`)
+        fail(`rule '${cid}': operator '${name}' requires a string, got ${typeof val}`)
       }
       if (ARRAY_MIN1_OPS.has(name) && (!Array.isArray(val) || val.length === 0)) {
-        fail(`contract '${cid}': operator '${name}' requires a non-empty array`)
+        fail(`rule '${cid}': operator '${name}' requires a non-empty array`)
       }
     }
   }

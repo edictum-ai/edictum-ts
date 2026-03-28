@@ -13,7 +13,7 @@ import { join, resolve as pathResolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { resolvePath } from '../../src/yaml-engine/resolve-path.js'
-import { createEnvelope } from '../../src/envelope.js'
+import { createEnvelope } from '../../src/tool-call.js'
 import { compileSandbox } from '../../src/yaml-engine/sandbox-compile-fn.js'
 
 let tmp: string
@@ -36,10 +36,10 @@ function _sandbox(overrides: Record<string, unknown> = {}) {
 
 function _checkResult(
   sandbox: Record<string, unknown>,
-  envelope: ReturnType<typeof createEnvelope>,
+  toolCall: ReturnType<typeof createEnvelope>,
 ) {
-  const check = sandbox.check as (e: typeof envelope) => { passed: boolean; message: string | null }
-  return check(envelope)
+  const check = sandbox.check as (e: typeof toolCall) => { passed: boolean; message: string | null }
+  return check(toolCall)
 }
 
 describe('resolvePath', () => {

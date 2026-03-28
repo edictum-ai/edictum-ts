@@ -27,7 +27,7 @@ export interface StorageBackend {
 /**
  * In-memory storage for development and testing.
  *
- * WARNING: State lost on restart. Session contracts reset.
+ * WARNING: State lost on restart. Session rules reset.
  * Suitable for: local dev, tests, single-process scripts.
  *
  * Node.js is single-threaded — Map operations are atomic.

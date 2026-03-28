@@ -2,12 +2,12 @@
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { Verdict } from '../../src/contracts.js'
-import type { Precondition, Postcondition } from '../../src/contracts.js'
+import { Decision } from '../../src/rules.js'
+import type { Precondition, Postcondition } from '../../src/rules.js'
 import { Edictum } from '../../src/guard.js'
 import { EdictumDenied, EdictumToolError } from '../../src/errors.js'
 import { AuditAction } from '../../src/audit.js'
-import { createPrincipal } from '../../src/envelope.js'
+import { createPrincipal } from '../../src/tool-call.js'
 import { MemoryBackend } from '../../src/storage.js'
 import { CapturingAuditSink } from '../helpers.js'
 
@@ -17,11 +17,11 @@ import { CapturingAuditSink } from '../helpers.js'
 
 function makeGuard(
   opts: {
-    contracts?: (Precondition | Postcondition)[]
+    rules?: (Precondition | Postcondition)[]
     mode?: 'enforce' | 'observe'
     auditSink?: CapturingAuditSink
-    onDeny?: (envelope: unknown, reason: string, source: string | null) => void
-    onAllow?: (envelope: unknown) => void
+    onDeny?: (toolCall: unknown, reason: string, source: string | null) => void
+    onAllow?: (toolCall: unknown) => void
     successCheck?: (toolName: string, result: unknown) => boolean
     tools?: Record<string, { side_effect?: string; idempotent?: boolean }>
   } = {},
@@ -32,7 +32,7 @@ function makeGuard(
     mode: opts.mode,
     auditSink: sink,
     backend: new MemoryBackend(),
-    contracts: opts.contracts,
+    rules: opts.rules,
     onDeny: (opts.onDeny as Edictum['_onDeny']) ?? undefined,
     onAllow: (opts.onAllow as Edictum['_onAllow']) ?? undefined,
     successCheck: opts.successCheck,
@@ -82,9 +82,9 @@ describe('RunPreconditionDeny', () => {
     const denyAll: Precondition = {
       name: 'block-all',
       tool: '*',
-      check: () => Verdict.fail('not allowed'),
+      check: () => Decision.fail('not allowed'),
     }
-    const { guard } = makeGuard({ contracts: [denyAll] })
+    const { guard } = makeGuard({ rules: [denyAll] })
 
     const err = await guard.run('TestTool', {}, () => 'should not run').catch((e: unknown) => e)
 
@@ -96,9 +96,9 @@ describe('RunPreconditionDeny', () => {
   test('precondition_deny_prevents_tool_execution', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('denied'),
+      check: () => Decision.fail('denied'),
     }
-    const { guard } = makeGuard({ contracts: [denyAll] })
+    const { guard } = makeGuard({ rules: [denyAll] })
     let executed = false
 
     await guard
@@ -148,9 +148,9 @@ describe('RunObserveMode', () => {
   test('observe_mode_deny_becomes_allow_and_tool_executes', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('would deny'),
+      check: () => Decision.fail('would deny'),
     }
-    const { guard } = makeGuard({ contracts: [denyAll], mode: 'observe' })
+    const { guard } = makeGuard({ rules: [denyAll], mode: 'observe' })
     let executed = false
 
     const result = await guard.run('TestTool', {}, () => {
@@ -165,10 +165,10 @@ describe('RunObserveMode', () => {
   test('observe_mode_emits_CALL_WOULD_DENY_audit', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('would deny'),
+      check: () => Decision.fail('would deny'),
     }
     const { guard, sink } = makeGuard({
-      contracts: [denyAll],
+      rules: [denyAll],
       mode: 'observe',
     })
 
@@ -237,10 +237,10 @@ describe('RunPostconditionRedaction', () => {
     const redactPost: Postcondition = {
       contractType: 'post',
       tool: 'TestTool',
-      check: (_envelope, _response) => Verdict.fail('PII found'),
+      check: (_envelope, _response) => Decision.fail('PII found'),
     }
     const { guard } = makeGuard({
-      contracts: [redactPost],
+      rules: [redactPost],
       tools: { TestTool: { side_effect: 'pure' } },
     })
 
@@ -259,10 +259,10 @@ describe('RunCallbacks', () => {
   test('on_deny_fires_exactly_once_on_deny', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('denied'),
+      check: () => Decision.fail('denied'),
     }
     const onDeny = vi.fn()
-    const { guard } = makeGuard({ contracts: [denyAll], onDeny })
+    const { guard } = makeGuard({ rules: [denyAll], onDeny })
 
     await guard.run('T', {}, () => 'x').catch(() => {})
     expect(onDeny).toHaveBeenCalledTimes(1)
@@ -279,12 +279,12 @@ describe('RunCallbacks', () => {
   test('on_deny_callback_error_does_not_crash_pipeline', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('denied'),
+      check: () => Decision.fail('denied'),
     }
     const onDeny = () => {
       throw new Error('callback boom')
     }
-    const { guard } = makeGuard({ contracts: [denyAll], onDeny })
+    const { guard } = makeGuard({ rules: [denyAll], onDeny })
 
     // Should still throw EdictumDenied, not the callback error
     const err = await guard.run('T', {}, () => 'x').catch((e: unknown) => e)
@@ -305,11 +305,11 @@ describe('RunCallbacks', () => {
   test('on_deny_NOT_called_in_observe_mode', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('would deny'),
+      check: () => Decision.fail('would deny'),
     }
     const onDeny = vi.fn()
     const { guard } = makeGuard({
-      contracts: [denyAll],
+      rules: [denyAll],
       mode: 'observe',
       onDeny,
     })
@@ -335,9 +335,9 @@ describe('RunAuditEvents', () => {
   test('CALL_DENIED_emitted_on_deny', async () => {
     const denyAll: Precondition = {
       tool: '*',
-      check: () => Verdict.fail('denied'),
+      check: () => Decision.fail('denied'),
     }
-    const { guard, sink } = makeGuard({ contracts: [denyAll] })
+    const { guard, sink } = makeGuard({ rules: [denyAll] })
 
     await guard.run('T', {}, () => 'x').catch(() => {})
 

@@ -18,7 +18,7 @@ interface ServerEventPayload {
   call_id: string
   agent_id: string
   tool_name: string
-  verdict: string
+  decision: string
   mode: string
   timestamp: string
   payload: {
@@ -110,7 +110,7 @@ export class ServerAuditSink implements AuditSink {
       call_id: event.callId,
       agent_id: this._client.agentId,
       tool_name: event.toolName,
-      verdict: event.action,
+      decision: event.action,
       mode: event.mode,
       timestamp: event.timestamp.toISOString(),
       payload: {

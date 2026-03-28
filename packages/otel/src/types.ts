@@ -6,7 +6,7 @@
  * interface to remain agnostic about whether OTel is actually loaded.
  */
 
-/** Minimal envelope shape needed by the telemetry layer. */
+/** Minimal toolCall shape needed by the telemetry layer. */
 export interface TelemetryEnvelope {
   readonly toolName: string
   readonly sideEffect: string
@@ -31,9 +31,9 @@ export interface TelemetrySpan {
 
 /** Interface shared by GovernanceTelemetry and NoOpTelemetry. */
 export interface GovernanceTelemetryLike {
-  startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan
-  recordDenial(envelope: TelemetryEnvelope, reason?: string): void
-  recordAllowed(envelope: TelemetryEnvelope): void
+  startToolSpan(toolCall: TelemetryEnvelope): TelemetrySpan
+  recordDenial(toolCall: TelemetryEnvelope, reason?: string): void
+  recordAllowed(toolCall: TelemetryEnvelope): void
   setSpanError(span: TelemetrySpan, reason: string): void
   setSpanOk(span: TelemetrySpan): void
 }

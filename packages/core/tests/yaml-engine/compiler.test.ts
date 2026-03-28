@@ -1,10 +1,10 @@
-/** Tests for the YAML contract compiler — ports Python test_compiler.py. */
+/** Tests for the YAML rule compiler — ports Python test_compiler.py. */
 
 import { describe, expect, test } from 'vitest'
 
-import { createEnvelope, createPrincipal } from '../../src/envelope.js'
-import type { ToolEnvelope } from '../../src/envelope.js'
-import type { Verdict } from '../../src/contracts.js'
+import { createEnvelope, createPrincipal } from '../../src/tool-call.js'
+import type { ToolCall } from '../../src/tool-call.js'
+import type { Decision } from '../../src/rules.js'
 import {
   compileContracts,
   expandMessage,
@@ -23,28 +23,25 @@ function _envelope(
   args: Record<string, unknown> = {},
   environment = 'production',
   principal?: ReturnType<typeof createPrincipal> | null,
-): ToolEnvelope {
+): ToolCall {
   return createEnvelope(toolName, args, {
     environment,
     principal: principal ?? null,
   })
 }
 
-function _makeBundle(
-  contracts: Record<string, unknown>[],
-  mode = 'enforce',
-): Record<string, unknown> {
+function _makeBundle(rules: Record<string, unknown>[], mode = 'enforce'): Record<string, unknown> {
   return {
     apiVersion: 'edictum/v1',
-    kind: 'ContractBundle',
+    kind: 'Ruleset',
     metadata: { name: 'test' },
     defaults: { mode },
-    contracts,
+    rules,
   }
 }
 
 // ---------------------------------------------------------------------------
-// Pre-contract compilation
+// Pre-rule compilation
 // ---------------------------------------------------------------------------
 
 describe('CompilePreConditions', () => {
@@ -55,19 +52,19 @@ describe('CompilePreConditions', () => {
       tool: 'read_file',
       when: { 'args.path': { contains_any: ['.env', '.secret'] } },
       then: {
-        effect: 'deny',
+        action: 'block',
         message: "Sensitive file '{args.path}' denied.",
         tags: ['secrets', 'dlp'],
       },
     },
   ])
 
-  test('pre contracts compiled', () => {
+  test('pre rules compiled', () => {
     const compiled = compileContracts(bundle)
     expect(compiled.preconditions.length).toBe(1)
   })
 
-  test('pre contract metadata', () => {
+  test('pre rule metadata', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
     expect(fn._edictum_type).toBe('precondition')
@@ -75,45 +72,45 @@ describe('CompilePreConditions', () => {
     expect(fn._edictum_id).toBe('block-sensitive-reads')
   })
 
-  test('pre contract denies matching', () => {
+  test('pre rule denies matching', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
+    const check = fn.check as (env: ToolCall) => Decision
     const env = _envelope('read_file', { path: '/home/user/.env' })
-    const verdict = check(env)
-    expect(verdict.passed).toBe(false)
+    const decision = check(env)
+    expect(decision.passed).toBe(false)
   })
 
-  test('pre contract passes non-matching', () => {
+  test('pre rule passes non-matching', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
+    const check = fn.check as (env: ToolCall) => Decision
     const env = _envelope('read_file', { path: '/home/user/readme.md' })
-    const verdict = check(env)
-    expect(verdict.passed).toBe(true)
+    const decision = check(env)
+    expect(decision.passed).toBe(true)
   })
 
-  test('pre contract tags in metadata', () => {
+  test('pre rule tags in metadata', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
+    const check = fn.check as (env: ToolCall) => Decision
     const env = _envelope('read_file', { path: '.env' })
-    const verdict = check(env)
-    expect(verdict.metadata.tags).toEqual(['secrets', 'dlp'])
+    const decision = check(env)
+    expect(decision.metadata.tags).toEqual(['secrets', 'dlp'])
   })
 
-  test('pre contract passes when field missing', () => {
+  test('pre rule passes when field missing', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
+    const check = fn.check as (env: ToolCall) => Decision
     const env = _envelope('read_file', {})
-    const verdict = check(env)
-    expect(verdict.passed).toBe(true)
+    const decision = check(env)
+    expect(decision.passed).toBe(true)
   })
 })
 
 // ---------------------------------------------------------------------------
-// Post-contract compilation
+// Post-rule compilation
 // ---------------------------------------------------------------------------
 
 describe('CompilePostConditions', () => {
@@ -123,52 +120,52 @@ describe('CompilePostConditions', () => {
       type: 'post',
       tool: '*',
       when: { 'output.text': { matches: '\\d{3}-\\d{2}-\\d{4}' } },
-      then: { effect: 'warn', message: 'PII detected.', tags: ['pii'] },
+      then: { action: 'warn', message: 'PII detected.', tags: ['pii'] },
     },
   ])
 
-  test('post contracts compiled', () => {
+  test('post rules compiled', () => {
     const compiled = compileContracts(bundle)
     expect(compiled.postconditions.length).toBe(1)
   })
 
-  test('post contract metadata', () => {
+  test('post rule metadata', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.postconditions[0] as Record<string, unknown>
     expect(fn._edictum_type).toBe('postcondition')
     expect(fn._edictum_tool).toBe('*')
   })
 
-  test('post contract warns on match', () => {
+  test('post rule warns on match', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.postconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope, output: unknown) => Verdict
-    const verdict = check(_envelope(), 'SSN: 123-45-6789')
-    expect(verdict.passed).toBe(false)
-    expect(verdict.metadata.tags).toEqual(['pii'])
+    const check = fn.check as (env: ToolCall, output: unknown) => Decision
+    const decision = check(_envelope(), 'SSN: 123-45-6789')
+    expect(decision.passed).toBe(false)
+    expect(decision.metadata.tags).toEqual(['pii'])
   })
 
-  test('post contract passes no match', () => {
+  test('post rule passes no match', () => {
     const compiled = compileContracts(bundle)
     const fn = compiled.postconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope, output: unknown) => Verdict
-    const verdict = check(_envelope(), 'No PII here')
-    expect(verdict.passed).toBe(true)
+    const check = fn.check as (env: ToolCall, output: unknown) => Decision
+    const decision = check(_envelope(), 'No PII here')
+    expect(decision.passed).toBe(true)
   })
 })
 
 // ---------------------------------------------------------------------------
-// Session contracts
+// Session rules
 // ---------------------------------------------------------------------------
 
 describe('CompileSessionContracts', () => {
-  test('session contracts compiled', () => {
+  test('session rules compiled', () => {
     const bundle = _makeBundle([
       {
         id: 'session-limit',
         type: 'session',
         limits: { max_tool_calls: 50, max_attempts: 120 },
-        then: { effect: 'deny', message: 'Session limit exceeded.' },
+        then: { action: 'block', message: 'Session limit exceeded.' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -181,7 +178,7 @@ describe('CompileSessionContracts', () => {
         id: 'session-limit',
         type: 'session',
         limits: { max_tool_calls: 50, max_attempts: 120 },
-        then: { effect: 'deny', message: 'Session limit exceeded.' },
+        then: { action: 'block', message: 'Session limit exceeded.' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -191,11 +188,11 @@ describe('CompileSessionContracts', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Disabled contracts
+// Disabled rules
 // ---------------------------------------------------------------------------
 
 describe('DisabledContracts', () => {
-  test('disabled contract skipped', () => {
+  test('disabled rule skipped', () => {
     const bundle = _makeBundle([
       {
         id: 'disabled-rule',
@@ -203,14 +200,14 @@ describe('DisabledContracts', () => {
         enabled: false,
         tool: 'read_file',
         when: { 'args.path': { contains: '.env' } },
-        then: { effect: 'deny', message: 'denied' },
+        then: { action: 'block', message: 'denied' },
       },
     ])
     const compiled = compileContracts(bundle)
     expect(compiled.preconditions.length).toBe(0)
   })
 
-  test('enabled contract included', () => {
+  test('enabled rule included', () => {
     const bundle = _makeBundle([
       {
         id: 'enabled-rule',
@@ -218,7 +215,7 @@ describe('DisabledContracts', () => {
         enabled: true,
         tool: 'read_file',
         when: { 'args.path': { contains: '.env' } },
-        then: { effect: 'deny', message: 'denied' },
+        then: { action: 'block', message: 'denied' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -238,7 +235,7 @@ describe('ModeOverride', () => {
         type: 'pre',
         tool: 'read_file',
         when: { 'args.path': { contains: '.env' } },
-        then: { effect: 'deny', message: 'denied' },
+        then: { action: 'block', message: 'denied' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -247,7 +244,7 @@ describe('ModeOverride', () => {
     expect(fn._edictum_mode).toBe('enforce')
   })
 
-  test('per contract mode override', () => {
+  test('per rule mode override', () => {
     const bundle = _makeBundle([
       {
         id: 'observe-rule',
@@ -255,7 +252,7 @@ describe('ModeOverride', () => {
         mode: 'observe',
         tool: 'read_file',
         when: { 'args.path': { contains: '.env' } },
-        then: { effect: 'deny', message: 'denied' },
+        then: { action: 'block', message: 'denied' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -313,7 +310,7 @@ describe('MessageTemplating', () => {
 // ---------------------------------------------------------------------------
 
 describe('ThenMetadata', () => {
-  test('then metadata in verdict', () => {
+  test('then metadata in decision', () => {
     const bundle = _makeBundle([
       {
         id: 'meta-rule',
@@ -321,7 +318,7 @@ describe('ThenMetadata', () => {
         tool: 'read_file',
         when: { 'args.path': { contains: '.env' } },
         then: {
-          effect: 'deny',
+          action: 'block',
           message: 'denied',
           tags: ['secrets'],
           metadata: { severity: 'high', category: 'dlp' },
@@ -330,17 +327,17 @@ describe('ThenMetadata', () => {
     ])
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
-    const verdict = check(_envelope('read_file', { path: '.env' }))
-    expect(verdict.passed).toBe(false)
-    expect(verdict.metadata.tags).toEqual(['secrets'])
-    expect(verdict.metadata.severity).toBe('high')
-    expect(verdict.metadata.category).toBe('dlp')
+    const check = fn.check as (env: ToolCall) => Decision
+    const decision = check(_envelope('read_file', { path: '.env' }))
+    expect(decision.passed).toBe(false)
+    expect(decision.metadata.tags).toEqual(['secrets'])
+    expect(decision.metadata.severity).toBe('high')
+    expect(decision.metadata.category).toBe('dlp')
   })
 })
 
 // ---------------------------------------------------------------------------
-// PolicyError in compiled contracts
+// PolicyError in compiled rules
 // ---------------------------------------------------------------------------
 
 describe('PolicyError', () => {
@@ -351,15 +348,15 @@ describe('PolicyError', () => {
         type: 'pre',
         tool: '*',
         when: { 'args.count': { gt: 5 } },
-        then: { effect: 'deny', message: 'Count too high.' },
+        then: { action: 'block', message: 'Count too high.' },
       },
     ])
     const compiled = compileContracts(bundle)
     const fn = compiled.preconditions[0] as Record<string, unknown>
-    const check = fn.check as (env: ToolEnvelope) => Verdict
-    const verdict = check(_envelope('read_file', { count: 'not_a_number' }))
-    expect(verdict.passed).toBe(false)
-    expect(verdict.metadata.policyError).toBe(true)
+    const check = fn.check as (env: ToolCall) => Decision
+    const decision = check(_envelope('read_file', { count: 'not_a_number' }))
+    expect(decision.passed).toBe(false)
+    expect(decision.metadata.policyError).toBe(true)
   })
 })
 
@@ -375,7 +372,7 @@ describe('PostconditionEffectMetadata', () => {
         type: 'post',
         tool: '*',
         when: { 'output.text': { matches_any: ['sk-[a-z0-9]+'] } },
-        then: { effect: 'redact', message: 'Secrets found.' },
+        then: { action: 'redact', message: 'Secrets found.' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -405,7 +402,7 @@ describe('PostconditionEffectMetadata', () => {
         type: 'post',
         tool: '*',
         when: { 'output.text': { matches_any: ['sk-prod-[a-z0-9]{8}', 'AKIA-PROD-[A-Z]{12}'] } },
-        then: { effect: 'redact', message: 'Keys found.' },
+        then: { action: 'redact', message: 'Keys found.' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -424,7 +421,7 @@ describe('PostconditionEffectMetadata', () => {
         type: 'post',
         tool: '*',
         when: { 'output.text': { contains: 'secret' } },
-        then: { effect: 'redact', message: 'Secret found.' },
+        then: { action: 'redact', message: 'Secret found.' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -438,19 +435,19 @@ describe('PostconditionEffectMetadata', () => {
 // ---------------------------------------------------------------------------
 
 describe('SessionLimitsMerging', () => {
-  test('multiple session contracts merge restrictive', () => {
+  test('multiple session rules merge restrictive', () => {
     const bundle = _makeBundle([
       {
         id: 'limits-1',
         type: 'session',
         limits: { max_tool_calls: 100, max_attempts: 200 },
-        then: { effect: 'deny', message: 'limit 1' },
+        then: { action: 'block', message: 'limit 1' },
       },
       {
         id: 'limits-2',
         type: 'session',
         limits: { max_tool_calls: 50, max_calls_per_tool: { bash: 10 } },
-        then: { effect: 'deny', message: 'limit 2' },
+        then: { action: 'block', message: 'limit 2' },
       },
     ])
     const compiled = compileContracts(bundle)
@@ -460,8 +457,8 @@ describe('SessionLimitsMerging', () => {
   })
 
   test('mergeSessionLimits takes lower value', () => {
-    const contract = { limits: { max_tool_calls: 30 } }
-    const result = mergeSessionLimits(contract, { ...DEFAULT_LIMITS, maxToolCalls: 100 })
+    const rule = { limits: { max_tool_calls: 30 } }
+    const result = mergeSessionLimits(rule, { ...DEFAULT_LIMITS, maxToolCalls: 100 })
     expect(result.maxToolCalls).toBe(30)
   })
 })
@@ -474,15 +471,15 @@ describe('security', () => {
   test('missing defaults section throws EdictumConfigError', () => {
     const bundle = {
       apiVersion: 'edictum/v1',
-      kind: 'ContractBundle',
+      kind: 'Ruleset',
       metadata: { name: 'test' },
-      contracts: [
+      rules: [
         {
           id: 'rule',
           type: 'pre',
           tool: '*',
           when: { 'args.x': { equals: 1 } },
-          then: { effect: 'deny', message: 'denied' },
+          then: { action: 'block', message: 'denied' },
         },
       ],
     }
@@ -492,28 +489,28 @@ describe('security', () => {
   test('defaults: null throws EdictumConfigError', () => {
     const bundle = {
       apiVersion: 'edictum/v1',
-      kind: 'ContractBundle',
+      kind: 'Ruleset',
       metadata: { name: 'test' },
       defaults: null,
-      contracts: [],
+      rules: [],
     }
     expect(() => compileContracts(bundle as unknown as Record<string, unknown>)).toThrow(
       EdictumConfigError,
     )
   })
 
-  test('contract with unknown type throws EdictumConfigError', () => {
+  test('rule with unknown type throws EdictumConfigError', () => {
     const bundle = _makeBundle([
       {
         id: 'weird-type',
         type: 'unknown_type',
         tool: '*',
         when: { 'args.x': { equals: 1 } },
-        then: { effect: 'deny', message: 'denied' },
+        then: { action: 'block', message: 'denied' },
       },
     ])
     expect(() => compileContracts(bundle)).toThrow(EdictumConfigError)
-    expect(() => compileContracts(bundle)).toThrow(/Unknown contract type "unknown_type"/)
+    expect(() => compileContracts(bundle)).toThrow(/Unknown rule type "unknown_type"/)
   })
 })
 
@@ -529,7 +526,7 @@ describe('OperatorValidation', () => {
         type: 'pre',
         tool: '*',
         when: { 'args.x': { foobar: 42 } },
-        then: { effect: 'deny', message: 'bad' },
+        then: { action: 'block', message: 'bad' },
       },
     ])
     expect(() => compileContracts(bundle)).toThrow(EdictumConfigError)
@@ -542,7 +539,7 @@ describe('OperatorValidation', () => {
         type: 'pre',
         tool: '*',
         when: { 'args.x': { is_even: true } },
-        then: { effect: 'deny', message: 'even' },
+        then: { action: 'block', message: 'even' },
       },
     ])
     // Should not throw when custom operator is provided

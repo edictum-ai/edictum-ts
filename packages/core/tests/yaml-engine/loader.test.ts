@@ -24,12 +24,12 @@ import { EdictumConfigError } from '../../src/errors.js'
 
 const VALID_YAML = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-bundle
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: block-env
     type: pre
     tool: read_file
@@ -37,7 +37,7 @@ contracts:
       args.path:
         contains: ".env"
     then:
-      effect: deny
+      action: block
       message: "Sensitive file denied."
       tags: [secrets]
 `
@@ -57,9 +57,9 @@ describe('loadBundleString', () => {
   test('parses valid YAML', () => {
     const [data, hash] = loadBundleString(VALID_YAML)
     expect(data.apiVersion).toBe('edictum/v1')
-    expect(data.kind).toBe('ContractBundle')
-    expect(Array.isArray(data.contracts)).toBe(true)
-    expect((data.contracts as unknown[]).length).toBe(1)
+    expect(data.kind).toBe('Ruleset')
+    expect(Array.isArray(data.rules)).toBe(true)
+    expect((data.rules as unknown[]).length).toBe(1)
     expect(hash.hex).toBeDefined()
   })
 
@@ -136,51 +136,49 @@ describe('MaxBundleSize', () => {
 
 describe('validateSchema', () => {
   test('missing apiVersion rejected', () => {
-    expect(() => validateSchema({ kind: 'ContractBundle', contracts: [] })).toThrow(
+    expect(() => validateSchema({ kind: 'Ruleset', rules: [] })).toThrow(EdictumConfigError)
+  })
+
+  test('wrong apiVersion rejected', () => {
+    expect(() => validateSchema({ apiVersion: 'bad/v1', kind: 'Ruleset', rules: [] })).toThrow(
       EdictumConfigError,
     )
   })
 
-  test('wrong apiVersion rejected', () => {
-    expect(() =>
-      validateSchema({ apiVersion: 'bad/v1', kind: 'ContractBundle', contracts: [] }),
-    ).toThrow(EdictumConfigError)
-  })
-
   test('missing kind rejected', () => {
-    expect(() => validateSchema({ apiVersion: 'edictum/v1', contracts: [] })).toThrow(
+    expect(() => validateSchema({ apiVersion: 'edictum/v1', rules: [] })).toThrow(
       EdictumConfigError,
     )
   })
 
   test('wrong kind rejected', () => {
-    expect(() =>
-      validateSchema({ apiVersion: 'edictum/v1', kind: 'Wrong', contracts: [] }),
-    ).toThrow(EdictumConfigError)
+    expect(() => validateSchema({ apiVersion: 'edictum/v1', kind: 'Wrong', rules: [] })).toThrow(
+      EdictumConfigError,
+    )
   })
 
-  test('contracts must be array', () => {
+  test('rules must be array', () => {
     expect(() =>
-      validateSchema({ apiVersion: 'edictum/v1', kind: 'ContractBundle', contracts: 'bad' }),
+      validateSchema({ apiVersion: 'edictum/v1', kind: 'Ruleset', rules: 'bad' }),
     ).toThrow(EdictumConfigError)
   })
 
   test('valid schema passes', () => {
     expect(() =>
-      validateSchema({ apiVersion: 'edictum/v1', kind: 'ContractBundle', contracts: [] }),
+      validateSchema({ apiVersion: 'edictum/v1', kind: 'Ruleset', rules: [] }),
     ).not.toThrow()
   })
 })
 
 // ---------------------------------------------------------------------------
-// Duplicate contract IDs
+// Duplicate rule IDs
 // ---------------------------------------------------------------------------
 
 describe('validateUniqueIds', () => {
   test('duplicate IDs rejected', () => {
     expect(() =>
       validateUniqueIds({
-        contracts: [{ id: 'dup' }, { id: 'dup' }],
+        rules: [{ id: 'dup' }, { id: 'dup' }],
       }),
     ).toThrow(EdictumConfigError)
   })
@@ -188,7 +186,7 @@ describe('validateUniqueIds', () => {
   test('unique IDs pass', () => {
     expect(() =>
       validateUniqueIds({
-        contracts: [{ id: 'a' }, { id: 'b' }],
+        rules: [{ id: 'a' }, { id: 'b' }],
       }),
     ).not.toThrow()
   })
@@ -202,7 +200,7 @@ describe('validateRegexes', () => {
   test('invalid regex rejected', () => {
     expect(() =>
       validateRegexes({
-        contracts: [
+        rules: [
           {
             id: 'bad-regex',
             when: { 'args.x': { matches: '[invalid' } },
@@ -215,7 +213,7 @@ describe('validateRegexes', () => {
   test('valid regex passes', () => {
     expect(() =>
       validateRegexes({
-        contracts: [
+        rules: [
           {
             id: 'good-regex',
             when: { 'args.x': { matches: '\\d+' } },
@@ -228,7 +226,7 @@ describe('validateRegexes', () => {
   test('invalid regex in matches_any rejected', () => {
     expect(() =>
       validateRegexes({
-        contracts: [
+        rules: [
           {
             id: 'bad-regex-any',
             when: { 'args.x': { matches_any: ['good', '[bad'] } },
@@ -240,14 +238,14 @@ describe('validateRegexes', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Pre-selector validation: output.text in pre contracts
+// Pre-selector validation: output.text in pre rules
 // ---------------------------------------------------------------------------
 
 describe('validatePreSelectors', () => {
-  test('output.text in pre contract rejected', () => {
+  test('output.text in pre rule rejected', () => {
     expect(() =>
       validatePreSelectors({
-        contracts: [
+        rules: [
           {
             id: 'bad-pre',
             type: 'pre',
@@ -258,10 +256,10 @@ describe('validatePreSelectors', () => {
     ).toThrow(EdictumConfigError)
   })
 
-  test('output.text in post contract allowed', () => {
+  test('output.text in post rule allowed', () => {
     expect(() =>
       validatePreSelectors({
-        contracts: [
+        rules: [
           {
             id: 'ok-post',
             type: 'post',
@@ -275,7 +273,7 @@ describe('validatePreSelectors', () => {
   test('output.text in nested all within pre rejected', () => {
     expect(() =>
       validatePreSelectors({
-        contracts: [
+        rules: [
           {
             id: 'nested-bad',
             type: 'pre',
@@ -288,14 +286,14 @@ describe('validatePreSelectors', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Sandbox contract validation
+// Sandbox rule validation
 // ---------------------------------------------------------------------------
 
 describe('validateSandboxContracts', () => {
   test('not_within without within rejected', () => {
     expect(() =>
       validateSandboxContracts({
-        contracts: [
+        rules: [
           {
             id: 'bad-sandbox',
             type: 'sandbox',
@@ -309,7 +307,7 @@ describe('validateSandboxContracts', () => {
   test('not_allows without allows rejected', () => {
     expect(() =>
       validateSandboxContracts({
-        contracts: [
+        rules: [
           {
             id: 'bad-sandbox',
             type: 'sandbox',
@@ -323,7 +321,7 @@ describe('validateSandboxContracts', () => {
   test('not_allows.domains without allows.domains rejected', () => {
     expect(() =>
       validateSandboxContracts({
-        contracts: [
+        rules: [
           {
             id: 'bad-sandbox',
             type: 'sandbox',
@@ -338,7 +336,7 @@ describe('validateSandboxContracts', () => {
   test('valid sandbox passes', () => {
     expect(() =>
       validateSandboxContracts({
-        contracts: [
+        rules: [
           {
             id: 'ok-sandbox',
             type: 'sandbox',
@@ -388,22 +386,22 @@ describe('security', () => {
     }).not.toThrow(TypeError)
   })
 
-  test('control characters in contract IDs rejected or handled', () => {
+  test('control characters in rule IDs rejected or handled', () => {
     const yaml = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: "bad\\x00id"
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "bad"
 `
     // Must not throw TypeError — either parses or throws EdictumConfigError
@@ -414,43 +412,43 @@ contracts:
     }
   })
 
-  test('U+2028 line separator in contract ID rejected', () => {
+  test('U+2028 line separator in rule ID rejected', () => {
     const yaml = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: "bad\u2028id"
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "bad"
 `
     expect(() => loadBundleString(yaml)).toThrow(/control characters/)
   })
 
-  test('U+2029 paragraph separator in contract ID rejected', () => {
+  test('U+2029 paragraph separator in rule ID rejected', () => {
     const yaml = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: "bad\u2029id"
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "bad"
 `
     expect(() => loadBundleString(yaml)).toThrow(/control characters/)
@@ -464,19 +462,19 @@ contracts:
     }
     const yaml = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: deep-nest
     type: pre
     tool: "*"
     when:
       args.x: ${nested}
     then:
-      effect: deny
+      action: block
       message: "deep"
 `
     // Should not throw RangeError (stack overflow)
@@ -503,8 +501,8 @@ describe('loadBundleString validation', () => {
 
   test('missing apiVersion in full load rejected', () => {
     const yaml = `
-kind: ContractBundle
-contracts: []
+kind: Ruleset
+rules: []
 `
     expect(() => loadBundleString(yaml)).toThrow(EdictumConfigError)
   })
@@ -512,19 +510,19 @@ contracts: []
   test('duplicate IDs in full load rejected', () => {
     const yaml = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: dup
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "a"
   - id: dup
     type: pre
@@ -532,7 +530,7 @@ contracts:
     when:
       args.y: { equals: 2 }
     then:
-      effect: deny
+      action: block
       message: "b"
 `
     expect(() => loadBundleString(yaml)).toThrow(EdictumConfigError)

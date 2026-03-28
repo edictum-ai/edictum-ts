@@ -1,4 +1,4 @@
-/** End-to-end integration tests for YAML contract engine — ports Python test_integration.py. */
+/** End-to-end integration tests for YAML rule engine — ports Python test_integration.py. */
 
 import { describe, expect, test } from 'vitest'
 
@@ -12,12 +12,12 @@ import { NullAuditSink } from '../helpers.js'
 
 const VALID_BUNDLE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-bundle
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: block-sensitive-reads
     type: pre
     tool: read_file
@@ -25,7 +25,7 @@ contracts:
       args.path:
         contains_any: [".env", ".secret"]
     then:
-      effect: deny
+      action: block
       message: "Sensitive file '{args.path}' denied."
       tags: [secrets, dlp]
   - id: pii-in-output
@@ -35,7 +35,7 @@ contracts:
       output.text:
         matches: "\\\\d{3}-\\\\d{2}-\\\\d{4}"
     then:
-      effect: warn
+      action: warn
       message: "PII detected in output."
       tags: [pii]
   - id: session-limit
@@ -44,18 +44,18 @@ contracts:
       max_tool_calls: 50
       max_attempts: 120
     then:
-      effect: deny
+      action: block
       message: "Session limit exceeded."
 `
 
 const BASIC_PRE_BUNDLE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-pre
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: block-env-reads
     type: pre
     tool: read_file
@@ -63,7 +63,7 @@ contracts:
       args.path:
         contains_any: [".env", ".secret"]
     then:
-      effect: deny
+      action: block
       message: "Sensitive file denied."
       tags: [secrets]
   - id: bash-safety
@@ -73,19 +73,19 @@ contracts:
       args.command:
         matches: '\\brm\\s+-rf\\b'
     then:
-      effect: deny
+      action: block
       message: "Destructive command denied."
       tags: [safety]
 `
 
 const POST_BUNDLE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-post
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: pii-check
     type: post
     tool: "*"
@@ -93,19 +93,19 @@ contracts:
       output.text:
         matches: '\\b\\d{3}-\\d{2}-\\d{4}\\b'
     then:
-      effect: warn
+      action: warn
       message: "PII detected."
       tags: [pii]
 `
 
 const OBSERVE_BUNDLE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-observe
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: observed-rule
     type: pre
     tool: bash
@@ -114,19 +114,19 @@ contracts:
       args.command:
         contains: "rm"
     then:
-      effect: deny
+      action: block
       message: "Would deny rm."
       tags: [safety]
 `
 
 const MIXED_BUNDLE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-mixed
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: block-env-reads
     type: pre
     tool: read_file
@@ -134,7 +134,7 @@ contracts:
       args.path:
         contains_any: [".env", ".secret"]
     then:
-      effect: deny
+      action: block
       message: "Sensitive file denied."
       tags: [secrets]
   - id: pii-check
@@ -144,7 +144,7 @@ contracts:
       output.text:
         matches: '\\b\\d{3}-\\d{2}-\\d{4}\\b'
     then:
-      effect: warn
+      action: warn
       message: "PII detected."
       tags: [pii]
 `
@@ -180,7 +180,7 @@ describe('FromYamlString', () => {
 })
 
 // ---------------------------------------------------------------------------
-// End-to-end: run() with YAML contracts
+// End-to-end: run() with YAML rules
 // ---------------------------------------------------------------------------
 
 describe('EndToEndRun', () => {
@@ -219,16 +219,16 @@ describe('EndToEndRun', () => {
 })
 
 // ---------------------------------------------------------------------------
-// evaluate() with YAML contracts
+// evaluate() with YAML rules
 // ---------------------------------------------------------------------------
 
 describe('Evaluate', () => {
-  test('no matching contracts returns allow', async () => {
+  test('no matching rules returns allow', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('send_email', { to: 'x' })
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
     expect(result.contractsEvaluated).toBe(0)
   })
 
@@ -237,9 +237,9 @@ describe('Evaluate', () => {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('read_file', { path: '/app/.env' })
-    expect(result.verdict).toBe('deny')
+    expect(result.decision).toBe('deny')
     expect(result.denyReasons.length).toBeGreaterThanOrEqual(1)
-    expect(result.contracts[0]!.contractId).toBe('block-env-reads')
+    expect(result.rules[0]!.ruleId).toBe('block-env-reads')
   })
 
   test('precondition passes', async () => {
@@ -247,7 +247,7 @@ describe('Evaluate', () => {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('read_file', { path: 'README.md' })
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
   })
 
   test('postcondition warns with output', async () => {
@@ -261,7 +261,7 @@ describe('Evaluate', () => {
         output: 'SSN: 123-45-6789',
       },
     )
-    expect(result.verdict).toBe('warn')
+    expect(result.decision).toBe('warn')
     expect(result.warnReasons.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -271,7 +271,7 @@ describe('Evaluate', () => {
     })
     const result = await guard.evaluate('read_file', { path: 'x' })
     expect(result.contractsEvaluated).toBe(0)
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
   })
 
   test('mixed deny and warn', async () => {
@@ -285,7 +285,7 @@ describe('Evaluate', () => {
         output: 'SSN: 123-45-6789',
       },
     )
-    expect(result.verdict).toBe('deny')
+    expect(result.decision).toBe('deny')
     expect(result.denyReasons.length).toBeGreaterThanOrEqual(1)
     expect(result.warnReasons.length).toBeGreaterThanOrEqual(1)
   })
@@ -295,8 +295,8 @@ describe('Evaluate', () => {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('bash', { command: 'rm -rf /tmp' })
-    expect(result.verdict).toBe('deny')
-    expect(result.contracts[0]!.contractId).toBe('bash-safety')
+    expect(result.decision).toBe('deny')
+    expect(result.rules[0]!.ruleId).toBe('bash-safety')
   })
 
   test('bash regex no match', async () => {
@@ -304,7 +304,7 @@ describe('Evaluate', () => {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('bash', { command: 'ls -la' })
-    expect(result.verdict).toBe('allow')
+    expect(result.decision).toBe('allow')
   })
 })
 
@@ -333,8 +333,8 @@ describe('EvaluateBatch', () => {
       { tool: 'read_file', args: { path: '/app/.env' } },
       { tool: 'read_file', args: { path: 'README.md' } },
     ])
-    expect(results[0]!.verdict).toBe('deny')
-    expect(results[1]!.verdict).toBe('allow')
+    expect(results[0]!.decision).toBe('deny')
+    expect(results[1]!.decision).toBe('allow')
   })
 
   test('batch empty list', async () => {
@@ -351,11 +351,11 @@ describe('EvaluateBatch', () => {
 // ---------------------------------------------------------------------------
 
 describe('ObserveMode', () => {
-  test('observe mode contract does not block', async () => {
+  test('observe mode rule does not block', async () => {
     const guard = Edictum.fromYamlString(OBSERVE_BUNDLE, {
       auditSink: new NullAuditSink(),
     })
-    // Should NOT raise even though the contract matches
+    // Should NOT raise even though the rule matches
     const result = await guard.run('bash', { command: 'rm file' }, async () => 'done')
     expect(result).toBe('done')
   })
@@ -365,10 +365,10 @@ describe('ObserveMode', () => {
       auditSink: new NullAuditSink(),
     })
     const result = await guard.evaluate('bash', { command: 'rm file' })
-    expect(result.verdict).toBe('allow')
-    expect(result.contracts.length).toBe(1)
-    expect(result.contracts[0]!.observed).toBe(true)
-    expect(result.contracts[0]!.passed).toBe(false)
+    expect(result.decision).toBe('allow')
+    expect(result.rules.length).toBe(1)
+    expect(result.rules[0]!.observed).toBe(true)
+    expect(result.rules[0]!.passed).toBe(false)
   })
 })
 
@@ -377,24 +377,24 @@ describe('ObserveMode', () => {
 // ---------------------------------------------------------------------------
 
 describe('Reload', () => {
-  test('reload atomically replaces contracts', async () => {
+  test('reload atomically replaces rules', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
     })
 
     // Before reload: .env is denied
     const before = await guard.evaluate('read_file', { path: '.env' })
-    expect(before.verdict).toBe('deny')
+    expect(before.decision).toBe('deny')
 
-    // Reload with a bundle that has no pre contracts for read_file
+    // Reload with a bundle that has no pre rules for read_file
     const newBundle = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: relaxed
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: only-bash
     type: pre
     tool: bash
@@ -402,18 +402,18 @@ contracts:
       args.command:
         contains: "rm"
     then:
-      effect: deny
+      action: block
       message: "No rm."
 `
     guard.reload(newBundle)
 
-    // After reload: .env is allowed (no matching contract for read_file)
+    // After reload: .env is allowed (no matching rule for read_file)
     const after = await guard.evaluate('read_file', { path: '.env' })
-    expect(after.verdict).toBe('allow')
+    expect(after.decision).toBe('allow')
 
-    // New contract is active
+    // New rule is active
     const bash = await guard.evaluate('bash', { command: 'rm -rf /' })
-    expect(bash.verdict).toBe('deny')
+    expect(bash.decision).toBe('deny')
   })
 
   test('reload updates policy version', () => {
@@ -422,19 +422,19 @@ contracts:
 
     const newBundle = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: different
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: placeholder
     type: pre
     tool: "*"
     when:
       args.x: { equals: "__never__" }
     then:
-      effect: deny
+      action: block
       message: "placeholder"
 `
     guard.reload(newBundle)
@@ -449,12 +449,12 @@ contracts:
 
     const newBundle = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: custom-op
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: even-check
     type: pre
     tool: "*"
@@ -462,7 +462,7 @@ contracts:
       args.count:
         is_even: true
     then:
-      effect: deny
+      action: block
       message: "Even count denied."
 `
     // Should not throw when custom operator is provided to reload
@@ -497,23 +497,23 @@ describe('security', () => {
   test('YAML without defaults section throws config error', () => {
     const badBundle = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: no-defaults
-contracts:
+rules:
   - id: rule
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"
 `
     expect(() => Edictum.fromYamlString(badBundle)).toThrow()
   })
 
-  test('deny verdict propagates end-to-end through run()', async () => {
+  test('deny decision propagates end-to-end through run()', async () => {
     const guard = Edictum.fromYamlString(BASIC_PRE_BUNDLE, {
       auditSink: new NullAuditSink(),
     })

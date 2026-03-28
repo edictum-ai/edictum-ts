@@ -1,31 +1,31 @@
 /**
- * _CompiledState -- frozen snapshot of compiled contracts.
+ * _CompiledState -- frozen snapshot of compiled rules.
  *
- * All contract lists are readonly arrays (frozen). The entire state is
+ * All rule lists are readonly arrays (frozen). The entire state is
  * replaced atomically via a single reference assignment in reload(),
  * ensuring concurrent evaluations never see a mix of old and new
- * contracts.
+ * rules.
  */
 
-import { deepFreeze } from './envelope.js'
+import { deepFreeze } from './tool-call.js'
 import type {
   InternalPrecondition,
   InternalPostcondition,
-  InternalSessionContract,
-  InternalSandboxContract,
-} from './internal-contracts.js'
+  InternalSessionRule,
+  InternalSandboxRule,
+} from './internal-rules.js'
 import { DEFAULT_LIMITS } from './limits.js'
 import type { OperationLimits } from './limits.js'
 
 export interface CompiledState {
   readonly preconditions: readonly InternalPrecondition[]
   readonly postconditions: readonly InternalPostcondition[]
-  readonly sessionContracts: readonly InternalSessionContract[]
-  readonly sandboxContracts: readonly InternalSandboxContract[]
+  readonly sessionContracts: readonly InternalSessionRule[]
+  readonly sandboxContracts: readonly InternalSandboxRule[]
   readonly observePreconditions: readonly InternalPrecondition[]
   readonly observePostconditions: readonly InternalPostcondition[]
-  readonly observeSessionContracts: readonly InternalSessionContract[]
-  readonly observeSandboxContracts: readonly InternalSandboxContract[]
+  readonly observeSessionContracts: readonly InternalSessionRule[]
+  readonly observeSandboxContracts: readonly InternalSandboxRule[]
   readonly limits: OperationLimits
   readonly policyVersion: string | null
 }

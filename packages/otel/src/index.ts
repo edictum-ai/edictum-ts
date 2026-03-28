@@ -1,7 +1,7 @@
 /**
  * @edictum/otel — OpenTelemetry integration for edictum.
  *
- * Emits governance-specific spans for every contract evaluation
+ * Emits governance-specific spans for every rule evaluation
  * and counters for denied/allowed tool calls.
  *
  * Install: npm install @edictum/otel @opentelemetry/api
@@ -10,7 +10,7 @@
  * ```ts
  * import { GovernanceTelemetry } from "@edictum/otel";
  * const telemetry = new GovernanceTelemetry();
- * const span = telemetry.startToolSpan(envelope);
+ * const span = telemetry.startToolSpan(toolCall);
  * // ... run pipeline ...
  * telemetry.setSpanOk(span); // or setSpanError(span, reason)
  * ```

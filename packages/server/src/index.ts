@@ -12,8 +12,8 @@ export { ServerBackend } from './backend.js'
 // Audit Sink
 export { ServerAuditSink } from './audit-sink.js'
 
-// Contract Source
-export { ServerContractSource } from './contract-source.js'
+// Rule Source
+export { ServerRuleSource } from './rule-source.js'
 
 // Approval Backend
 export { ServerApprovalBackend } from './approval-backend.js'

@@ -112,7 +112,7 @@ export function _resetHasOtelCache(): void {
  * ```ts
  * import { createTelemetry } from "@edictum/otel";
  * const telemetry = await createTelemetry();
- * const span = telemetry.startToolSpan(envelope);
+ * const span = telemetry.startToolSpan(toolCall);
  * ```
  */
 export async function createTelemetry(): Promise<GovernanceTelemetryLike> {

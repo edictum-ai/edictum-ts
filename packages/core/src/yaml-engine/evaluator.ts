@@ -1,6 +1,6 @@
-/** Condition Evaluator — resolve selectors and apply operators against ToolEnvelope. */
+/** Condition Evaluator — resolve selectors and apply operators against ToolCall. */
 
-import type { ToolEnvelope } from '../envelope.js'
+import type { ToolCall } from '../tool-call.js'
 import { OPERATORS, BUILTIN_OPERATOR_NAMES } from './operators.js'
 import { _MISSING, resolveSelector } from './selectors.js'
 
@@ -19,7 +19,7 @@ export { resolveNested as _resolveNested, coerceEnvValue as _coerceEnvValue } fr
 /**
  * Sentinel indicating a type mismatch or evaluation error.
  *
- * Converts to `true` conceptually — errors trigger the contract (fail-closed).
+ * Converts to `true` conceptually — errors trigger the rule (fail-closed).
  * Callers should treat PolicyError as "condition matched" and apply
  * deny/warn + policyError flag.
  */
@@ -35,7 +35,7 @@ export class PolicyError {
 // ---------------------------------------------------------------------------
 
 export type CustomOperator = (fieldValue: unknown, opValue: unknown) => boolean
-export type CustomSelector = (envelope: ToolEnvelope) => Record<string, unknown>
+export type CustomSelector = (toolCall: ToolCall) => Record<string, unknown>
 
 export interface EvaluateOptions {
   readonly customOperators?: Readonly<Record<string, CustomOperator>> | null
@@ -47,17 +47,17 @@ export interface EvaluateOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Evaluate a boolean expression tree against an envelope.
+ * Evaluate a boolean expression tree against an toolCall.
  *
  * Returns `true` if the expression matches, `false` if not.
  * Returns a `PolicyError` if a type mismatch or evaluation error occurs
  * (caller should treat as deny/warn + policyError).
  *
- * Missing fields always evaluate to `false` (contract doesn't fire).
+ * Missing fields always evaluate to `false` (rule doesn't fire).
  */
 export function evaluateExpression(
   expr: Record<string, unknown>,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText?: string | null,
   options?: EvaluateOptions,
 ): boolean | PolicyError {
@@ -67,7 +67,7 @@ export function evaluateExpression(
   if ('all' in expr) {
     return _evalAll(
       expr.all as Record<string, unknown>[],
-      envelope,
+      toolCall,
       outputText,
       customOps,
       customSels,
@@ -76,7 +76,7 @@ export function evaluateExpression(
   if ('any' in expr) {
     return _evalAny(
       expr.any as Record<string, unknown>[],
-      envelope,
+      toolCall,
       outputText,
       customOps,
       customSels,
@@ -85,7 +85,7 @@ export function evaluateExpression(
   if ('not' in expr) {
     return _evalNot(
       expr.not as Record<string, unknown>,
-      envelope,
+      toolCall,
       outputText,
       customOps,
       customSels,
@@ -102,7 +102,7 @@ export function evaluateExpression(
       `Leaf expression must have exactly one selector key, got ${leafKeys.length}: [${leafKeys.join(', ')}]`,
     )
   }
-  return _evalLeaf(expr, envelope, outputText, customOps, customSels)
+  return _evalLeaf(expr, toolCall, outputText, customOps, customSels)
 }
 
 // ---------------------------------------------------------------------------
@@ -111,13 +111,13 @@ export function evaluateExpression(
 
 function _evalAll(
   exprs: Record<string, unknown>[],
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText: string | null | undefined,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): boolean | PolicyError {
   for (const expr of exprs) {
-    const result = evaluateExpression(expr, envelope, outputText, {
+    const result = evaluateExpression(expr, toolCall, outputText, {
       customOperators: customOps,
       customSelectors: customSels,
     })
@@ -129,13 +129,13 @@ function _evalAll(
 
 function _evalAny(
   exprs: Record<string, unknown>[],
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText: string | null | undefined,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): boolean | PolicyError {
   for (const expr of exprs) {
-    const result = evaluateExpression(expr, envelope, outputText, {
+    const result = evaluateExpression(expr, toolCall, outputText, {
       customOperators: customOps,
       customSelectors: customSels,
     })
@@ -147,12 +147,12 @@ function _evalAny(
 
 function _evalNot(
   expr: Record<string, unknown>,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText: string | null | undefined,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): boolean | PolicyError {
-  const result = evaluateExpression(expr, envelope, outputText, {
+  const result = evaluateExpression(expr, toolCall, outputText, {
     customOperators: customOps,
     customSelectors: customSels,
   })
@@ -162,14 +162,14 @@ function _evalNot(
 
 function _evalLeaf(
   leaf: Record<string, unknown>,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText: string | null | undefined,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): boolean | PolicyError {
   const selector = Object.keys(leaf)[0] as string
   const operatorBlock = leaf[selector] as Record<string, unknown>
-  const value = resolveSelector(selector, envelope, outputText, customSels)
+  const value = resolveSelector(selector, toolCall, outputText, customSels)
   const opName = Object.keys(operatorBlock)[0] as string
   const opValue = operatorBlock[opName]
   return _applyOperator(opName, value, opValue, selector, customOps)

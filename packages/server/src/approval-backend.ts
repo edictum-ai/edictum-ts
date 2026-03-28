@@ -96,7 +96,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       tool_args: toolArgs,
       message,
       timeout,
-      timeout_effect: timeoutEffect,
+      timeout_action: timeoutEffect,
     }
 
     const response = await this._client.post('/api/v1/approvals', body)

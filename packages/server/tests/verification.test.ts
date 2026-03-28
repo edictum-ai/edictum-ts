@@ -23,7 +23,7 @@ function signData(data: Uint8Array): string {
 
 describe('verifyBundleSignature', () => {
   it('succeeds with a valid signature', () => {
-    const yamlBytes = Buffer.from('apiVersion: edictum/v1\nkind: ContractBundle\n')
+    const yamlBytes = Buffer.from('apiVersion: edictum/v1\nkind: Ruleset\n')
     const sig = signData(yamlBytes)
 
     expect(() => verifyBundleSignature(yamlBytes, sig, publicKeyHex)).not.toThrow()

@@ -1,4 +1,4 @@
-/** Edictum — Runtime contract enforcement for AI agent tool calls. */
+/** Edictum — Runtime rule enforcement for AI agent tool calls. */
 
 export const VERSION = '0.1.0'
 
@@ -14,12 +14,12 @@ export {
   SideEffect,
   ToolRegistry,
   _validateToolName,
-} from './envelope.js'
-export type { CreateEnvelopeOptions, Principal, ToolEnvelope } from './envelope.js'
+} from './tool-call.js'
+export type { CreateEnvelopeOptions, Principal, ToolCall } from './tool-call.js'
 
 // Contracts
-export { Verdict } from './contracts.js'
-export type { Precondition, Postcondition, SessionContract } from './contracts.js'
+export { Decision } from './rules.js'
+export type { Precondition, Postcondition, SessionRule } from './rules.js'
 
 // Hooks
 export { HookDecision, HookResult } from './hooks.js'
@@ -58,29 +58,34 @@ export type { AuditEvent, AuditSink } from './audit.js'
 export { RedactionPolicy } from './redaction.js'
 
 // Evaluation
-export { createContractResult, createEvaluationResult } from './evaluation.js'
-export type { ContractResult, EvaluationResult } from './evaluation.js'
+export { createRuleResult, createEvaluationResult } from './evaluation.js'
+export type { RuleResult, EvaluationResult } from './evaluation.js'
 
 // Findings
-export { buildFindings, classifyFinding, createFinding, createPostCallResult } from './findings.js'
-export type { Finding, PostCallResult, PostDecisionLike } from './findings.js'
+export {
+  buildViolations,
+  classifyViolation,
+  createViolation,
+  createPostCallResult,
+} from './violations.js'
+export type { Violation, PostCallResult, PostDecisionLike } from './violations.js'
 
-// Internal contract types (for adapter and YAML engine authors)
+// Internal rule types (for adapter and YAML engine authors)
 export type {
   GuardLike,
-  InternalContract,
+  InternalRule,
   InternalPrecondition,
   InternalPostcondition,
-  InternalSessionContract,
-  InternalSandboxContract,
-} from './internal-contracts.js'
+  InternalSessionRule,
+  InternalSandboxRule,
+} from './internal-rules.js'
 
 // Compiled state
 export { createCompiledState } from './compiled-state.js'
 export type { CompiledState } from './compiled-state.js'
 
 // Pipeline
-export { GovernancePipeline, createPreDecision, createPostDecision } from './pipeline.js'
+export { CheckPipeline, createPreDecision, createPostDecision } from './pipeline.js'
 export type { PreDecision, PostDecision } from './pipeline.js'
 
 // Guard

@@ -21,7 +21,7 @@ import { EdictumConfigError } from '../../src/errors.js'
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Valid pre contract YAML fragment. */
+/** Valid pre rule YAML fragment. */
 const VALID_PRE = `
   - id: c1
     type: pre
@@ -29,7 +29,7 @@ const VALID_PRE = `
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"
 `
 
@@ -38,17 +38,17 @@ function bundle(
   opts: {
     metadata?: string
     defaults?: string
-    contracts?: string
+    rules?: string
     extra?: string
   } = {},
 ): string {
   return [
     'apiVersion: edictum/v1',
-    'kind: ContractBundle',
+    'kind: Ruleset',
     opts.metadata ?? 'metadata:\n  name: test-bundle',
     opts.defaults ?? 'defaults:\n  mode: enforce',
-    'contracts:',
-    opts.contracts ?? VALID_PRE,
+    'rules:',
+    opts.rules ?? VALID_PRE,
     opts.extra ?? '',
   ].join('\n')
 }
@@ -67,9 +67,9 @@ describe('required top-level fields (parity with JSON Schema)', () => {
   test('missing metadata rejected', () => {
     const yaml = [
       'apiVersion: edictum/v1',
-      'kind: ContractBundle',
+      'kind: Ruleset',
       'defaults:\n  mode: enforce',
-      'contracts:',
+      'rules:',
       VALID_PRE,
     ].join('\n')
     expectReject(yaml, /metadata/)
@@ -86,9 +86,9 @@ describe('required top-level fields (parity with JSON Schema)', () => {
   test('missing defaults rejected', () => {
     const yaml = [
       'apiVersion: edictum/v1',
-      'kind: ContractBundle',
+      'kind: Ruleset',
       'metadata:\n  name: test',
-      'contracts:',
+      'rules:',
       VALID_PRE,
     ].join('\n')
     expectReject(yaml, /defaults/)
@@ -102,26 +102,26 @@ describe('required top-level fields (parity with JSON Schema)', () => {
     expectReject(bundle({ defaults: 'defaults:\n  mode: permissive' }), /mode/)
   })
 
-  test('empty contracts array rejected', () => {
-    expectReject(bundle({ contracts: '\n  []' }), /at least 1/)
+  test('empty rules array rejected', () => {
+    expectReject(bundle({ rules: '\n  []' }), /at least 1/)
   })
 })
 
 // =========================================================================
-// Contract type validation
+// Rule type validation
 // =========================================================================
 
-describe('contract type validation', () => {
+describe('rule type validation', () => {
   test('missing type rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-type
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /type/,
@@ -131,14 +131,14 @@ describe('contract type validation', () => {
   test('invalid type "rule" rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: bad-type
     type: rule
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /type/,
@@ -148,14 +148,14 @@ describe('contract type validation', () => {
   test('type: null rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: null-type
     type: null
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /type/,
@@ -164,20 +164,20 @@ describe('contract type validation', () => {
 })
 
 // =========================================================================
-// Contract id validation
+// Rule id validation
 // =========================================================================
 
-describe('contract id validation', () => {
+describe('rule id validation', () => {
   test('missing id rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /id/,
@@ -187,14 +187,14 @@ describe('contract id validation', () => {
   test('empty id rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: ""
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /id/,
@@ -203,20 +203,20 @@ describe('contract id validation', () => {
 })
 
 // =========================================================================
-// Pre/post contract required fields
+// Pre/post rule required fields
 // =========================================================================
 
-describe('pre contract required fields', () => {
+describe('pre rule required fields', () => {
   test('missing tool rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-tool
     type: pre
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /tool/,
@@ -226,12 +226,12 @@ describe('pre contract required fields', () => {
   test('missing when rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-when
     type: pre
     tool: "*"
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /when/,
@@ -241,7 +241,7 @@ describe('pre contract required fields', () => {
   test('missing then rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-then
     type: pre
     tool: "*"
@@ -252,10 +252,10 @@ describe('pre contract required fields', () => {
     )
   })
 
-  test('then without effect rejected', () => {
+  test('then without action rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-effect
     type: pre
     tool: "*"
@@ -264,38 +264,38 @@ describe('pre contract required fields', () => {
     then:
       message: "denied"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
   test('then without message rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: no-message
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny`,
+      action: block`,
       }),
       /message/,
     )
   })
 })
 
-describe('pre contract when field type', () => {
+describe('pre rule when field type', () => {
   test('when as plain string rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: string-when
     type: pre
     tool: "*"
     when: "invalid"
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /when/,
@@ -303,17 +303,17 @@ describe('pre contract when field type', () => {
   })
 })
 
-describe('post contract required fields', () => {
+describe('post rule required fields', () => {
   test('missing tool rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: post-no-tool
     type: post
     when:
       output.text: { contains: "secret" }
     then:
-      effect: warn
+      action: warn
       message: "warning"`,
       }),
       /tool/,
@@ -323,12 +323,12 @@ describe('post contract required fields', () => {
   test('missing when rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: post-no-when
     type: post
     tool: "*"
     then:
-      effect: warn
+      action: warn
       message: "warning"`,
       }),
       /when/,
@@ -338,7 +338,7 @@ describe('post contract required fields', () => {
   test('missing then rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: post-no-then
     type: post
     tool: "*"
@@ -354,105 +354,105 @@ describe('post contract required fields', () => {
 // Effect enum validation
 // =========================================================================
 
-describe('effect enum validation', () => {
-  test('pre with effect "warn" rejected (post-only)', () => {
+describe('action enum validation', () => {
+  test('pre with action "warn" rejected (post-only)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: pre-warn
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: warn
+      action: warn
       message: "bad"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
-  test('pre with effect "redact" rejected (post-only)', () => {
+  test('pre with action "redact" rejected (post-only)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: pre-redact
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: redact
+      action: redact
       message: "bad"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
-  test('pre with effect "allow" rejected (not valid)', () => {
+  test('pre with action "allow" rejected (not valid)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: pre-allow
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: allow
+      action: allow
       message: "bad"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
-  test('post with effect "approve" rejected (pre-only)', () => {
+  test('post with action "ask" rejected (pre-only)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: post-approve
     type: post
     tool: "*"
     when:
       output.text: { contains: "secret" }
     then:
-      effect: approve
+      action: ask
       message: "bad"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
-  test('post with effect "deny" accepted (valid)', () => {
+  test('post with action "block" accepted (valid)', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: post-deny
     type: post
     tool: "*"
     when:
       output.text: { contains: "secret" }
     then:
-      effect: deny
+      action: block
       message: "blocked"`,
         }),
       ),
     ).not.toThrow()
   })
 
-  test('pre with effect "approve" accepted (valid)', () => {
+  test('pre with action "ask" accepted (valid)', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: pre-approve
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: approve
+      action: ask
       message: "approved"`,
         }),
       ),

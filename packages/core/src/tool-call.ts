@@ -96,7 +96,7 @@ export function _validateToolName(toolName: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// ToolEnvelope
+// ToolCall
 // ---------------------------------------------------------------------------
 
 /**
@@ -105,7 +105,7 @@ export function _validateToolName(toolName: string): void {
  * Prefer `createEnvelope()` factory for deep-copy guarantees.
  * Direct construction validates tool_name but does NOT deep-copy args.
  */
-export interface ToolEnvelope {
+export interface ToolCall {
   // Identity
   readonly toolName: string
   readonly args: Readonly<Record<string, unknown>>
@@ -318,13 +318,13 @@ export interface CreateEnvelopeOptions {
  * Factory that enforces immutability guarantees.
  *
  * Prefer this factory over direct construction — it deep-copies args
- * and metadata to ensure the envelope is a true immutable snapshot.
+ * and metadata to ensure the toolCall is a true immutable snapshot.
  */
 export function createEnvelope(
   toolName: string,
   toolInput: Record<string, unknown>,
   options: CreateEnvelopeOptions = {},
-): Readonly<ToolEnvelope> {
+): Readonly<ToolCall> {
   _validateToolName(toolName)
 
   // Deep-copy for immutability
@@ -382,7 +382,7 @@ export function createEnvelope(
       null
   }
 
-  const envelope: ToolEnvelope = {
+  const toolCall: ToolCall = {
     toolName,
     args: safeArgs,
     callId: options.callId ?? randomUUID(),
@@ -401,5 +401,5 @@ export function createEnvelope(
     metadata: safeMetadata,
   }
 
-  return deepFreeze(envelope)
+  return deepFreeze(toolCall)
 }

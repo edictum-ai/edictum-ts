@@ -47,11 +47,11 @@ afterEach(async () => {
 describe('GovernanceTelemetry security', () => {
   it('strips control characters from span name', () => {
     const telemetry = new GovernanceTelemetry()
-    const envelope: TelemetryEnvelope = {
+    const toolCall: TelemetryEnvelope = {
       ...ENVELOPE,
       toolName: 'Bash\x00\x1f\x7f\x9f',
     }
-    telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+    telemetry.setSpanOk(telemetry.startToolSpan(toolCall))
 
     const spans = spanExporter.getFinishedSpans()
     expect(spans[0]!.name).toBe('tool.execute Bash')
@@ -59,11 +59,11 @@ describe('GovernanceTelemetry security', () => {
 
   it('strips unicode line separators from span name', () => {
     const telemetry = new GovernanceTelemetry()
-    const envelope: TelemetryEnvelope = {
+    const toolCall: TelemetryEnvelope = {
       ...ENVELOPE,
       toolName: 'Tool\u2028Name\u2029End',
     }
-    telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+    telemetry.setSpanOk(telemetry.startToolSpan(toolCall))
 
     const spans = spanExporter.getFinishedSpans()
     expect(spans[0]!.name).toBe('tool.execute ToolNameEnd')
@@ -72,11 +72,11 @@ describe('GovernanceTelemetry security', () => {
   it('caps span name at 10,000 characters', () => {
     const telemetry = new GovernanceTelemetry()
     const longName = 'A'.repeat(10_001)
-    const envelope: TelemetryEnvelope = {
+    const toolCall: TelemetryEnvelope = {
       ...ENVELOPE,
       toolName: longName,
     }
-    telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+    telemetry.setSpanOk(telemetry.startToolSpan(toolCall))
 
     const spans = spanExporter.getFinishedSpans()
     // "tool.execute " prefix + 10,000 chars
@@ -86,11 +86,11 @@ describe('GovernanceTelemetry security', () => {
   it('caps tool.name attribute at 10,000 characters', () => {
     const telemetry = new GovernanceTelemetry()
     const longName = 'B'.repeat(10_001)
-    const envelope: TelemetryEnvelope = {
+    const toolCall: TelemetryEnvelope = {
       ...ENVELOPE,
       toolName: longName,
     }
-    telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+    telemetry.setSpanOk(telemetry.startToolSpan(toolCall))
 
     const spans = spanExporter.getFinishedSpans()
     const attrValue = spans[0]!.attributes['tool.name'] as string
@@ -99,11 +99,11 @@ describe('GovernanceTelemetry security', () => {
 
   it('strips newlines from span name', () => {
     const telemetry = new GovernanceTelemetry()
-    const envelope: TelemetryEnvelope = {
+    const toolCall: TelemetryEnvelope = {
       ...ENVELOPE,
       toolName: 'Bash\ninjected\rheader',
     }
-    telemetry.setSpanOk(telemetry.startToolSpan(envelope))
+    telemetry.setSpanOk(telemetry.startToolSpan(toolCall))
 
     const spans = spanExporter.getFinishedSpans()
     expect(spans[0]!.name).toBe('tool.execute Bashinjectedheader')
@@ -112,8 +112,8 @@ describe('GovernanceTelemetry security', () => {
   it('caps tool.name in denied counter at 10,000 characters', async () => {
     const telemetry = new GovernanceTelemetry()
     const longName = 'C'.repeat(10_001)
-    const envelope: TelemetryEnvelope = { ...ENVELOPE, toolName: longName }
-    telemetry.recordDenial(envelope, 'too long')
+    const toolCall: TelemetryEnvelope = { ...ENVELOPE, toolName: longName }
+    telemetry.recordDenial(toolCall, 'too long')
 
     const result = await metricReader.collect()
     const deniedMetric = result.resourceMetrics.scopeMetrics
@@ -127,8 +127,8 @@ describe('GovernanceTelemetry security', () => {
   it('caps tool.name in allowed counter at 10,000 characters', async () => {
     const telemetry = new GovernanceTelemetry()
     const longName = 'D'.repeat(10_001)
-    const envelope: TelemetryEnvelope = { ...ENVELOPE, toolName: longName }
-    telemetry.recordAllowed(envelope)
+    const toolCall: TelemetryEnvelope = { ...ENVELOPE, toolName: longName }
+    telemetry.recordAllowed(toolCall)
 
     const result = await metricReader.collect()
     const allowedMetric = result.resourceMetrics.scopeMetrics

@@ -1,7 +1,7 @@
-/** Contract compilation — compile individual YAML contracts into callable objects. */
+/** Rule compilation — compile individual YAML rules into callable objects. */
 
-import { Verdict } from '../contracts.js'
-import type { ToolEnvelope } from '../envelope.js'
+import { Decision } from '../rules.js'
+import type { ToolCall } from '../tool-call.js'
 import { EdictumConfigError } from '../errors.js'
 import type { OperationLimits } from '../limits.js'
 import type { Session } from '../session.js'
@@ -13,106 +13,127 @@ import {
 } from './evaluator.js'
 import { expandMessage, extractOutputPatterns, precompileRegexes } from './compiler-utils.js'
 
+/**
+ * Map YAML action values to internal effect values.
+ * YAML uses: block, ask, warn, redact
+ * Internal pipeline uses: deny, approve, warn, redact
+ */
+function mapAction(action: string): string {
+  if (action === 'block') return 'deny'
+  if (action === 'ask') return 'approve'
+  return action // warn, redact pass through
+}
+
 /** Shared evaluation logic for pre/post check functions. */
 function _evalAndVerdict(
   whenExpr: Record<string, unknown>,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText: string | null | undefined,
   messageTemplate: string,
   tags: string[],
   thenMetadata: Record<string, unknown>,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
-): Verdict {
+): Decision {
   try {
-    const result = evaluateExpression(whenExpr, envelope, outputText, {
+    const result = evaluateExpression(whenExpr, toolCall, outputText, {
       customOperators: customOps,
       customSelectors: customSels,
     })
     if (result instanceof PolicyError) {
-      const msg = expandMessage(messageTemplate, envelope, outputText, customSels)
-      return Verdict.fail(msg, { tags, policyError: true, ...thenMetadata })
+      const msg = expandMessage(messageTemplate, toolCall, outputText, customSels)
+      return Decision.fail(msg, { tags, policyError: true, ...thenMetadata })
     }
     if (result) {
-      const msg = expandMessage(messageTemplate, envelope, outputText, customSels)
-      return Verdict.fail(msg, { tags, ...thenMetadata })
+      const msg = expandMessage(messageTemplate, toolCall, outputText, customSels)
+      return Decision.fail(msg, { tags, ...thenMetadata })
     }
-    return Verdict.pass_()
+    return Decision.pass_()
   } catch (exc) {
-    const msg = expandMessage(messageTemplate, envelope, outputText, customSels)
-    return Verdict.fail(msg, { tags, policyError: true, errorDetail: String(exc), ...thenMetadata })
+    const msg = expandMessage(messageTemplate, toolCall, outputText, customSels)
+    return Decision.fail(msg, {
+      tags,
+      policyError: true,
+      errorDetail: String(exc),
+      ...thenMetadata,
+    })
   }
 }
 
-/** Stamp _edictum_observe on the result if the contract is in observe mode. */
-function _maybeObserve(result: Record<string, unknown>, contract: Record<string, unknown>): void {
-  if (contract._observe === true || contract._shadow === true) result._edictum_observe = true
+/** Stamp _edictum_observe on the result if the rule is in observe mode. */
+function _maybeObserve(result: Record<string, unknown>, rule: Record<string, unknown>): void {
+  if (rule._observe === true || rule._shadow === true) result._edictum_observe = true
 }
 
 // ---------------------------------------------------------------------------
-// Pre-contract compilation
+// Pre-rule compilation
 // ---------------------------------------------------------------------------
 
 export function compilePre(
-  contract: Record<string, unknown>,
+  rule: Record<string, unknown>,
   mode: string,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): Record<string, unknown> {
-  const contractId = contract.id as string
-  const tool = contract.tool as string
-  const whenExpr = precompileRegexes(contract.when) as Record<string, unknown>
-  const then = contract.then as Record<string, unknown>
+  const ruleId = rule.id as string
+  const tool = rule.tool as string
+  const whenExpr = precompileRegexes(rule.when) as Record<string, unknown>
+  const then = rule.then as Record<string, unknown>
   const msgTpl = then.message as string
   const tags = (then.tags ?? []) as string[]
   const meta = (then.metadata ?? {}) as Record<string, unknown>
 
-  const check = (envelope: ToolEnvelope): Verdict =>
-    _evalAndVerdict(whenExpr, envelope, undefined, msgTpl, tags, meta, customOps, customSels)
+  const check = (toolCall: ToolCall): Decision =>
+    _evalAndVerdict(whenExpr, toolCall, undefined, msgTpl, tags, meta, customOps, customSels)
 
+  const internalEffect = mapAction((then.action as string) ?? 'block')
+  const internalTimeoutEffect = mapAction((then.timeout_action as string) ?? 'block')
   const result: Record<string, unknown> = {
     check,
-    name: contractId,
+    name: ruleId,
     tool,
     type: 'precondition',
     mode: mode as 'enforce' | 'observe',
+    effect: internalEffect,
+    timeout: (then.timeout as number) ?? 300,
+    timeoutEffect: internalTimeoutEffect,
     _edictum_type: 'precondition',
     _edictum_tool: tool,
     _edictum_when: null,
     _edictum_mode: mode,
-    _edictum_id: contractId,
+    _edictum_id: ruleId,
     _edictum_source: 'yaml_precondition',
-    _edictum_effect: (then.effect as string) ?? 'deny',
+    _edictum_effect: internalEffect,
     _edictum_timeout: (then.timeout as number) ?? 300,
-    _edictum_timeout_effect: (then.timeout_effect as string) ?? 'deny',
+    _edictum_timeout_action: internalTimeoutEffect,
   }
-  _maybeObserve(result, contract)
+  _maybeObserve(result, rule)
   return result
 }
 
 // ---------------------------------------------------------------------------
-// Post-contract compilation
+// Post-rule compilation
 // ---------------------------------------------------------------------------
 
 export function compilePost(
-  contract: Record<string, unknown>,
+  rule: Record<string, unknown>,
   mode: string,
   customOps: Readonly<Record<string, CustomOperator>> | null,
   customSels: Readonly<Record<string, CustomSelector>> | null,
 ): Record<string, unknown> {
-  const contractId = contract.id as string
-  const tool = contract.tool as string
-  const whenExpr = precompileRegexes(contract.when) as Record<string, unknown>
-  const then = contract.then as Record<string, unknown>
+  const ruleId = rule.id as string
+  const tool = rule.tool as string
+  const whenExpr = precompileRegexes(rule.when) as Record<string, unknown>
+  const then = rule.then as Record<string, unknown>
   const msgTpl = then.message as string
   const tags = (then.tags ?? []) as string[]
   const meta = (then.metadata ?? {}) as Record<string, unknown>
 
-  const check = (envelope: ToolEnvelope, response: unknown): Verdict => {
+  const check = (toolCall: ToolCall, response: unknown): Decision => {
     const outputText = response != null ? String(response) : undefined
     return _evalAndVerdict(
       whenExpr,
-      envelope,
+      toolCall,
       outputText,
       msgTpl,
       tags,
@@ -122,10 +143,10 @@ export function compilePost(
     )
   }
 
-  const effectValue = (then.effect as string) ?? 'warn'
+  const effectValue = mapAction((then.action as string) ?? 'warn')
   const result: Record<string, unknown> = {
     check,
-    name: contractId,
+    name: ruleId,
     tool,
     type: 'postcondition',
     mode: mode as 'enforce' | 'observe',
@@ -134,56 +155,56 @@ export function compilePost(
     _edictum_tool: tool,
     _edictum_when: null,
     _edictum_mode: mode,
-    _edictum_id: contractId,
+    _edictum_id: ruleId,
     _edictum_source: 'yaml_postcondition',
     _edictum_effect: effectValue,
     _edictum_redact_patterns: extractOutputPatterns(whenExpr),
   }
-  _maybeObserve(result, contract)
+  _maybeObserve(result, rule)
   return result
 }
 
 // ---------------------------------------------------------------------------
-// Session contract compilation
+// Session rule compilation
 // ---------------------------------------------------------------------------
 
 export function compileSession(
-  contract: Record<string, unknown>,
+  rule: Record<string, unknown>,
   mode: string,
   limits: OperationLimits,
 ): Record<string, unknown> {
-  const contractId = contract.id as string
-  const then = contract.then as Record<string, unknown>
+  const ruleId = rule.id as string
+  const then = rule.then as Record<string, unknown>
   const messageTemplate = then.message as string
   const tags = (then.tags ?? []) as string[]
   const thenMetadata = (then.metadata ?? {}) as Record<string, unknown>
   const capturedLimits = { ...limits }
 
-  const check = async (session: Session): Promise<Verdict> => {
+  const check = async (session: Session): Promise<Decision> => {
     const execCount = await session.executionCount()
     if (execCount >= capturedLimits.maxToolCalls) {
-      return Verdict.fail(messageTemplate, { tags, ...thenMetadata })
+      return Decision.fail(messageTemplate, { tags, ...thenMetadata })
     }
     const attemptCount = await session.attemptCount()
     if (attemptCount >= capturedLimits.maxAttempts) {
-      return Verdict.fail(messageTemplate, { tags, ...thenMetadata })
+      return Decision.fail(messageTemplate, { tags, ...thenMetadata })
     }
-    return Verdict.pass_()
+    return Decision.pass_()
   }
 
   const result: Record<string, unknown> = {
     check,
-    name: contractId,
+    name: ruleId,
     type: 'session_contract',
     _edictum_type: 'session_contract',
     _edictum_mode: mode,
-    _edictum_id: contractId,
+    _edictum_id: ruleId,
     _edictum_message: messageTemplate,
     _edictum_tags: tags,
     _edictum_then_metadata: thenMetadata,
     _edictum_source: 'yaml_session',
   }
-  if (contract._observe === true || contract._shadow === true) {
+  if (rule._observe === true || rule._shadow === true) {
     result._edictum_observe = true
   }
   return result
@@ -194,14 +215,14 @@ export function compileSession(
 // ---------------------------------------------------------------------------
 
 /**
- * Merge session contract limits into existing OperationLimits.
+ * Merge session rule limits into existing OperationLimits.
  * Picks the more restrictive value (lower) for each limit.
  */
 export function mergeSessionLimits(
-  contract: Record<string, unknown>,
+  rule: Record<string, unknown>,
   existing: OperationLimits,
 ): OperationLimits {
-  const sessionLimits = contract.limits as Record<string, unknown>
+  const sessionLimits = rule.limits as Record<string, unknown>
   let maxToolCalls = existing.maxToolCalls
   let maxAttempts = existing.maxAttempts
   const maxCallsPerTool: Record<string, number> = { ...existing.maxCallsPerTool }

@@ -10,12 +10,12 @@ import { vi } from 'vitest'
 
 export const TEST_YAML = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: test-bundle
 defaults:
   mode: enforce
-contracts:
+rules:
   - id: no-rm
     type: pre
     tool: Bash
@@ -23,18 +23,18 @@ contracts:
       args.command:
         contains: "rm -rf"
     then:
-      effect: deny
+      action: block
       message: "Cannot run rm -rf"
 `
 
 export const TEST_YAML_OBSERVE = `
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: observe-bundle
 defaults:
   mode: observe
-contracts:
+rules:
   - id: log-all
     type: pre
     tool: "*"
@@ -42,7 +42,7 @@ contracts:
       args.x:
         exists: true
     then:
-      effect: deny
+      action: block
       message: "logged"
 `
 

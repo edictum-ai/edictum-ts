@@ -2,7 +2,7 @@
  * @edictum/claude-sdk -- Claude Agent SDK adapter for edictum.
  *
  * Translates Edictum pipeline decisions into Claude Agent SDK hook format.
- * The adapter does NOT contain governance logic -- that lives in GovernancePipeline.
+ * The adapter does NOT contain governance logic -- that lives in CheckPipeline.
  *
  * Integration point: PreToolUse / PostToolUse hooks.
  *
@@ -21,15 +21,15 @@ import {
   createAuditEvent,
   createEnvelope,
   type Edictum,
-  type Finding,
-  GovernancePipeline,
+  type Violation,
+  CheckPipeline,
   type PostCallResult,
   type PostDecisionLike,
   createPostCallResult,
   type PreDecision,
   type Principal,
   Session,
-  buildFindings,
+  buildViolations,
   defaultSuccessCheck,
 } from '@edictum/core'
 
@@ -95,7 +95,7 @@ export interface ClaudeAgentSDKAdapterOptions {
 // ---------------------------------------------------------------------------
 
 export interface ToSdkHooksOptions {
-  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
+  readonly onPostconditionWarn?: (result: unknown, violations: Violation[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ export interface ToSdkHooksOptions {
 // ---------------------------------------------------------------------------
 
 interface PendingCall {
-  readonly envelope: ReturnType<typeof createEnvelope>
+  readonly toolCall: ReturnType<typeof createEnvelope>
 }
 
 // ---------------------------------------------------------------------------
@@ -114,15 +114,15 @@ interface PendingCall {
  * Translate Edictum pipeline decisions into Claude Agent SDK hook format.
  *
  * The adapter does NOT contain governance logic -- that lives in
- * GovernancePipeline. The adapter only:
+ * CheckPipeline. The adapter only:
  * 1. Creates envelopes from SDK hook data
- * 2. Manages pending state (envelope) between PreToolUse/PostToolUse
+ * 2. Manages pending state (toolCall) between PreToolUse/PostToolUse
  * 3. Translates PreDecision/PostDecision into hook behavior
  * 4. Handles observe mode (deny -> allow conversion)
  */
 export class ClaudeAgentSDKAdapter {
   private readonly _guard: Edictum
-  private readonly _pipeline: GovernancePipeline
+  private readonly _pipeline: CheckPipeline
   private readonly _sessionId: string
   private readonly _session: Session
   private _callIndex: number = 0
@@ -131,11 +131,11 @@ export class ClaudeAgentSDKAdapter {
   private readonly _principalResolver:
     | ((toolName: string, toolInput: Record<string, unknown>) => Principal)
     | null
-  private _onPostconditionWarn: ((result: unknown, findings: Finding[]) => void) | null = null
+  private _onPostconditionWarn: ((result: unknown, violations: Violation[]) => void) | null = null
 
   constructor(guard: Edictum, options?: ClaudeAgentSDKAdapterOptions) {
     this._guard = guard
-    this._pipeline = new GovernancePipeline(guard)
+    this._pipeline = new CheckPipeline(guard)
     this._sessionId = options?.sessionId ?? randomUUID()
     this._session = new Session(this._sessionId, guard.backend)
     this._principal = options?.principal ?? null
@@ -215,14 +215,14 @@ export class ClaudeAgentSDKAdapter {
       PostToolUse: [
         async ({ input }): Promise<PostToolUseHookOutput | Record<string, never>> => {
           const hookInput = input as PostToolUseInput
-          // Finding 2: read tool_response (preferred), fall back to tool_result
+          // Note 2: read tool_response (preferred), fall back to tool_result
           const toolResponse =
             hookInput.tool_response !== undefined ? hookInput.tool_response : hookInput.tool_result
 
           // Correlate via tool_use_id (exact match), then tool_name (only if unambiguous)
           let callId: string | undefined
 
-          // Finding 2: use tool_use_id for correlation if available
+          // Note 2: use tool_use_id for correlation if available
           if (hookInput.tool_use_id && this._pending.has(hookInput.tool_use_id)) {
             callId = hookInput.tool_use_id
           }
@@ -234,7 +234,7 @@ export class ClaudeAgentSDKAdapter {
               let matchCount = 0
               let matchedId: string | undefined
               for (const [id, pending] of this._pending) {
-                if (pending.envelope.toolName === toolName) {
+                if (pending.toolCall.toolName === toolName) {
                   matchCount++
                   matchedId = id
                 }
@@ -249,22 +249,22 @@ export class ClaudeAgentSDKAdapter {
           if (callId) {
             const postResult = await this._post(callId, toolResponse)
 
-            // Finding 3: return updatedMCPToolOutput for redacted/suppressed content
+            // Note 3: return updatedMCPToolOutput for redacted/suppressed content
             if (postResult.outputSuppressed || postResult.result !== toolResponse) {
               return {
                 hookSpecificOutput: {
                   hookEventName: 'PostToolUse',
                   updatedMCPToolOutput: postResult.result,
                   additionalContext:
-                    postResult.findings.length > 0
-                      ? postResult.findings.map((f) => f.message).join('\n')
+                    postResult.violations.length > 0
+                      ? postResult.violations.map((f) => f.message).join('\n')
                       : undefined,
                 },
               }
             }
 
-            if (postResult.findings.length > 0) {
-              const context = postResult.findings.map((f) => f.message).join('\n')
+            if (postResult.violations.length > 0) {
+              const context = postResult.violations.map((f) => f.message).join('\n')
               return {
                 hookSpecificOutput: {
                   hookEventName: 'PostToolUse',
@@ -294,7 +294,7 @@ export class ClaudeAgentSDKAdapter {
     toolInput: Record<string, unknown>,
     callId: string,
   ): Promise<string | null> {
-    const envelope = createEnvelope(toolName, toolInput, {
+    const toolCall = createEnvelope(toolName, toolInput, {
       runId: this._sessionId,
       callIndex: this._callIndex,
       toolUseId: callId,
@@ -308,21 +308,21 @@ export class ClaudeAgentSDKAdapter {
     await this._session.incrementAttempts()
 
     // Run pipeline
-    const decision = await this._pipeline.preExecute(envelope, this._session)
+    const decision = await this._pipeline.preExecute(toolCall, this._session)
 
-    // Finding 1: Handle pending_approval
+    // Note 1: Handle pending_approval
     if (decision.action === 'pending_approval') {
       if (this._guard._approvalBackend == null) {
         return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
       }
 
-      const principalDict = envelope.principal
-        ? ({ ...envelope.principal } as Record<string, unknown>)
+      const principalDict = toolCall.principal
+        ? ({ ...toolCall.principal } as Record<string, unknown>)
         : null
 
       const approvalRequest = await this._guard._approvalBackend.requestApproval(
-        envelope.toolName,
-        envelope.args as Record<string, unknown>,
+        toolCall.toolName,
+        toolCall.args as Record<string, unknown>,
         decision.approvalMessage ?? decision.reason ?? '',
         {
           timeout: decision.approvalTimeout,
@@ -331,7 +331,7 @@ export class ClaudeAgentSDKAdapter {
         },
       )
 
-      await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_REQUESTED)
+      await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_REQUESTED)
 
       const approvalDecision = await this._guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
@@ -340,32 +340,32 @@ export class ClaudeAgentSDKAdapter {
 
       let approved = false
       if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_TIMEOUT)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_TIMEOUT)
         if (decision.approvalTimeoutEffect === 'allow') {
           approved = true
         }
       } else if (!approvalDecision.approved) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_DENIED)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_DENIED)
       } else {
         approved = true
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_GRANTED)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_GRANTED)
       }
 
       if (approved) {
         if (this._guard._onAllow) {
           try {
-            this._guard._onAllow(envelope)
+            this._guard._onAllow(toolCall)
           } catch {
             // on_allow callback raised -- swallow
           }
         }
-        this._pending.set(callId, { envelope })
+        this._pending.set(callId, { toolCall })
         return null
       } else {
         const denyReason = approvalDecision.reason ?? decision.reason ?? ''
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(envelope, denyReason, decision.decisionName)
+            this._guard._onDeny(toolCall, denyReason, decision.decisionName)
           } catch {
             // on_deny callback raised -- swallow
           }
@@ -377,17 +377,17 @@ export class ClaudeAgentSDKAdapter {
 
     // Handle observe mode: convert deny to allow with warning
     if (this._guard.mode === 'observe' && decision.action === 'deny') {
-      await this._emitAuditPre(envelope, decision, AA.CALL_WOULD_DENY)
-      this._pending.set(callId, { envelope })
+      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_DENY)
+      this._pending.set(callId, { toolCall })
       return null // allow through
     }
 
     // Handle deny
     if (decision.action === 'deny') {
-      await this._emitAuditPre(envelope, decision)
+      await this._emitAuditPre(toolCall, decision)
       if (this._guard._onDeny) {
         try {
-          this._guard._onDeny(envelope, decision.reason ?? '', decision.decisionName)
+          this._guard._onDeny(toolCall, decision.reason ?? '', decision.decisionName)
         } catch {
           // on_deny callback raised -- swallow
         }
@@ -396,22 +396,22 @@ export class ClaudeAgentSDKAdapter {
       return `DENIED: ${decision.reason}`
     }
 
-    // Handle per-contract observed denials
+    // Handle per-rule observed denials
     if (decision.observed) {
       for (const cr of decision.contractsEvaluated) {
         if (cr['observed'] && !cr['passed']) {
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: AA.CALL_WOULD_DENY,
-              runId: envelope.runId,
-              callId: envelope.callId,
-              callIndex: envelope.callIndex,
-              toolName: envelope.toolName,
-              toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-              sideEffect: envelope.sideEffect,
-              environment: envelope.environment,
-              principal: envelope.principal
-                ? ({ ...envelope.principal } as Record<string, unknown>)
+              runId: toolCall.runId,
+              callId: toolCall.callId,
+              callIndex: toolCall.callIndex,
+              toolName: toolCall.toolName,
+              toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+              sideEffect: toolCall.sideEffect,
+              environment: toolCall.environment,
+              principal: toolCall.principal
+                ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
               decisionSource: 'precondition',
               decisionName: cr['name'] as string,
@@ -426,15 +426,15 @@ export class ClaudeAgentSDKAdapter {
     }
 
     // Handle allow
-    await this._emitAuditPre(envelope, decision)
+    await this._emitAuditPre(toolCall, decision)
     if (this._guard._onAllow) {
       try {
-        this._guard._onAllow(envelope)
+        this._guard._onAllow(toolCall)
       } catch {
         // on_allow callback raised -- swallow
       }
     }
-    this._pending.set(callId, { envelope })
+    this._pending.set(callId, { toolCall })
 
     // Observe-mode audits — errors swallowed (must not block execution)
     for (const sr of decision.observeResults) {
@@ -443,15 +443,15 @@ export class ClaudeAgentSDKAdapter {
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
-            runId: envelope.runId,
-            callId: envelope.callId,
-            callIndex: envelope.callIndex,
-            toolName: envelope.toolName,
-            toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-            sideEffect: envelope.sideEffect,
-            environment: envelope.environment,
-            principal: envelope.principal
-              ? ({ ...envelope.principal } as Record<string, unknown>)
+            runId: toolCall.runId,
+            callId: toolCall.callId,
+            callIndex: toolCall.callIndex,
+            toolName: toolCall.toolName,
+            toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+            sideEffect: toolCall.sideEffect,
+            environment: toolCall.environment,
+            principal: toolCall.principal
+              ? ({ ...toolCall.principal } as Record<string, unknown>)
               : null,
             decisionSource: sr['source'] as string | null,
             decisionName: sr['name'] as string | null,
@@ -473,7 +473,7 @@ export class ClaudeAgentSDKAdapter {
   // -----------------------------------------------------------------------
 
   /**
-   * Run post-execution governance. Returns PostCallResult with findings.
+   * Run post-execution governance. Returns PostCallResult with violations.
    *
    * Exposed for direct testing without framework imports.
    */
@@ -485,34 +485,34 @@ export class ClaudeAgentSDKAdapter {
       return createPostCallResult({ result: toolResponse })
     }
 
-    const { envelope } = pending
+    const { toolCall } = pending
 
     // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(envelope.toolName, toolResponse)
+    const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
 
     // Run pipeline
-    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
+    const postDecision = await this._pipeline.postExecute(toolCall, toolResponse, toolSuccess)
 
     const effectiveResponse =
       postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
     // Record in session
-    await this._session.recordExecution(envelope.toolName, toolSuccess)
+    await this._session.recordExecution(toolCall.toolName, toolSuccess)
 
     // Emit audit
     const action: AuditAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         toolSuccess,
         postconditionsPassed: postDecision.postconditionsPassed,
@@ -525,18 +525,18 @@ export class ClaudeAgentSDKAdapter {
       }),
     )
 
-    const findings = buildFindings(postDecision as unknown as PostDecisionLike)
+    const violations = buildViolations(postDecision as unknown as PostDecisionLike)
     const postResult = createPostCallResult({
       result: effectiveResponse,
       postconditionsPassed: postDecision.postconditionsPassed,
-      findings,
+      violations,
       outputSuppressed: postDecision.outputSuppressed,
     })
 
     // Call callback for side effects
     if (!postResult.postconditionsPassed && this._onPostconditionWarn) {
       try {
-        this._onPostconditionWarn(postResult.result, [...postResult.findings])
+        this._onPostconditionWarn(postResult.result, [...postResult.violations])
       } catch {
         // on_postcondition_warn callback raised -- swallow
       }
@@ -550,7 +550,7 @@ export class ClaudeAgentSDKAdapter {
   // -----------------------------------------------------------------------
 
   private async _emitAuditPre(
-    envelope: ReturnType<typeof createEnvelope>,
+    toolCall: ReturnType<typeof createEnvelope>,
     decision: PreDecision,
     auditAction?: AuditAction,
   ): Promise<void> {
@@ -560,15 +560,15 @@ export class ClaudeAgentSDKAdapter {
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         decisionSource: decision.decisionSource,
         decisionName: decision.decisionName,

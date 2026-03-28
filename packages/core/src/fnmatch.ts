@@ -1,14 +1,14 @@
 /**
  * Minimal Python fnmatch.fnmatch() port for glob pattern matching.
  *
- * Used by Edictum for contract tool filtering and hook registration.
+ * Used by Edictum for rule tool filtering and hook registration.
  */
 
 /**
  * Match a name against a glob pattern (fnmatch-style).
  *
  * Supports: `*` (any sequence), `?` (any single char), literal match.
- * Does NOT support `[...]` character classes (not used by edictum contracts).
+ * Does NOT support `[...]` character classes (not used by edictum rules).
  *
  * Input capped at 10,000 characters to prevent regex DoS.
  */

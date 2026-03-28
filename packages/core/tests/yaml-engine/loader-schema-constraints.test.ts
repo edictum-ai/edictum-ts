@@ -1,6 +1,6 @@
 /**
  * Schema constraint tests — session/sandbox structure, metadata.name pattern,
- * contract ID pattern, message length, expression shapes, operator types,
+ * rule ID pattern, message length, expression shapes, operator types,
  * additionalProperties, tool side_effect enum.
  *
  * See also: loader-schema-parity.test.ts for required fields, type/id
@@ -27,7 +27,7 @@ const VALID_PRE = `
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"
 `
 
@@ -35,17 +35,17 @@ function bundle(
   opts: {
     metadata?: string
     defaults?: string
-    contracts?: string
+    rules?: string
     extra?: string
   } = {},
 ): string {
   return [
     'apiVersion: edictum/v1',
-    'kind: ContractBundle',
+    'kind: Ruleset',
     opts.metadata ?? 'metadata:\n  name: test-bundle',
     opts.defaults ?? 'defaults:\n  mode: enforce',
-    'contracts:',
-    opts.contracts ?? VALID_PRE,
+    'rules:',
+    opts.rules ?? VALID_PRE,
     opts.extra ?? '',
   ].join('\n')
 }
@@ -56,18 +56,18 @@ function expectReject(yaml: string, pattern?: RegExp): void {
 }
 
 // =========================================================================
-// Session contract required fields
+// Session rule required fields
 // =========================================================================
 
-describe('session contract validation', () => {
+describe('session rule validation', () => {
   test('missing limits rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sess-no-limits
     type: session
     then:
-      effect: deny
+      action: block
       message: "limit exceeded"`,
       }),
       /limits/,
@@ -77,12 +77,12 @@ describe('session contract validation', () => {
   test('empty limits object rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sess-empty-limits
     type: session
     limits: {}
     then:
-      effect: deny
+      action: block
       message: "limit exceeded"`,
       }),
       /limits/,
@@ -92,7 +92,7 @@ describe('session contract validation', () => {
   test('missing then rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sess-no-then
     type: session
     limits:
@@ -102,48 +102,48 @@ describe('session contract validation', () => {
     )
   })
 
-  test('effect "warn" rejected (session must be deny)', () => {
+  test('action "warn" rejected (session must be block)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sess-warn
     type: session
     limits:
       max_tool_calls: 10
     then:
-      effect: warn
+      action: warn
       message: "limit exceeded"`,
       }),
-      /effect/,
+      /action/,
     )
   })
 
   test('missing then.message rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sess-no-msg
     type: session
     limits:
       max_tool_calls: 10
     then:
-      effect: deny`,
+      action: block`,
       }),
       /message/,
     )
   })
 
-  test('valid session contract accepted', () => {
+  test('valid session rule accepted', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: sess-ok
     type: session
     limits:
       max_tool_calls: 10
     then:
-      effect: deny
+      action: block
       message: "limit exceeded"`,
         }),
       ),
@@ -152,14 +152,14 @@ describe('session contract validation', () => {
 })
 
 // =========================================================================
-// Sandbox contract structure
+// Sandbox rule structure
 // =========================================================================
 
-describe('sandbox contract structure', () => {
+describe('sandbox rule structure', () => {
   test('missing both tool and tools rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-no-tool
     type: sandbox
     within: ["/tmp"]
@@ -172,7 +172,7 @@ describe('sandbox contract structure', () => {
   test('missing both within and allows rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-no-boundary
     type: sandbox
     tool: "Bash"
@@ -185,7 +185,7 @@ describe('sandbox contract structure', () => {
   test('missing message rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-no-msg
     type: sandbox
     tool: "Bash"
@@ -199,7 +199,7 @@ describe('sandbox contract structure', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: sb-ok
     type: sandbox
     tool: "Bash"
@@ -214,7 +214,7 @@ describe('sandbox contract structure', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: sb-ok-2
     type: sandbox
     tools: ["Bash", "Execute"]
@@ -229,7 +229,7 @@ describe('sandbox contract structure', () => {
   test('sandbox with tools: [] rejected (minItems: 1)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-empty-tools
     type: sandbox
     tools: []
@@ -243,7 +243,7 @@ describe('sandbox contract structure', () => {
   test('sandbox with non-string tool rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-num-tool
     type: sandbox
     tool: 42
@@ -257,7 +257,7 @@ describe('sandbox contract structure', () => {
   test('sandbox with within: [] rejected (minItems: 1)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: sb-empty-within
     type: sandbox
     tool: "Bash"
@@ -287,38 +287,38 @@ describe('metadata.name pattern', () => {
   })
 })
 
-describe('contract id pattern', () => {
-  test('uppercase contract id rejected', () => {
+describe('rule id pattern', () => {
+  test('uppercase rule id rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: UPPER-CASE
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
-      /Contract id/i,
+      /Rule id/i,
     )
   })
 
-  test('contract id with dots rejected', () => {
+  test('rule id with dots rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: has.dot
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
-      /Contract id/i,
+      /Rule id/i,
     )
   })
 })
@@ -328,14 +328,14 @@ describe('message constraints', () => {
     const longMsg = 'x'.repeat(501)
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: long-msg
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "${longMsg}"`,
       }),
       /500/,
@@ -347,14 +347,14 @@ describe('expression shape constraints', () => {
   test('empty all array rejected (minItems: 1)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: empty-all
     type: pre
     tool: "*"
     when:
       all: []
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /all/,
@@ -364,14 +364,14 @@ describe('expression shape constraints', () => {
   test('empty any array rejected (minItems: 1)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: empty-any
     type: pre
     tool: "*"
     when:
       any: []
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /any/,
@@ -383,14 +383,14 @@ describe('operator type constraints', () => {
   test('gt with string value rejected (must be number)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: gt-string
     type: pre
     tool: "*"
     when:
       args.count: { gt: "five" }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /number/,
@@ -400,14 +400,14 @@ describe('operator type constraints', () => {
   test('contains with number value rejected (must be string)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: contains-num
     type: pre
     tool: "*"
     when:
       args.path: { contains: 42 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /string/,
@@ -417,14 +417,14 @@ describe('operator type constraints', () => {
   test('in with empty array rejected (minItems: 1)', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: in-empty
     type: pre
     tool: "*"
     when:
       args.x: { in: [] }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /non-empty array/,
@@ -454,14 +454,14 @@ describe('tool side_effect enum', () => {
 })
 
 // =========================================================================
-// Adversarial: null/non-object contract elements
+// Adversarial: null/non-object rule elements
 // =========================================================================
 
-describe('null contract elements', () => {
-  test('null contract element throws EdictumConfigError', () => {
+describe('null rule elements', () => {
+  test('null rule element throws EdictumConfigError', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   -
   - id: c1
     type: pre
@@ -469,10 +469,10 @@ describe('null contract elements', () => {
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
-      /contract must be an object/,
+      /rule must be an object/,
     )
   })
 })
@@ -481,14 +481,14 @@ describe('message type validation', () => {
   test('non-string message (number) rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: num-msg
     type: pre
     tool: "*"
     when:
       args.x: { equals: 1 }
     then:
-      effect: deny
+      action: block
       message: 42`,
       }),
       /message must be a string/,
@@ -512,14 +512,14 @@ describe('expression not: null/array rejected', () => {
   test('not: null rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: not-null
     type: pre
     tool: "*"
     when:
       not: null
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /not/,
@@ -529,14 +529,14 @@ describe('expression not: null/array rejected', () => {
   test('not: [] rejected', () => {
     expectReject(
       bundle({
-        contracts: `
+        rules: `
   - id: not-array
     type: pre
     tool: "*"
     when:
       not: []
     then:
-      effect: deny
+      action: block
       message: "denied"`,
       }),
       /not/,
@@ -551,8 +551,8 @@ describe('expression depth limit', () => {
     let expr: Record<string, unknown> = { 'args.x': { equals: 'x' } }
     for (let i = 0; i < 60; i++) expr = { not: expr }
     const data = {
-      contracts: [
-        { id: 'deep', type: 'pre', tool: '*', when: expr, then: { effect: 'deny', message: 'x' } },
+      rules: [
+        { id: 'deep', type: 'pre', tool: '*', when: expr, then: { action: 'block', message: 'x' } },
       ],
     }
     expect(() => validateExpressionShapes(data)).toThrow(EdictumConfigError)
@@ -565,22 +565,22 @@ describe('expression depth limit', () => {
 // =========================================================================
 
 describe('valid bundle shapes accepted', () => {
-  test('minimal valid pre contract', () => {
+  test('minimal valid pre rule', () => {
     expect(() => loadBundleString(bundle())).not.toThrow()
   })
 
-  test('valid post contract with redact effect', () => {
+  test('valid post rule with redact effect', () => {
     expect(() =>
       loadBundleString(
         bundle({
-          contracts: `
+          rules: `
   - id: redact-secrets
     type: post
     tool: "*"
     when:
       output.text: { matches: "[Aa][Pp][Ii].?[Kk][Ee][Yy]" }
     then:
-      effect: redact
+      action: redact
       message: "Redacted sensitive output"`,
         }),
       ),
@@ -617,11 +617,11 @@ describe('validateContractFields direct', () => {
     expect(() =>
       validateContractFields({
         apiVersion: 'edictum/v1',
-        kind: 'ContractBundle',
+        kind: 'Ruleset',
         metadata: null,
         defaults: { mode: 'enforce' },
-        contracts: [
-          { id: 'c1', type: 'pre', tool: '*', when: {}, then: { effect: 'deny', message: 'x' } },
+        rules: [
+          { id: 'c1', type: 'pre', tool: '*', when: {}, then: { action: 'block', message: 'x' } },
         ],
       }),
     ).toThrow(EdictumConfigError)
@@ -631,25 +631,25 @@ describe('validateContractFields direct', () => {
     expect(() =>
       validateContractFields({
         apiVersion: 'edictum/v1',
-        kind: 'ContractBundle',
+        kind: 'Ruleset',
         metadata: { name: 'test' },
         defaults: null,
-        contracts: [
-          { id: 'c1', type: 'pre', tool: '*', when: {}, then: { effect: 'deny', message: 'x' } },
+        rules: [
+          { id: 'c1', type: 'pre', tool: '*', when: {}, then: { action: 'block', message: 'x' } },
         ],
       }),
     ).toThrow(EdictumConfigError)
   })
 
-  test('rejects non-string contract id', () => {
+  test('rejects non-string rule id', () => {
     expect(() =>
       validateContractFields({
         apiVersion: 'edictum/v1',
-        kind: 'ContractBundle',
+        kind: 'Ruleset',
         metadata: { name: 'test' },
         defaults: { mode: 'enforce' },
-        contracts: [
-          { id: 42, type: 'pre', tool: '*', when: {}, then: { effect: 'deny', message: 'x' } },
+        rules: [
+          { id: 42, type: 'pre', tool: '*', when: {}, then: { action: 'block', message: 'x' } },
         ],
       }),
     ).toThrow(EdictumConfigError)

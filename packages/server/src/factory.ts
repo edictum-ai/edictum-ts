@@ -11,20 +11,14 @@
  */
 
 import { Edictum, EdictumConfigError, compileContracts, loadBundleString } from '@edictum/core'
-import type {
-  AuditSink,
-  ApprovalBackend,
-  StorageBackend,
-  Principal,
-  ToolEnvelope,
-} from '@edictum/core'
+import type { AuditSink, ApprovalBackend, StorageBackend, Principal, ToolCall } from '@edictum/core'
 
 import { EdictumServerClient, SAFE_IDENTIFIER_RE, _setClientBundleName } from './client.js'
 import type { EdictumServerClientOptions } from './client.js'
 import { ServerAuditSink } from './audit-sink.js'
 import { ServerApprovalBackend } from './approval-backend.js'
 import { ServerBackend } from './backend.js'
-import { ServerContractSource } from './contract-source.js'
+import { ServerRuleSource } from './rule-source.js'
 import { verifyBundleSignature } from './verification.js'
 
 // ---------------------------------------------------------------------------
@@ -61,9 +55,9 @@ export interface CreateServerGuardOptions {
   /** Guard mode. If omitted, uses bundle's defaults.mode (default: "enforce"). */
   readonly mode?: 'enforce' | 'observe'
   /** Callback on tool denial. */
-  readonly onDeny?: (envelope: ToolEnvelope, reason: string, source: string | null) => void
+  readonly onDeny?: (toolCall: ToolCall, reason: string, source: string | null) => void
   /** Callback on tool approval. */
-  readonly onAllow?: (envelope: ToolEnvelope) => void
+  readonly onAllow?: (toolCall: ToolCall) => void
   /** Custom success check for tool results. */
   readonly successCheck?: (toolName: string, result: unknown) => boolean
   /** Default principal for all evaluations. */
@@ -134,7 +128,7 @@ const MAX_SIGNATURE_LENGTH = 512
  * Create an Edictum guard connected to edictum-console.
  *
  * This is the TypeScript equivalent of Python's `Edictum.from_server()`.
- * It creates an HTTP client, fetches initial contracts, starts an SSE
+ * It creates an HTTP client, fetches initial rules, starts an SSE
  * watcher for hot-reload, and wires up audit and approval backends.
  *
  * @example
@@ -143,7 +137,7 @@ const MAX_SIGNATURE_LENGTH = 512
  *   url: "https://console.edictum.ai",
  *   apiKey: "ed_live_...",
  *   agentId: "my-agent",
- *   bundleName: "production-contracts",
+ *   bundleName: "production-rules",
  * });
  *
  * // Use the guard
@@ -182,7 +176,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
   if (bundleName == null && !autoWatch) {
     throw new EdictumConfigError(
       'bundleName is required when autoWatch is false. ' +
-        'Without a named bundle and no SSE watcher, the guard has no contracts.',
+        'Without a named bundle and no SSE watcher, the guard has no rules.',
     )
   }
 
@@ -226,7 +220,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
   // SSE watcher state
   // -----------------------------------------------------------------------
 
-  let contractSource: ServerContractSource | null = null
+  let contractSource: ServerRuleSource | null = null
   let watchAbort: AbortController | null = null
   let watchPromise: Promise<void> | null = null
 
@@ -238,7 +232,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
 
   try {
     if (bundleName != null) {
-      // Path A: Named bundle — fetch initial contracts from server
+      // Path A: Named bundle — fetch initial rules from server
       guard = await _fetchAndBuildGuard(
         client,
         bundleName,
@@ -256,7 +250,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
       guard = new Edictum({
         environment,
         mode: explicitMode ?? 'enforce',
-        contracts: [],
+        rules: [],
         auditSink,
         approvalBackend,
         backend: storageBackend,
@@ -273,7 +267,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     // -------------------------------------------------------------------
 
     if (autoWatch) {
-      contractSource = new ServerContractSource(client)
+      contractSource = new ServerRuleSource(client)
       watchAbort = new AbortController()
       watchPromise = _startSseWatcher(
         guard,
@@ -388,7 +382,7 @@ async function _fetchAndBuildGuard(
     verifyBundleSignature(yamlBytes, signature, signingPublicKey as string)
   }
 
-  // Compile contracts
+  // Compile rules
   const yamlContent = new TextDecoder().decode(yamlBytes)
   const [bundleData, bundleHash] = loadBundleString(yamlContent)
   const compiled = compileContracts(bundleData)
@@ -402,7 +396,7 @@ async function _fetchAndBuildGuard(
   }
   const effectiveMode = rawMode
 
-  const allContracts = [
+  const allRules = [
     ...compiled.preconditions,
     ...compiled.postconditions,
     ...compiled.sessionContracts,
@@ -420,10 +414,10 @@ async function _fetchAndBuildGuard(
     mode: effectiveMode as 'enforce' | 'observe',
     limits: compiled.limits,
     tools: Object.keys(tools).length > 0 ? tools : undefined,
-    // Cast note: compiled contracts are internal types from the YAML engine
+    // Cast note: compiled rules are internal types from the YAML engine
     // that satisfy the Edictum constructor's union type. The same cast is
     // used in core/factory.ts — no public union type exists yet.
-    contracts: allContracts as never[],
+    rules: allRules as never[],
     auditSink,
     approvalBackend,
     backend: storageBackend,
@@ -443,7 +437,7 @@ async function _fetchAndBuildGuard(
 async function _startSseWatcher(
   guard: Edictum,
   client: EdictumServerClient,
-  source: ServerContractSource,
+  source: ServerRuleSource,
   verifySignatures: boolean,
   signingPublicKey: string | null,
   signal: AbortSignal,
@@ -474,7 +468,7 @@ async function _startSseWatcher(
 
         if (bundle['_assignment_changed'] === true) {
           // Assignment changed — fetch the new bundle.
-          // Belt-and-suspenders: ServerContractSource._processEvent is the
+          // Belt-and-suspenders: ServerRuleSource._processEvent is the
           // authoritative validation. This guard protects against alternative
           // ContractSource implementations that skip validation.
           const rawName = bundle['bundle_name']
@@ -566,7 +560,7 @@ async function _startSseWatcher(
 
           yamlContent = new TextDecoder().decode(yamlBytes)
         } else {
-          // Contract update — extract YAML from SSE payload
+          // Rule update — extract YAML from SSE payload
           const yamlB64 = bundle['yaml_bytes']
           if (typeof yamlB64 !== 'string') {
             safeNotify({
@@ -688,7 +682,7 @@ async function _waitForAssignment(
 async function _cleanupResources(
   watchAbort: AbortController | null,
   watchPromise: Promise<void> | null,
-  contractSource: ServerContractSource | null,
+  contractSource: ServerRuleSource | null,
   auditSink: AuditSink,
   client: EdictumServerClient,
 ): Promise<void> {

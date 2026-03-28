@@ -1,6 +1,6 @@
-/** Sandbox contract compiler — extract/classify tool call resources and compile sandbox contracts. */
+/** Sandbox rule compiler — extract/classify tool call resources and compile sandbox rules. */
 
-import type { ToolEnvelope } from '../envelope.js'
+import type { ToolCall } from '../tool-call.js'
 import { fnmatch } from '../fnmatch.js'
 import { resolvePath } from './resolve-path.js'
 
@@ -135,8 +135,8 @@ const _PATH_ARG_KEYS = new Set([
 // Resource extraction
 // ---------------------------------------------------------------------------
 
-/** Extract file paths from an envelope for sandbox evaluation. */
-export function extractPaths(envelope: ToolEnvelope): string[] {
+/** Extract file paths from an toolCall for sandbox evaluation. */
+export function extractPaths(toolCall: ToolCall): string[] {
   const paths: string[] = []
   const seen = new Set<string>()
 
@@ -149,9 +149,9 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
     }
   }
 
-  if (envelope.filePath) add(envelope.filePath)
+  if (toolCall.filePath) add(toolCall.filePath)
 
-  const args = envelope.args as Record<string, unknown>
+  const args = toolCall.args as Record<string, unknown>
   for (const [key, value] of Object.entries(args)) {
     if (typeof value === 'string' && _PATH_ARG_KEYS.has(key)) add(value)
   }
@@ -180,7 +180,7 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
     }
   }
 
-  const cmd = envelope.bashCommand ?? (args.command as string | undefined) ?? ''
+  const cmd = toolCall.bashCommand ?? (args.command as string | undefined) ?? ''
   if (cmd) {
     for (const token of tokenizeCommand(cmd)) {
       if (token.startsWith('/')) add(token)
@@ -189,9 +189,9 @@ export function extractPaths(envelope: ToolEnvelope): string[] {
   return paths
 }
 
-/** Extract the first command token from an envelope (shell-aware). */
-export function extractCommand(envelope: ToolEnvelope): string | null {
-  const cmd = envelope.bashCommand ?? (envelope.args as Record<string, unknown>).command
+/** Extract the first command token from an toolCall (shell-aware). */
+export function extractCommand(toolCall: ToolCall): string | null {
+  const cmd = toolCall.bashCommand ?? (toolCall.args as Record<string, unknown>).command
   if (!cmd || typeof cmd !== 'string') return null
   const stripped = cmd.trim()
   if (!stripped) return null
@@ -208,8 +208,8 @@ export function extractCommand(envelope: ToolEnvelope): string | null {
   return tokens.length > 0 ? (tokens[0] ?? null) : null
 }
 
-/** Extract URL strings from envelope args (shell-aware). */
-export function extractUrls(envelope: ToolEnvelope): string[] {
+/** Extract URL strings from toolCall args (shell-aware). */
+export function extractUrls(toolCall: ToolCall): string[] {
   const urls: string[] = []
   const seen = new Set<string>()
 
@@ -220,7 +220,7 @@ export function extractUrls(envelope: ToolEnvelope): string[] {
     }
   }
 
-  for (const value of Object.values(envelope.args)) {
+  for (const value of Object.values(toolCall.args)) {
     if (typeof value !== 'string' || !value.includes('://')) continue
     if (extractHostname(value) !== null) {
       addUrl(value)
