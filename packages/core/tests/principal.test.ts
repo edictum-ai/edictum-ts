@@ -169,7 +169,7 @@ describe('TestEnvelopePropagation', () => {
       ticketRef: 'JIRA-1234',
       claims: { department: 'platform' },
     })
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'TestTool',
       { key: 'value' },
       {
@@ -177,26 +177,26 @@ describe('TestEnvelopePropagation', () => {
       },
     )
     // Deep-copied, not identity — but values match
-    expect(envelope.principal).toEqual(principal)
-    expect(envelope.principal!.role).toBe('sre')
-    expect(envelope.principal!.ticketRef).toBe('JIRA-1234')
-    expect(envelope.principal!.claims).toEqual({ department: 'platform' })
+    expect(toolCall.principal).toEqual(principal)
+    expect(toolCall.principal!.role).toBe('sre')
+    expect(toolCall.principal!.ticketRef).toBe('JIRA-1234')
+    expect(toolCall.principal!.claims).toEqual({ department: 'platform' })
   })
 
   test('envelope_without_principal', () => {
-    /** Backwards compat: envelope without principal still works. */
-    const envelope = createEnvelope('TestTool', { key: 'value' })
-    expect(envelope.principal).toBeNull()
+    /** Backwards compat: toolCall without principal still works. */
+    const toolCall = createEnvelope('TestTool', { key: 'value' })
+    expect(toolCall.principal).toBeNull()
   })
 
   test('envelope_with_legacy_principal', () => {
     /** Backwards compat: principal without new fields still works. */
     const principal = createPrincipal({ userId: 'bob' })
-    const envelope = createEnvelope('TestTool', {}, { principal })
-    expect(envelope.principal!.userId).toBe('bob')
-    expect(envelope.principal!.role).toBeNull()
-    expect(envelope.principal!.ticketRef).toBeNull()
-    expect(envelope.principal!.claims).toEqual({})
+    const toolCall = createEnvelope('TestTool', {}, { principal })
+    expect(toolCall.principal!.userId).toBe('bob')
+    expect(toolCall.principal!.role).toBeNull()
+    expect(toolCall.principal!.ticketRef).toBeNull()
+    expect(toolCall.principal!.claims).toEqual({})
   })
 })
 

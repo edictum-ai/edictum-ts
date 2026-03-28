@@ -2,16 +2,16 @@
 
 import { EdictumConfigError } from '../errors.js'
 
-/** Records a contract that was replaced during composition. */
+/** Records a rule that was replaced during composition. */
 export interface CompositionOverride {
-  readonly contractId: string
+  readonly ruleId: string
   readonly overriddenBy: string
   readonly originalSource: string
 }
 
-/** Records a contract added as an observe-mode copy (observe_alongside). */
+/** Records a rule added as an observe-mode copy (observe_alongside). */
 export interface ObserveContract {
-  readonly contractId: string
+  readonly ruleId: string
   readonly enforcedSource: string
   readonly observedSource: string
 }
@@ -59,7 +59,7 @@ export function composeBundles(...bundles: [Record<string, unknown>, string][]):
   const firstLabel = first[1]
 
   const contractSources = new Map<string, string>()
-  for (const c of (merged.contracts ?? []) as Record<string, unknown>[]) {
+  for (const c of (merged.rules ?? []) as Record<string, unknown>[]) {
     contractSources.set(c.id as string, firstLabel)
   }
 
@@ -116,22 +116,22 @@ function mergeStandard(
     merged.observability = deepCopyBundle(layer.observability as Record<string, unknown>)
   }
 
-  if ('contracts' in layer) {
+  if ('rules' in layer) {
     const existingById = new Map<string, number>()
-    const mc = (merged.contracts ?? []) as Record<string, unknown>[]
+    const mc = (merged.rules ?? []) as Record<string, unknown>[]
     for (let j = 0; j < mc.length; j++) {
       const c = mc[j] as Record<string, unknown>
       existingById.set(c.id as string, j)
     }
 
-    for (const contract of (layer.contracts ?? []) as Record<string, unknown>[]) {
-      const cid = contract.id as string
-      const newContract = deepCopyBundle(contract)
+    for (const rule of (layer.rules ?? []) as Record<string, unknown>[]) {
+      const cid = rule.id as string
+      const newContract = deepCopyBundle(rule)
 
       if (existingById.has(cid)) {
         const idx = existingById.get(cid) as number
         overrides.push({
-          contractId: cid,
+          ruleId: cid,
           overriddenBy: label,
           originalSource: contractSources.get(cid) ?? 'unknown',
         })
@@ -142,7 +142,7 @@ function mergeStandard(
       }
       contractSources.set(cid, label)
     }
-    merged.contracts = mc
+    merged.rules = mc
   }
 }
 
@@ -153,35 +153,35 @@ function mergeObserveAlongside(
   contractSources: Map<string, string>,
   observes: ObserveContract[],
 ): void {
-  const mc = (merged.contracts ?? []) as Record<string, unknown>[]
+  const mc = (merged.rules ?? []) as Record<string, unknown>[]
 
-  for (const contract of (layer.contracts ?? []) as Record<string, unknown>[]) {
-    const cid = contract.id as string
+  for (const rule of (layer.rules ?? []) as Record<string, unknown>[]) {
+    const cid = rule.id as string
     const observeId = `${cid}:candidate`
 
     // Check for ID collisions — the generated observe ID must not clash
-    // with any existing contract in the merged bundle.
+    // with any existing rule in the merged bundle.
     const existingIds = new Set((mc as Record<string, unknown>[]).map((c) => c.id as string))
     if (existingIds.has(observeId)) {
       throw new EdictumConfigError(
         `observe_alongside collision: generated ID "${observeId}" already exists in the bundle. ` +
-          `Rename the conflicting contract or use a different ID for "${cid}".`,
+          `Rename the conflicting rule or use a different ID for "${cid}".`,
       )
     }
 
-    const observeContract = deepCopyBundle(contract)
+    const observeContract = deepCopyBundle(rule)
     observeContract.id = observeId
     observeContract.mode = 'observe'
     observeContract._observe = true
 
     mc.push(observeContract)
     observes.push({
-      contractId: cid,
+      ruleId: cid,
       enforcedSource: contractSources.get(cid) ?? '',
       observedSource: label,
     })
   }
-  merged.contracts = mc
+  merged.rules = mc
 
   if ('tools' in layer) {
     const mt = (merged.tools ?? {}) as Record<string, unknown>

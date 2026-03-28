@@ -10,10 +10,10 @@ import {
   AuditAction,
   Edictum,
   EdictumDenied,
-  Verdict,
+  Decision,
   type Precondition,
   type Postcondition,
-  type ToolEnvelope,
+  type ToolCall,
 } from '@edictum/core'
 
 import { LangChainAdapter } from '../src/index.js'
@@ -59,9 +59,9 @@ describe('asMiddleware', () => {
   it('wrapToolCall throws EdictumDenied on deny', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const middleware = adapter.asMiddleware()
 
@@ -79,15 +79,15 @@ describe('asMiddleware', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('bad')) {
-          return Verdict.fail('Bad output')
+          return Decision.fail('Bad output')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)
@@ -106,9 +106,9 @@ describe('asMiddleware', () => {
   it('wrapToolCall in observe mode allows denied calls through', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const middleware = adapter.asMiddleware()
 
@@ -130,10 +130,10 @@ describe('asMiddleware', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('bad output'),
+      check: async () => Decision.fail('bad output'),
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)
@@ -178,9 +178,9 @@ describe('asToolWrapper', () => {
   it('throws EdictumDenied when precondition denies', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked by wrapper'),
+      check: async () => Decision.fail('blocked by wrapper'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const wrapper = adapter.asToolWrapper()
 
@@ -194,9 +194,9 @@ describe('asToolWrapper', () => {
   it('does not call tool when denied', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('no'),
+      check: async () => Decision.fail('no'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const wrapper = adapter.asToolWrapper()
 
@@ -216,15 +216,15 @@ describe('asToolWrapper', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('sensitive')) {
-          return Verdict.fail('Sensitive data')
+          return Decision.fail('Sensitive data')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)
@@ -247,10 +247,10 @@ describe('asToolWrapper', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('bad'),
+      check: async () => Decision.fail('bad'),
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)
@@ -268,9 +268,9 @@ describe('asToolWrapper', () => {
   it('allows through in observe mode', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const wrapper = adapter.asToolWrapper()
 
@@ -320,9 +320,9 @@ describe('security', () => {
   it('deny propagates through asMiddleware wrapToolCall', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('security deny'),
+      check: async () => Decision.fail('security deny'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
     const middleware = adapter.asMiddleware()
 
@@ -345,17 +345,17 @@ describe('security', () => {
   it('deny propagates through asToolWrapper', async () => {
     const blockBash: Precondition = {
       tool: 'Bash',
-      check: async (envelope) => {
+      check: async (toolCall) => {
         if (
-          typeof envelope.args['command'] === 'string' &&
-          envelope.args['command'].includes('rm')
+          typeof toolCall.args['command'] === 'string' &&
+          toolCall.args['command'].includes('rm')
         ) {
-          return Verdict.fail('dangerous command')
+          return Decision.fail('dangerous command')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [blockBash] })
+    const guard = makeGuard({ rules: [blockBash] })
     const adapter = new LangChainAdapter(guard)
     const wrapper = adapter.asToolWrapper()
 
@@ -374,15 +374,15 @@ describe('security', () => {
       name: 'suppress_secrets',
       tool: '*',
       effect: 'deny',
-      check: async (_env: ToolEnvelope, output: unknown) => {
+      check: async (_env: ToolCall, output: unknown) => {
         if (String(output).includes('secret')) {
-          return Verdict.fail('contains secrets')
+          return Decision.fail('contains secrets')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const guard = makeGuard({
-      contracts: [postContract as unknown as Postcondition],
+      rules: [postContract as unknown as Postcondition],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)

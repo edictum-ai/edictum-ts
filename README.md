@@ -5,10 +5,10 @@
 [![Node](https://img.shields.io/node/v/@edictum/core?cacheSeconds=86400)](https://www.npmjs.com/package/@edictum/core)
 [![CI](https://github.com/edictum-ai/edictum-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/edictum-ai/edictum-ts/actions/workflows/ci.yml)
 
-TypeScript SDK for runtime contract enforcement on AI agent tool calls.
+TypeScript SDK for runtime rule enforcement on AI agent tool calls.
 
-Prompts are suggestions. Contracts are enforcement.
-The LLM cannot talk its way past a contract.
+Prompts are suggestions. Rules are enforcement.
+The LLM cannot talk its way past a rule.
 
 **55us overhead** · **18 adapters across Python, TypeScript, Go** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml)) · **Fail-closed by default**
 
@@ -22,7 +22,7 @@ pnpm add @edictum/core
 import { readFile } from 'node:fs/promises'
 import { Edictum, EdictumDenied } from '@edictum/core'
 
-const guard = Edictum.fromYaml('contracts.yaml')
+const guard = Edictum.fromYaml('rules.yaml')
 
 // toolCallable receives args as Record<string, unknown>
 const governedReadFile = (args: Record<string, unknown>) => readFile(args.path as string, 'utf8')
@@ -31,48 +31,48 @@ try {
   await guard.run('readFile', { path: '.env' }, governedReadFile)
 } catch (e) {
   if (e instanceof EdictumDenied) console.log(e.reason)
-  // => "Sensitive file '.env' denied."
+  // => "Sensitive file '.env' blocked."
 }
 ```
 
-**The contract** -- `contracts.yaml`:
+**The ruleset** — `rules.yaml`:
 
 ```yaml
 apiVersion: edictum/v1
-kind: ContractBundle
+kind: Ruleset
 metadata:
   name: file-safety
 defaults:
   mode: enforce
-contracts:
-  - id: deny-sensitive-reads
+rules:
+  - id: block-sensitive-reads
     type: pre
     tool: readFile
     when:
       args.path:
         contains_any: ['.env', '.secret', 'credentials', '.pem', 'id_rsa']
     then:
-      effect: deny
-      message: "Sensitive file '{args.path}' denied."
+      action: block
+      message: "Sensitive file '{args.path}' blocked."
 ```
 
-Contracts are YAML. Enforcement is deterministic -- no LLM in the evaluation path. The agent cannot bypass a matched contract. Errors, type mismatches, and missing fields all fail closed.
+Rules are YAML. Enforcement is deterministic — no LLM in the evaluation path. The agent cannot bypass a matched rule. Errors, type mismatches, and missing fields all fail closed.
 
 ## Packages
 
-| Package                                            | Description                                                                  |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [`@edictum/core`](packages/core)                   | Pipeline, contracts, audit, session, YAML engine. One runtime dep (js-yaml). |
-| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                        |
-| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                                    |
-| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                                     |
-| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                         |
-| [`@edictum/server`](packages/server)               | Server SDK -- HTTP client, SSE hot-reload, audit sink                        |
-| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                              |
+| Package                                            | Description                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`@edictum/core`](packages/core)                   | Pipeline, rules, audit, session, YAML engine. One runtime dep (js-yaml). |
+| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                    |
+| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                                |
+| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                                 |
+| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                     |
+| [`@edictum/server`](packages/server)               | Server SDK — HTTP client, SSE hot-reload, audit sink                     |
+| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                          |
 
 ## Works With Your Framework
 
-**Vercel AI SDK** -- callbacks for generateText / streamText:
+**Vercel AI SDK** — callbacks for generateText / streamText:
 
 ```typescript
 import { VercelAIAdapter } from '@edictum/vercel-ai'
@@ -80,7 +80,7 @@ const adapter = new VercelAIAdapter(guard)
 const result = await generateText({ ...options, ...adapter.asCallbacks() })
 ```
 
-**OpenAI Agents SDK** -- input/output guardrails:
+**OpenAI Agents SDK** — input/output guardrails:
 
 ```typescript
 import { OpenAIAgentsAdapter } from '@edictum/openai-agents'
@@ -88,7 +88,7 @@ const adapter = new OpenAIAgentsAdapter(guard)
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 ```
 
-**Claude Agent SDK** -- pre/post tool use hooks:
+**Claude Agent SDK** — pre/post tool use hooks:
 
 ```typescript
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
@@ -96,7 +96,7 @@ const adapter = new ClaudeAgentSDKAdapter(guard)
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
 ```
 
-**LangChain.js** -- middleware for ToolNode:
+**LangChain.js** — middleware for ToolNode:
 
 ```typescript
 import { LangChainAdapter } from '@edictum/langchain'
@@ -104,52 +104,52 @@ const adapter = new LangChainAdapter(guard)
 const middleware = adapter.asMiddleware()
 ```
 
-**OpenClaw** -- see [`@edictum/edictum`](https://github.com/edictum-ai/edictum-openclaw):
+**OpenClaw** — see [`@edictum/edictum`](https://github.com/edictum-ai/edictum-openclaw):
 
 ```bash
 openclaw plugins install @edictum/edictum
-# Zero config — ships with bundled governance contracts
+# Zero config — ships with bundled rules
 ```
 
-Adapters are thin wrappers. All governance logic lives in the pipeline.
+Adapters are thin wrappers. All rule enforcement logic lives in the pipeline.
 
-> **Postcondition enforcement:** `guard.run()` guarantees full postcondition enforcement. Native adapter hooks enforce preconditions deterministically; postcondition redact behavior depends on SDK support. See adapter docs for per-SDK details.
+> **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. See adapter docs for per-SDK details.
 
 ## What You Can Do
 
-**Contracts** -- four types covering the full tool call lifecycle:
+**Rules** — four types covering the full tool call lifecycle:
 
-- **Preconditions** deny dangerous calls before execution
-- **Postconditions** scan tool output -- warn, redact PII, or deny
-- **Session contracts** cap total calls, per-tool calls, and retry attempts
-- **Sandbox contracts** allowlist file paths, commands, and domains
+- **Preconditions** block dangerous calls before execution
+- **Postconditions** scan tool output — warn, redact PII, or block
+- **Session rules** cap total calls, per-tool calls, and retry attempts
+- **Sandbox rules** allowlist file paths, commands, and domains
 
-**Programmatic contracts:**
+**Programmatic rules:**
 
 ```typescript
-import { Edictum, Verdict } from '@edictum/core'
+import { Decision, Edictum } from '@edictum/core'
 import type { Precondition } from '@edictum/core'
 
 const noRm: Precondition = {
   tool: 'Bash',
-  check: async (envelope) => {
-    if (envelope.bashCommand?.includes('rm -rf')) return Verdict.fail('Cannot run rm -rf')
-    return Verdict.pass()
+  check: async (toolCall) => {
+    if (toolCall.bashCommand?.includes('rm -rf')) return Decision.fail('Cannot run rm -rf')
+    return Decision.pass_()
   },
 }
 
-const guard = new Edictum({ contracts: [noRm] })
+const guard = new Edictum({ rules: [noRm] })
 ```
 
-**Principal-aware enforcement** -- role-gate tools with claims and `env.*` context.
+**Principal-aware enforcement** — role-gate tools with claims and `env.*` context.
 
-**Callbacks** -- `onDeny` / `onAllow` for logging and observability. For human-in-the-loop approvals, use `approvalBackend`.
+**Callbacks** — `onDeny` / `onAllow` for logging and observability. For human-in-the-loop approvals, use `approvalBackend`.
 
-**Observe mode** -- log what would be denied without blocking, then switch to enforce.
+**Observe mode** — log what would be blocked without blocking, then switch to enforce.
 
 ## Edictum Console
 
-Optional self-hostable operations console. Contract management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
+Optional self-hostable operations console. Ruleset management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
 
 ```typescript
 import { createServerGuard } from '@edictum/server'
@@ -167,7 +167,7 @@ See [edictum-console](https://github.com/edictum-ai/edictum-console) for deploym
 
 Edictum was evaluated across six regulated domains in the GAP benchmark.
 
-[Paper](https://arxiv.org/abs/2602.16943) -- [Benchmark](https://github.com/edictum-ai/gap-benchmark)
+[Paper](https://arxiv.org/abs/2602.16943) — [Benchmark](https://github.com/edictum-ai/gap-benchmark)
 
 ## Security
 
@@ -183,7 +183,7 @@ Every security boundary has bypass tests. Every error path fails closed. Every i
 | [edictum-ts](https://github.com/edictum-ai/edictum-ts)           | TypeScript     | This repo                                  |
 | [edictum-go](https://github.com/edictum-ai/edictum-go)           | Go             | Full port + adapters                       |
 | [edictum-console](https://github.com/edictum-ai/edictum-console) | Python + React | Self-hostable ops console                  |
-| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | YAML           | Shared contract schema                     |
+| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | YAML           | Shared ruleset schema                      |
 | [edictum-demo](https://github.com/edictum-ai/edictum-demo)       | Python         | Demos, adversarial tests, benchmarks       |
 
 - [Documentation](https://docs.edictum.ai)
@@ -191,4 +191,4 @@ Every security boundary has bypass tests. Every error path fails closed. Every i
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

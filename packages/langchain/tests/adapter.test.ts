@@ -3,7 +3,7 @@
  *
  * Covers: allow, deny, observe mode, callbacks, audit events,
  * tool success/failure, postcondition warnings, session counting,
- * setPrincipal, per-contract observe mode, output suppression.
+ * setPrincipal, per-rule observe mode, output suppression.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -11,11 +11,11 @@ import {
   AuditAction,
   CollectingAuditSink,
   Edictum,
-  Verdict,
+  Decision,
   createPrincipal,
   type Precondition,
   type Postcondition,
-  type ToolEnvelope,
+  type ToolCall,
 } from '@edictum/core'
 
 import { LangChainAdapter } from '../src/index.js'
@@ -37,7 +37,7 @@ function makeGuard(options: ConstructorParameters<typeof Edictum>[0] = {}): Edic
 // ---------------------------------------------------------------------------
 
 describe('LangChainAdapter', () => {
-  it('allows with no contracts', async () => {
+  it('allows with no rules', async () => {
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
     const adapter = new LangChainAdapter(guard)
@@ -53,17 +53,17 @@ describe('LangChainAdapter', () => {
   it('denies when precondition fails', async () => {
     const noRm: Precondition = {
       tool: 'Bash',
-      check: async (envelope) => {
+      check: async (toolCall) => {
         if (
-          typeof envelope.args['command'] === 'string' &&
-          envelope.args['command'].includes('rm -rf')
+          typeof toolCall.args['command'] === 'string' &&
+          toolCall.args['command'].includes('rm -rf')
         ) {
-          return Verdict.fail('Cannot run rm -rf')
+          return Decision.fail('Cannot run rm -rf')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [noRm] })
+    const guard = makeGuard({ rules: [noRm] })
     const adapter = new LangChainAdapter(guard)
 
     const result = await adapter._pre('Bash', { command: 'rm -rf /' }, 'call-1')
@@ -73,17 +73,17 @@ describe('LangChainAdapter', () => {
   it('allows when precondition passes', async () => {
     const noRm: Precondition = {
       tool: 'Bash',
-      check: async (envelope) => {
+      check: async (toolCall) => {
         if (
-          typeof envelope.args['command'] === 'string' &&
-          envelope.args['command'].includes('rm -rf')
+          typeof toolCall.args['command'] === 'string' &&
+          toolCall.args['command'].includes('rm -rf')
         ) {
-          return Verdict.fail('Cannot run rm -rf')
+          return Decision.fail('Cannot run rm -rf')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [noRm] })
+    const guard = makeGuard({ rules: [noRm] })
     const adapter = new LangChainAdapter(guard)
 
     const result = await adapter._pre('Bash', { command: 'ls' }, 'call-1')
@@ -94,7 +94,7 @@ describe('LangChainAdapter', () => {
   // Post-execution
   // -----------------------------------------------------------------------
 
-  it('post returns result when no contracts', async () => {
+  it('post returns result when no rules', async () => {
     const guard = makeGuard()
     const adapter = new LangChainAdapter(guard)
 
@@ -103,7 +103,7 @@ describe('LangChainAdapter', () => {
 
     expect(postResult.result).toBe('tool output')
     expect(postResult.postconditionsPassed).toBe(true)
-    expect(postResult.findings).toHaveLength(0)
+    expect(postResult.violations).toHaveLength(0)
   })
 
   it('post returns result for unknown call_id', async () => {
@@ -124,9 +124,9 @@ describe('observe mode', () => {
   it('converts deny to allow in observe mode', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('always deny'),
+      check: async () => Decision.fail('always deny'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
@@ -136,9 +136,9 @@ describe('observe mode', () => {
   it('emits CALL_WOULD_DENY audit event in observe mode', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('always deny'),
+      check: async () => Decision.fail('always deny'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -158,9 +158,9 @@ describe('callbacks', () => {
     const onDeny = vi.fn()
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll], onDeny })
+    const guard = makeGuard({ rules: [blockAll], onDeny })
     const adapter = new LangChainAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -185,9 +185,9 @@ describe('callbacks', () => {
     })
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll], onDeny })
+    const guard = makeGuard({ rules: [blockAll], onDeny })
     const adapter = new LangChainAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
@@ -227,9 +227,9 @@ describe('audit events', () => {
   it('emits CALL_DENIED on pre deny', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new LangChainAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -319,38 +319,38 @@ describe('postcondition warnings', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('secret')) {
-          return Verdict.fail('Contains secret data')
+          return Decision.fail('Contains secret data')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new LangChainAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'the secret is 42')
 
     expect(result.postconditionsPassed).toBe(false)
-    expect(result.findings.length).toBeGreaterThan(0)
-    expect(result.findings[0]?.message).toBe('Contains secret data')
+    expect(result.violations.length).toBeGreaterThan(0)
+    expect(result.violations[0]?.message).toBe('Contains secret data')
   })
 
   it('returns postconditionsPassed=true when postcondition passes', async () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.pass_(),
+      check: async () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new LangChainAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'safe output')
 
     expect(result.postconditionsPassed).toBe(true)
-    expect(result.findings.length).toBe(0)
+    expect(result.violations.length).toBe(0)
   })
 })
 
@@ -476,10 +476,10 @@ describe('postcondition output suppression', () => {
       name: 'suppress_test',
       tool: '*',
       effect: 'deny',
-      check: async () => Verdict.fail('sensitive data detected'),
+      check: async () => Decision.fail('sensitive data detected'),
     }
     const guard = makeGuard({
-      contracts: [postContract as unknown as Postcondition],
+      rules: [postContract as unknown as Postcondition],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new LangChainAdapter(guard)
@@ -493,11 +493,11 @@ describe('postcondition output suppression', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Per-contract observe mode
+// Per-rule observe mode
 // ---------------------------------------------------------------------------
 
-describe('per-contract observe mode', () => {
-  it('per-contract observe mode allows through with audit', async () => {
+describe('per-rule observe mode', () => {
+  it('per-rule observe mode allows through with audit', async () => {
     const internalContract = {
       _edictum_type: 'precondition',
       _edictum_observe: false,
@@ -505,10 +505,10 @@ describe('per-contract observe mode', () => {
       name: 'observe_test',
       tool: '*',
       mode: 'observe',
-      check: async () => Verdict.fail('would deny'),
+      check: async () => Decision.fail('would deny'),
     }
     const guard = makeGuard({
-      contracts: [internalContract as unknown as Precondition],
+      rules: [internalContract as unknown as Precondition],
     })
     const adapter = new LangChainAdapter(guard)
 

@@ -86,7 +86,7 @@ function validateBundle(data: Record<string, unknown>): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Load and validate a YAML contract bundle from a file path.
+ * Load and validate a YAML rule bundle from a file path.
  *
  * @returns Tuple of [parsed bundle dict, bundle hash].
  * @throws EdictumConfigError on validation failure.
@@ -111,7 +111,7 @@ export function loadBundle(source: string): [Record<string, unknown>, BundleHash
 }
 
 /**
- * Load and validate a YAML contract bundle from a string or bytes.
+ * Load and validate a YAML rule bundle from a string or bytes.
  *
  * Like {@link loadBundle} but accepts YAML content directly instead of
  * a file path. Useful when YAML is generated programmatically or fetched

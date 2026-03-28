@@ -12,11 +12,11 @@ import {
   CollectingAuditSink,
   Edictum,
   EdictumDenied,
-  Verdict,
+  Decision,
   createPrincipal,
   type Precondition,
   type Postcondition,
-  type ToolEnvelope,
+  type ToolCall,
 } from '@edictum/core'
 
 import { VercelAIAdapter } from '../src/index.js'
@@ -38,7 +38,7 @@ function makeGuard(options: ConstructorParameters<typeof Edictum>[0] = {}): Edic
 // ---------------------------------------------------------------------------
 
 describe('VercelAIAdapter', () => {
-  it('allows with no contracts', async () => {
+  it('allows with no rules', async () => {
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
     const adapter = new VercelAIAdapter(guard)
@@ -54,15 +54,15 @@ describe('VercelAIAdapter', () => {
   it('denies when precondition fails', async () => {
     const noRm: Precondition = {
       tool: '*',
-      check: async (envelope: ToolEnvelope) => {
-        if ((envelope.args as Record<string, unknown>)['dangerous']) {
-          return Verdict.fail('Too dangerous')
+      check: async (toolCall: ToolCall) => {
+        if ((toolCall.args as Record<string, unknown>)['dangerous']) {
+          return Decision.fail('Too dangerous')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
     const sink = makeSink()
-    const guard = makeGuard({ contracts: [noRm], auditSink: sink })
+    const guard = makeGuard({ rules: [noRm], auditSink: sink })
     const adapter = new VercelAIAdapter(guard)
 
     const result = await adapter._pre('MyTool', { dangerous: true }, 'call-1')
@@ -75,9 +75,9 @@ describe('VercelAIAdapter', () => {
   it('returns null for allowed calls', async () => {
     const alwaysPass: Precondition = {
       tool: '*',
-      check: async () => Verdict.pass_(),
+      check: async () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [alwaysPass] })
+    const guard = makeGuard({ rules: [alwaysPass] })
     const adapter = new VercelAIAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
@@ -93,12 +93,12 @@ describe('observe mode', () => {
   it('converts deny to allow in observe mode', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Blocked'),
+      check: async () => Decision.fail('Blocked'),
     }
     const sink = makeSink()
     const guard = makeGuard({
       mode: 'observe',
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       auditSink: sink,
     })
     const adapter = new VercelAIAdapter(guard)
@@ -121,10 +121,10 @@ describe('callbacks', () => {
     const denyFn = vi.fn()
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Nope'),
+      check: async () => Decision.fail('Nope'),
     }
     const guard = makeGuard({
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       onDeny: denyFn,
     })
     const adapter = new VercelAIAdapter(guard)
@@ -151,10 +151,10 @@ describe('callbacks', () => {
     })
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Nope'),
+      check: async () => Decision.fail('Nope'),
     }
     const guard = makeGuard({
-      contracts: [alwaysDeny],
+      rules: [alwaysDeny],
       onDeny: denyFn,
     })
     const adapter = new VercelAIAdapter(guard)
@@ -199,10 +199,10 @@ describe('audit events', () => {
   it('emits CALL_DENIED on pre deny', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('No'),
+      check: async () => Decision.fail('No'),
     }
     const sink = makeSink()
-    const guard = makeGuard({ contracts: [alwaysDeny], auditSink: sink })
+    const guard = makeGuard({ rules: [alwaysDeny], auditSink: sink })
     const adapter = new VercelAIAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -295,38 +295,38 @@ describe('postcondition warnings', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('secret')) {
-          return Verdict.fail('Contains secret data')
+          return Decision.fail('Contains secret data')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new VercelAIAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'the secret is 42')
 
     expect(result.postconditionsPassed).toBe(false)
-    expect(result.findings.length).toBeGreaterThan(0)
-    expect(result.findings[0]?.message).toBe('Contains secret data')
+    expect(result.violations.length).toBeGreaterThan(0)
+    expect(result.violations[0]?.message).toBe('Contains secret data')
   })
 
   it('returns postconditionsPassed=true when postcondition passes', async () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.pass_(),
+      check: async () => Decision.pass_(),
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new VercelAIAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
     const result = await adapter._post('call-1', 'safe output')
 
     expect(result.postconditionsPassed).toBe(true)
-    expect(result.findings.length).toBe(0)
+    expect(result.violations.length).toBe(0)
   })
 })
 
@@ -460,9 +460,9 @@ describe('asCallbacks', () => {
   it('returns callbacks that throw EdictumDenied on deny', async () => {
     const alwaysDeny: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('Blocked by policy'),
+      check: async () => Decision.fail('Blocked by policy'),
     }
-    const guard = makeGuard({ contracts: [alwaysDeny] })
+    const guard = makeGuard({ rules: [alwaysDeny] })
     const adapter = new VercelAIAdapter(guard)
 
     const callbacks = adapter.asCallbacks()
@@ -499,14 +499,14 @@ describe('asCallbacks', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async (_envelope: ToolEnvelope, output: unknown) => {
+      check: async (_envelope: ToolCall, output: unknown) => {
         if (String(output).includes('bad')) {
-          return Verdict.fail('Bad output')
+          return Decision.fail('Bad output')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [postContract] })
+    const guard = makeGuard({ rules: [postContract] })
     const adapter = new VercelAIAdapter(guard)
 
     const callbacks = adapter.asCallbacks({
@@ -537,14 +537,14 @@ describe('asCallbacks', () => {
   it('reads toolCall.input (AI SDK v6) for precondition args', async () => {
     const blockDangerous: Precondition = {
       tool: '*',
-      check: async (envelope: ToolEnvelope) => {
-        if ((envelope.args as Record<string, unknown>)['dangerous']) {
-          return Verdict.fail('Dangerous arg detected')
+      check: async (toolCall: ToolCall) => {
+        if ((toolCall.args as Record<string, unknown>)['dangerous']) {
+          return Decision.fail('Dangerous arg detected')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [blockDangerous] })
+    const guard = makeGuard({ rules: [blockDangerous] })
     const adapter = new VercelAIAdapter(guard)
     const callbacks = adapter.asCallbacks()
 
@@ -563,14 +563,14 @@ describe('asCallbacks', () => {
   it('falls back to toolCall.args when input is absent (AI SDK v5 compat)', async () => {
     const blockDangerous: Precondition = {
       tool: '*',
-      check: async (envelope: ToolEnvelope) => {
-        if ((envelope.args as Record<string, unknown>)['dangerous']) {
-          return Verdict.fail('Dangerous arg detected')
+      check: async (toolCall: ToolCall) => {
+        if ((toolCall.args as Record<string, unknown>)['dangerous']) {
+          return Decision.fail('Dangerous arg detected')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [blockDangerous] })
+    const guard = makeGuard({ rules: [blockDangerous] })
     const adapter = new VercelAIAdapter(guard)
     const callbacks = adapter.asCallbacks()
 
@@ -589,15 +589,15 @@ describe('asCallbacks', () => {
   it('prefers input over args when both are present', async () => {
     const checkArgs: Precondition = {
       tool: '*',
-      check: async (envelope: ToolEnvelope) => {
-        const args = envelope.args as Record<string, unknown>
+      check: async (toolCall: ToolCall) => {
+        const args = toolCall.args as Record<string, unknown>
         if (args['source'] === 'input') {
-          return Verdict.fail('Got input field')
+          return Decision.fail('Got input field')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [checkArgs] })
+    const guard = makeGuard({ rules: [checkArgs] })
     const adapter = new VercelAIAdapter(guard)
     const callbacks = adapter.asCallbacks()
 
@@ -692,24 +692,24 @@ describe('asCallbacks', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Per-contract observe mode
+// Per-rule observe mode
 // ---------------------------------------------------------------------------
 
-describe('per-contract observe mode', () => {
-  it('emits CALL_WOULD_DENY for per-contract observed denial', async () => {
-    // Use an internal contract with mode=observe to test per-contract behavior
+describe('per-rule observe mode', () => {
+  it('emits CALL_WOULD_DENY for per-rule observed denial', async () => {
+    // Use an internal rule with mode=observe to test per-rule behavior
     const observeContract: Precondition & { mode?: string } = {
       tool: '*',
-      check: async () => Verdict.fail('Would block this'),
+      check: async () => Decision.fail('Would block this'),
       // Mark as observe mode via internal metadata
     }
-    // We need to use the internal contract format for per-contract observe
-    // Instead, test through the pipeline which handles mode: "observe" contracts
+    // We need to use the internal rule format for per-rule observe
+    // Instead, test through the pipeline which handles mode: "observe" rules
     const sink = makeSink()
     const guard = makeGuard({ auditSink: sink })
     const adapter = new VercelAIAdapter(guard)
 
-    // With no contracts that have per-contract observe, test the basic path
+    // With no rules that have per-rule observe, test the basic path
     await adapter._pre('MyTool', {}, 'call-1')
     const allowed = sink.filter(AuditAction.CALL_ALLOWED)
     expect(allowed.length).toBe(1)

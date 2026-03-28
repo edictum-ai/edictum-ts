@@ -1,8 +1,8 @@
 /** Shared types for Edictum internals. */
 
 // Hook callbacks have different signatures depending on phase:
-// before: (envelope) => HookDecision | Promise<HookDecision>
-// after: (envelope, response) => void | Promise<void>
+// before: (toolCall) => HookDecision | Promise<HookDecision>
+// after: (toolCall, response) => void | Promise<void>
 // Using generic callable type here; pipeline narrows at call site.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyFunction = (...args: any[]) => any

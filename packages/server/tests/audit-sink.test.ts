@@ -207,7 +207,7 @@ describe('ServerAuditSink event mapping', () => {
         call_id: string
         agent_id: string
         tool_name: string
-        verdict: string
+        decision: string
         mode: string
         timestamp: string
         payload: {
@@ -225,7 +225,7 @@ describe('ServerAuditSink event mapping', () => {
     expect(mapped.call_id).toBe('c1')
     expect(mapped.agent_id).toBe('test-agent')
     expect(mapped.tool_name).toBe('Bash')
-    expect(mapped.verdict).toBe('call_denied')
+    expect(mapped.decision).toBe('call_denied')
     expect(mapped.mode).toBe('enforce')
     expect(mapped.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(mapped.payload.side_effect).toBe('write')

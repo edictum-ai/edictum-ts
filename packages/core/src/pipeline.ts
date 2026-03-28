@@ -1,18 +1,18 @@
 /**
- * GovernancePipeline -- single source of governance logic.
+ * CheckPipeline -- single source of governance logic.
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's pipeline.py
  * (485 LOC). PreDecision + PostDecision types + the 5-stage pre/post engine
  * form a single cohesive evaluation flow that would be harder to follow if split.
  */
 
-import { Verdict } from './contracts.js'
-import { SideEffect } from './envelope.js'
-import type { ToolEnvelope } from './envelope.js'
+import { Decision } from './rules.js'
+import { SideEffect } from './tool-call.js'
+import type { ToolCall } from './tool-call.js'
 import { HookDecision, HookResult } from './hooks.js'
 import { RedactionPolicy } from './redaction.js'
 import type { Session } from './session.js'
-import type { GuardLike } from './internal-contracts.js'
+import type { GuardLike } from './internal-rules.js'
 
 // ---------------------------------------------------------------------------
 // PreDecision
@@ -88,7 +88,7 @@ export function createPostDecision(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Check if any evaluated contract record has a policy_error in metadata. */
+/** Check if any evaluated rule record has a policy_error in metadata. */
 function hasPolicyError(contractsEvaluated: Record<string, unknown>[]): boolean {
   return contractsEvaluated.some((c) => {
     const meta = c['metadata'] as Record<string, unknown> | undefined
@@ -97,7 +97,7 @@ function hasPolicyError(contractsEvaluated: Record<string, unknown>[]): boolean 
 }
 
 // ---------------------------------------------------------------------------
-// GovernancePipeline
+// CheckPipeline
 // ---------------------------------------------------------------------------
 
 /**
@@ -107,14 +107,14 @@ function hasPolicyError(contractsEvaluated: Record<string, unknown>[]): boolean 
  * Adapters call preExecute() and postExecute(), then translate
  * the structured results into framework-specific formats.
  */
-export class GovernancePipeline {
+export class CheckPipeline {
   private readonly _guard: GuardLike
 
   constructor(guard: GuardLike) {
     this._guard = guard
   }
 
-  async preExecute(envelope: ToolEnvelope, session: Session): Promise<PreDecision> {
+  async preExecute(toolCall: ToolCall, session: Session): Promise<PreDecision> {
     const hooksEvaluated: Record<string, unknown>[] = []
     const contractsEvaluated: Record<string, unknown>[] = []
     let hasObservedDeny = false
@@ -123,8 +123,8 @@ export class GovernancePipeline {
     // round trips when using ServerBackend.  The tool-specific key
     // is included only when a per-tool limit is configured.
     let toolNameForBatch: string | undefined
-    if (envelope.toolName in this._guard.limits.maxCallsPerTool) {
-      toolNameForBatch = envelope.toolName
+    if (toolCall.toolName in this._guard.limits.maxCallsPerTool) {
+      toolNameForBatch = toolCall.toolName
     }
     const counters = await session.batchGetCounters({
       includeTool: toolNameForBatch,
@@ -146,13 +146,13 @@ export class GovernancePipeline {
     }
 
     // 2. Before hooks (catch exceptions)
-    for (const hookReg of this._guard.getHooks('before', envelope)) {
-      if (hookReg.when && !hookReg.when(envelope)) {
+    for (const hookReg of this._guard.getHooks('before', toolCall)) {
+      if (hookReg.when && !hookReg.when(toolCall)) {
         continue
       }
       let decision: HookDecision
       try {
-        decision = await hookReg.callback(envelope)
+        decision = await hookReg.callback(toolCall)
       } catch (exc) {
         decision = HookDecision.deny(`Hook error: ${exc}`)
       }
@@ -178,59 +178,59 @@ export class GovernancePipeline {
     }
 
     // 3. Preconditions (catch exceptions)
-    for (const contract of this._guard.getPreconditions(envelope)) {
-      let verdict: Verdict
+    for (const rule of this._guard.getPreconditions(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope)
+        decision = await rule.check(toolCall)
       } catch (exc) {
-        verdict = Verdict.fail(`Precondition error: ${exc}`, {
+        decision = Decision.fail(`Precondition error: ${exc}`, {
           policy_error: true,
         })
       }
 
       const contractRecord: Record<string, unknown> = {
-        name: contract.name,
+        name: rule.name,
         type: 'precondition',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
       }
-      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
-        contractRecord['metadata'] = verdict.metadata
+      if (decision.metadata && Object.keys(decision.metadata).length > 0) {
+        contractRecord['metadata'] = decision.metadata
       }
       contractsEvaluated.push(contractRecord)
 
-      if (!verdict.passed) {
-        // Per-contract observe mode: record but don't deny
-        if (contract.mode === 'observe') {
+      if (!decision.passed) {
+        // Per-rule observe mode: record but don't deny
+        if (rule.mode === 'observe') {
           contractRecord['observed'] = true
           hasObservedDeny = true
           continue
         }
 
-        const source = contract.source ?? 'precondition'
+        const source = rule.source ?? 'precondition'
         const pe = hasPolicyError(contractsEvaluated)
 
-        const effect = contract.effect ?? 'deny'
+        const effect = rule.effect ?? 'deny'
         if (effect === 'approve') {
           return createPreDecision({
             action: 'pending_approval',
-            reason: verdict.message,
+            reason: decision.message,
             decisionSource: source,
-            decisionName: contract.name,
+            decisionName: rule.name,
             hooksEvaluated,
             contractsEvaluated,
             policyError: pe,
-            approvalTimeout: contract.timeout ?? 300,
-            approvalTimeoutEffect: contract.timeoutEffect ?? 'deny',
-            approvalMessage: verdict.message,
+            approvalTimeout: rule.timeout ?? 300,
+            approvalTimeoutEffect: rule.timeoutEffect ?? 'deny',
+            approvalMessage: decision.message,
           })
         }
 
         return createPreDecision({
           action: 'deny',
-          reason: verdict.message,
+          reason: decision.message,
           decisionSource: source,
-          decisionName: contract.name,
+          decisionName: rule.name,
           hooksEvaluated,
           contractsEvaluated,
           policyError: pe,
@@ -238,59 +238,59 @@ export class GovernancePipeline {
       }
     }
 
-    // 3.5. Sandbox contracts
-    for (const contract of this._guard.getSandboxContracts(envelope)) {
-      let verdict: Verdict
+    // 3.5. Sandbox rules
+    for (const rule of this._guard.getSandboxContracts(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope)
+        decision = await rule.check(toolCall)
       } catch (exc) {
-        verdict = Verdict.fail(`Sandbox contract error: ${exc}`, {
+        decision = Decision.fail(`Sandbox rule error: ${exc}`, {
           policy_error: true,
         })
       }
 
       const contractRecord: Record<string, unknown> = {
-        name: contract.name,
+        name: rule.name,
         type: 'sandbox',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
       }
-      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
-        contractRecord['metadata'] = verdict.metadata
+      if (decision.metadata && Object.keys(decision.metadata).length > 0) {
+        contractRecord['metadata'] = decision.metadata
       }
       contractsEvaluated.push(contractRecord)
 
-      if (!verdict.passed) {
-        if (contract.mode === 'observe') {
+      if (!decision.passed) {
+        if (rule.mode === 'observe') {
           contractRecord['observed'] = true
           hasObservedDeny = true
           continue
         }
 
-        const source = contract.source ?? 'yaml_sandbox'
+        const source = rule.source ?? 'yaml_sandbox'
         const pe = hasPolicyError(contractsEvaluated)
 
-        const effect = contract.effect ?? 'deny'
+        const effect = rule.effect ?? 'deny'
         if (effect === 'approve') {
           return createPreDecision({
             action: 'pending_approval',
-            reason: verdict.message,
+            reason: decision.message,
             decisionSource: source,
-            decisionName: contract.name,
+            decisionName: rule.name,
             hooksEvaluated,
             contractsEvaluated,
             policyError: pe,
-            approvalTimeout: contract.timeout ?? 300,
-            approvalTimeoutEffect: contract.timeoutEffect ?? 'deny',
-            approvalMessage: verdict.message,
+            approvalTimeout: rule.timeout ?? 300,
+            approvalTimeoutEffect: rule.timeoutEffect ?? 'deny',
+            approvalMessage: decision.message,
           })
         }
 
         return createPreDecision({
           action: 'deny',
-          reason: verdict.message,
+          reason: decision.message,
           decisionSource: source,
-          decisionName: contract.name,
+          decisionName: rule.name,
           hooksEvaluated,
           contractsEvaluated,
           policyError: pe,
@@ -298,36 +298,36 @@ export class GovernancePipeline {
       }
     }
 
-    // 4. Session contracts (catch exceptions)
-    for (const contract of this._guard.getSessionContracts()) {
-      let verdict: Verdict
+    // 4. Session rules (catch exceptions)
+    for (const rule of this._guard.getSessionContracts()) {
+      let decision: Decision
       try {
-        verdict = await contract.check(session)
+        decision = await rule.check(session)
       } catch (exc) {
-        verdict = Verdict.fail(`Session contract error: ${exc}`, {
+        decision = Decision.fail(`Session rule error: ${exc}`, {
           policy_error: true,
         })
       }
 
       const contractRecord: Record<string, unknown> = {
-        name: contract.name,
+        name: rule.name,
         type: 'session_contract',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
       }
-      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
-        contractRecord['metadata'] = verdict.metadata
+      if (decision.metadata && Object.keys(decision.metadata).length > 0) {
+        contractRecord['metadata'] = decision.metadata
       }
       contractsEvaluated.push(contractRecord)
 
-      if (!verdict.passed) {
-        const source = contract.source ?? 'session_contract'
+      if (!decision.passed) {
+        const source = rule.source ?? 'session_contract'
         const pe = hasPolicyError(contractsEvaluated)
         return createPreDecision({
           action: 'deny',
-          reason: verdict.message,
+          reason: decision.message,
           decisionSource: source,
-          decisionName: contract.name,
+          decisionName: rule.name,
           hooksEvaluated,
           contractsEvaluated,
           policyError: pe,
@@ -351,16 +351,16 @@ export class GovernancePipeline {
     }
 
     // Per-tool limits (use pre-fetched counter when available)
-    if (envelope.toolName in this._guard.limits.maxCallsPerTool) {
-      const toolKey = `tool:${envelope.toolName}`
+    if (toolCall.toolName in this._guard.limits.maxCallsPerTool) {
+      const toolKey = `tool:${toolCall.toolName}`
       const toolCount = counters[toolKey] ?? 0
-      const toolLimit = this._guard.limits.maxCallsPerTool[envelope.toolName] ?? 0
+      const toolLimit = this._guard.limits.maxCallsPerTool[toolCall.toolName] ?? 0
       if (toolCount >= toolLimit) {
         return createPreDecision({
           action: 'deny',
-          reason: `Per-tool limit: ${envelope.toolName} called ${toolCount} times (limit: ${toolLimit}).`,
+          reason: `Per-tool limit: ${toolCall.toolName} called ${toolCount} times (limit: ${toolLimit}).`,
           decisionSource: 'operation_limit',
-          decisionName: `max_calls_per_tool:${envelope.toolName}`,
+          decisionName: `max_calls_per_tool:${toolCall.toolName}`,
           hooksEvaluated,
           contractsEvaluated,
         })
@@ -370,8 +370,8 @@ export class GovernancePipeline {
     // 6. All checks passed
     const pe = hasPolicyError(contractsEvaluated)
 
-    // 7. Observe-mode contract evaluation (never affects the decision)
-    const observeResults = await this._evaluateObserveContracts(envelope, session)
+    // 7. Observe-mode rule evaluation (never affects the decision)
+    const observeResults = await this._evaluateObserveContracts(toolCall, session)
 
     return createPreDecision({
       action: 'allow',
@@ -384,7 +384,7 @@ export class GovernancePipeline {
   }
 
   async postExecute(
-    envelope: ToolEnvelope,
+    toolCall: ToolCall,
     toolResponse: unknown,
     toolSuccess: boolean,
   ): Promise<PostDecision> {
@@ -394,39 +394,39 @@ export class GovernancePipeline {
     let outputSuppressed = false
 
     // 1. Postconditions (catch exceptions)
-    for (const contract of this._guard.getPostconditions(envelope)) {
-      let verdict: Verdict
+    for (const rule of this._guard.getPostconditions(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope, toolResponse)
+        decision = await rule.check(toolCall, toolResponse)
       } catch (exc) {
-        verdict = Verdict.fail(`Postcondition error: ${exc}`, {
+        decision = Decision.fail(`Postcondition error: ${exc}`, {
           policy_error: true,
         })
       }
 
       const contractRecord: Record<string, unknown> = {
-        name: contract.name,
+        name: rule.name,
         type: 'postcondition',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
       }
-      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
-        contractRecord['metadata'] = verdict.metadata
+      if (decision.metadata && Object.keys(decision.metadata).length > 0) {
+        contractRecord['metadata'] = decision.metadata
       }
       contractsEvaluated.push(contractRecord)
 
-      if (!verdict.passed) {
-        const effect = contract.effect ?? 'warn'
-        const contractMode = contract.mode
+      if (!decision.passed) {
+        const effect = rule.effect ?? 'warn'
+        const contractMode = rule.mode
         const isSafe =
-          envelope.sideEffect === SideEffect.PURE || envelope.sideEffect === SideEffect.READ
+          toolCall.sideEffect === SideEffect.PURE || toolCall.sideEffect === SideEffect.READ
 
         // Observe mode takes precedence
         if (contractMode === 'observe') {
           contractRecord['observed'] = true
-          warnings.push(`\u26a0\ufe0f [observe] ${verdict.message}`)
+          warnings.push(`\u26a0\ufe0f [observe] ${decision.message}`)
         } else if (effect === 'redact' && isSafe) {
-          const patterns = contract.redactPatterns ?? []
+          const patterns = rule.redactPatterns ?? []
           const source = redactedResponse !== null ? redactedResponse : toolResponse
           let text = source != null ? String(source) : ''
           if (patterns.length > 0) {
@@ -440,60 +440,60 @@ export class GovernancePipeline {
             text = policy.redactResult(text, text.length + 100)
           }
           redactedResponse = text
-          warnings.push(`\u26a0\ufe0f Content redacted by ${contract.name}.`)
+          warnings.push(`\u26a0\ufe0f Content redacted by ${rule.name}.`)
         } else if (effect === 'deny' && isSafe) {
-          redactedResponse = `[OUTPUT SUPPRESSED] ${verdict.message}`
+          redactedResponse = `[OUTPUT SUPPRESSED] ${decision.message}`
           outputSuppressed = true
-          warnings.push(`\u26a0\ufe0f Output suppressed by ${contract.name}.`)
+          warnings.push(`\u26a0\ufe0f Output suppressed by ${rule.name}.`)
         } else if ((effect === 'redact' || effect === 'deny') && !isSafe) {
           warnings.push(
-            `\u26a0\ufe0f ${verdict.message} Tool already executed \u2014 assess before proceeding.`,
+            `\u26a0\ufe0f ${decision.message} Tool already executed \u2014 assess before proceeding.`,
           )
         } else if (isSafe) {
-          warnings.push(`\u26a0\ufe0f ${verdict.message} Consider retrying.`)
+          warnings.push(`\u26a0\ufe0f ${decision.message} Consider retrying.`)
         } else {
           warnings.push(
-            `\u26a0\ufe0f ${verdict.message} Tool already executed \u2014 assess before proceeding.`,
+            `\u26a0\ufe0f ${decision.message} Tool already executed \u2014 assess before proceeding.`,
           )
         }
       }
     }
 
     // 2. After hooks (catch exceptions)
-    for (const hookReg of this._guard.getHooks('after', envelope)) {
-      if (hookReg.when && !hookReg.when(envelope)) {
+    for (const hookReg of this._guard.getHooks('after', toolCall)) {
+      if (hookReg.when && !hookReg.when(toolCall)) {
         continue
       }
       try {
-        await hookReg.callback(envelope, toolResponse)
+        await hookReg.callback(toolCall, toolResponse)
       } catch {
         // After hook errors are silently swallowed — they must not affect governance decisions.
       }
     }
 
     // 3. Observe-mode postconditions (from observe_alongside bundles)
-    // These never affect the decision — only produce audit findings.
-    for (const contract of this._guard.getObservePostconditions(envelope)) {
-      let verdict: Verdict
+    // These never affect the decision — only produce audit violations.
+    for (const rule of this._guard.getObservePostconditions(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope, toolResponse)
+        decision = await rule.check(toolCall, toolResponse)
       } catch (exc) {
-        verdict = Verdict.fail(`Observe-mode postcondition error: ${exc}`, { policy_error: true })
+        decision = Decision.fail(`Observe-mode postcondition error: ${exc}`, { policy_error: true })
       }
       const record: Record<string, unknown> = {
-        name: contract.name,
+        name: rule.name,
         type: 'postcondition',
-        passed: verdict.passed,
-        message: verdict.message,
+        passed: decision.passed,
+        message: decision.message,
         observed: true,
-        source: contract.source ?? 'yaml_postcondition',
+        source: rule.source ?? 'yaml_postcondition',
       }
-      if (verdict.metadata && Object.keys(verdict.metadata).length > 0) {
-        record['metadata'] = verdict.metadata
+      if (decision.metadata && Object.keys(decision.metadata).length > 0) {
+        record['metadata'] = decision.metadata
       }
       contractsEvaluated.push(record)
-      if (!verdict.passed) {
-        warnings.push(`\u26a0\ufe0f [observe] ${verdict.message}`)
+      if (!decision.passed) {
+        warnings.push(`\u26a0\ufe0f [observe] ${decision.message}`)
       }
     }
 
@@ -517,71 +517,71 @@ export class GovernancePipeline {
   }
 
   /**
-   * Evaluate observe-mode contracts without affecting the real decision.
+   * Evaluate observe-mode rules without affecting the real decision.
    *
-   * Observe-mode contracts are identified by mode === "observe" on the
-   * internal contract. Results are returned as dicts for audit emission
+   * Observe-mode rules are identified by mode === "observe" on the
+   * internal rule. Results are returned as dicts for audit emission
    * but never block calls.
    */
   private async _evaluateObserveContracts(
-    envelope: ToolEnvelope,
+    toolCall: ToolCall,
     session: Session,
   ): Promise<Record<string, unknown>[]> {
     const results: Record<string, unknown>[] = []
 
     // Observe-mode preconditions
-    for (const contract of this._guard.getObservePreconditions(envelope)) {
-      let verdict: Verdict
+    for (const rule of this._guard.getObservePreconditions(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope)
+        decision = await rule.check(toolCall)
       } catch (exc) {
-        verdict = Verdict.fail(`Observe-mode precondition error: ${exc}`, { policy_error: true })
+        decision = Decision.fail(`Observe-mode precondition error: ${exc}`, { policy_error: true })
       }
 
       results.push({
-        name: contract.name,
+        name: rule.name,
         type: 'precondition',
-        passed: verdict.passed,
-        message: verdict.message,
-        source: contract.source ?? 'yaml_precondition',
+        passed: decision.passed,
+        message: decision.message,
+        source: rule.source ?? 'yaml_precondition',
       })
     }
 
-    // Observe-mode sandbox contracts
-    for (const contract of this._guard.getObserveSandboxContracts(envelope)) {
-      let verdict: Verdict
+    // Observe-mode sandbox rules
+    for (const rule of this._guard.getObserveSandboxContracts(toolCall)) {
+      let decision: Decision
       try {
-        verdict = await contract.check(envelope)
+        decision = await rule.check(toolCall)
       } catch (exc) {
-        verdict = Verdict.fail(`Observe-mode sandbox error: ${exc}`, { policy_error: true })
+        decision = Decision.fail(`Observe-mode sandbox error: ${exc}`, { policy_error: true })
       }
 
       results.push({
-        name: contract.name,
+        name: rule.name,
         type: 'sandbox',
-        passed: verdict.passed,
-        message: verdict.message,
-        source: contract.source ?? 'yaml_sandbox',
+        passed: decision.passed,
+        message: decision.message,
+        source: rule.source ?? 'yaml_sandbox',
       })
     }
 
-    // Observe-mode session contracts -- evaluate against the real session
-    for (const contract of this._guard.getObserveSessionContracts()) {
-      let verdict: Verdict
+    // Observe-mode session rules -- evaluate against the real session
+    for (const rule of this._guard.getObserveSessionContracts()) {
+      let decision: Decision
       try {
-        verdict = await contract.check(session)
+        decision = await rule.check(session)
       } catch (exc) {
-        verdict = Verdict.fail(`Observe-mode session contract error: ${exc}`, {
+        decision = Decision.fail(`Observe-mode session rule error: ${exc}`, {
           policy_error: true,
         })
       }
 
       results.push({
-        name: contract.name,
+        name: rule.name,
         type: 'session_contract',
-        passed: verdict.passed,
-        message: verdict.message,
-        source: contract.source ?? 'yaml_session',
+        passed: decision.passed,
+        message: decision.message,
+        source: rule.source ?? 'yaml_session',
       })
     }
 

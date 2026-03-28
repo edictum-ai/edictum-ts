@@ -2,7 +2,7 @@
  * @edictum/vercel-ai — Vercel AI SDK adapter for edictum.
  *
  * Translates Edictum pipeline decisions into Vercel AI SDK callback format.
- * The adapter does NOT contain governance logic — that lives in GovernancePipeline.
+ * The adapter does NOT contain governance logic — that lives in CheckPipeline.
  *
  * Integration point: experimental_onToolCallStart / experimental_onToolCallFinish
  * callbacks for generateText / streamText.
@@ -18,15 +18,15 @@ import {
   createEnvelope,
   type Edictum,
   EdictumDenied,
-  type Finding,
-  GovernancePipeline,
+  type Violation,
+  CheckPipeline,
   type PostCallResult,
   type PostDecisionLike,
   createPostCallResult,
   type PreDecision,
   type Principal,
   Session,
-  buildFindings,
+  buildViolations,
   defaultSuccessCheck,
 } from '@edictum/core'
 
@@ -69,7 +69,7 @@ export interface VercelAIAdapterOptions {
 }
 
 export interface AsCallbacksOptions {
-  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
+  readonly onPostconditionWarn?: (result: unknown, violations: Violation[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ export interface AsCallbacksOptions {
 // ---------------------------------------------------------------------------
 
 interface PendingCall {
-  readonly envelope: ReturnType<typeof createEnvelope>
+  readonly toolCall: ReturnType<typeof createEnvelope>
 }
 
 // ---------------------------------------------------------------------------
@@ -88,15 +88,15 @@ interface PendingCall {
  * Translate Edictum pipeline decisions into Vercel AI SDK callback format.
  *
  * The adapter does NOT contain governance logic — that lives in
- * GovernancePipeline. The adapter only:
+ * CheckPipeline. The adapter only:
  * 1. Creates envelopes from SDK callback data
- * 2. Manages pending state (envelope) between onToolCallStart/onToolCallFinish
+ * 2. Manages pending state (toolCall) between onToolCallStart/onToolCallFinish
  * 3. Translates PreDecision/PostDecision into callback behavior
  * 4. Handles observe mode (deny -> allow conversion)
  */
 export class VercelAIAdapter {
   private readonly _guard: Edictum
-  private readonly _pipeline: GovernancePipeline
+  private readonly _pipeline: CheckPipeline
   private readonly _sessionId: string
   private readonly _session: Session
   private _callIndex: number = 0
@@ -108,7 +108,7 @@ export class VercelAIAdapter {
 
   constructor(guard: Edictum, options?: VercelAIAdapterOptions) {
     this._guard = guard
-    this._pipeline = new GovernancePipeline(guard)
+    this._pipeline = new CheckPipeline(guard)
     this._sessionId = options?.sessionId ?? randomUUID()
     this._session = new Session(this._sessionId, guard.backend)
     this._principal = options?.principal ?? null
@@ -165,13 +165,13 @@ export class VercelAIAdapter {
         // Fail closed: deny if neither input (v6) nor args (v5) is present.
         // Uses == null to catch both null and undefined (JS callers, type assertions).
         // Emit audit + fire on_deny directly (cannot route through _pre — it would
-        // emit CALL_ALLOWED when no contracts deny the empty-args envelope).
-        // NOTE: observe mode does NOT apply here — we cannot evaluate contracts against
+        // emit CALL_ALLOWED when no rules deny the empty-args toolCall).
+        // NOTE: observe mode does NOT apply here — we cannot evaluate rules against
         // unknown args, so we always fail closed regardless of mode.
         if (event.toolCall.input == null && event.toolCall.args == null) {
           const reason = 'Cannot determine tool arguments — neither input nor args present in event'
           await this._session.incrementAttempts()
-          const envelope = createEnvelope(
+          const toolCall = createEnvelope(
             toolName,
             {},
             {
@@ -187,15 +187,15 @@ export class VercelAIAdapter {
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: AA.CALL_DENIED,
-              runId: envelope.runId,
-              callId: envelope.callId,
-              callIndex: envelope.callIndex,
-              toolName: envelope.toolName,
+              runId: toolCall.runId,
+              callId: toolCall.callId,
+              callIndex: toolCall.callIndex,
+              toolName: toolCall.toolName,
               toolArgs: {},
-              sideEffect: envelope.sideEffect,
-              environment: envelope.environment,
-              principal: envelope.principal
-                ? ({ ...envelope.principal } as Record<string, unknown>)
+              sideEffect: toolCall.sideEffect,
+              environment: toolCall.environment,
+              principal: toolCall.principal
+                ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
               decisionSource: 'adapter',
               reason,
@@ -207,7 +207,7 @@ export class VercelAIAdapter {
           )
           if (this._guard._onDeny) {
             try {
-              this._guard._onDeny(envelope, reason, null)
+              this._guard._onDeny(toolCall, reason, null)
             } catch {
               // on_deny callback errors are swallowed
             }
@@ -231,7 +231,7 @@ export class VercelAIAdapter {
 
         if (!postResult.postconditionsPassed && onPostconditionWarn != null) {
           try {
-            onPostconditionWarn(postResult.result, [...postResult.findings])
+            onPostconditionWarn(postResult.result, [...postResult.violations])
           } catch {
             // Callback errors are swallowed — they must not affect the SDK flow
           }
@@ -254,7 +254,7 @@ export class VercelAIAdapter {
     toolInput: Record<string, unknown>,
     callId: string,
   ): Promise<string | null> {
-    const envelope = createEnvelope(toolName, toolInput, {
+    const toolCall = createEnvelope(toolName, toolInput, {
       runId: this._sessionId,
       callIndex: this._callIndex,
       toolUseId: callId,
@@ -268,21 +268,21 @@ export class VercelAIAdapter {
     await this._session.incrementAttempts()
 
     // Run pipeline
-    const decision = await this._pipeline.preExecute(envelope, this._session)
+    const decision = await this._pipeline.preExecute(toolCall, this._session)
 
-    // Finding 1: Handle pending_approval
+    // Note 1: Handle pending_approval
     if (decision.action === 'pending_approval') {
       if (this._guard._approvalBackend == null) {
         return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
       }
 
-      const principalDict = envelope.principal
-        ? ({ ...envelope.principal } as Record<string, unknown>)
+      const principalDict = toolCall.principal
+        ? ({ ...toolCall.principal } as Record<string, unknown>)
         : null
 
       const approvalRequest = await this._guard._approvalBackend.requestApproval(
-        envelope.toolName,
-        envelope.args as Record<string, unknown>,
+        toolCall.toolName,
+        toolCall.args as Record<string, unknown>,
         decision.approvalMessage ?? decision.reason ?? '',
         {
           timeout: decision.approvalTimeout,
@@ -291,7 +291,7 @@ export class VercelAIAdapter {
         },
       )
 
-      await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_REQUESTED)
+      await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_REQUESTED)
 
       const approvalDecision = await this._guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
@@ -300,32 +300,32 @@ export class VercelAIAdapter {
 
       let approved = false
       if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_TIMEOUT)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_TIMEOUT)
         if (decision.approvalTimeoutEffect === 'allow') {
           approved = true
         }
       } else if (!approvalDecision.approved) {
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_DENIED)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_DENIED)
       } else {
         approved = true
-        await this._emitAuditPre(envelope, decision, AA.CALL_APPROVAL_GRANTED)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_GRANTED)
       }
 
       if (approved) {
         if (this._guard._onAllow) {
           try {
-            this._guard._onAllow(envelope)
+            this._guard._onAllow(toolCall)
           } catch {
             // on_allow callback raised — swallow
           }
         }
-        this._pending.set(callId, { envelope })
+        this._pending.set(callId, { toolCall })
         return null
       } else {
         const denyReason = approvalDecision.reason ?? decision.reason ?? ''
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(envelope, denyReason, decision.decisionName)
+            this._guard._onDeny(toolCall, denyReason, decision.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
@@ -337,17 +337,17 @@ export class VercelAIAdapter {
 
     // Handle observe mode: convert deny to allow with warning
     if (this._guard.mode === 'observe' && decision.action === 'deny') {
-      await this._emitAuditPre(envelope, decision, AA.CALL_WOULD_DENY)
-      this._pending.set(callId, { envelope })
+      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_DENY)
+      this._pending.set(callId, { toolCall })
       return null // allow through
     }
 
     // Handle deny
     if (decision.action === 'deny') {
-      await this._emitAuditPre(envelope, decision)
+      await this._emitAuditPre(toolCall, decision)
       if (this._guard._onDeny) {
         try {
-          this._guard._onDeny(envelope, decision.reason ?? '', decision.decisionName)
+          this._guard._onDeny(toolCall, decision.reason ?? '', decision.decisionName)
         } catch {
           // on_deny callback raised — swallow
         }
@@ -356,22 +356,22 @@ export class VercelAIAdapter {
       return `DENIED: ${decision.reason}`
     }
 
-    // Handle per-contract observed denials
+    // Handle per-rule observed denials
     if (decision.observed) {
       for (const cr of decision.contractsEvaluated) {
         if (cr['observed'] && !cr['passed']) {
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: AA.CALL_WOULD_DENY,
-              runId: envelope.runId,
-              callId: envelope.callId,
-              callIndex: envelope.callIndex,
-              toolName: envelope.toolName,
-              toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-              sideEffect: envelope.sideEffect,
-              environment: envelope.environment,
-              principal: envelope.principal
-                ? ({ ...envelope.principal } as Record<string, unknown>)
+              runId: toolCall.runId,
+              callId: toolCall.callId,
+              callIndex: toolCall.callIndex,
+              toolName: toolCall.toolName,
+              toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+              sideEffect: toolCall.sideEffect,
+              environment: toolCall.environment,
+              principal: toolCall.principal
+                ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
               decisionSource: 'precondition',
               decisionName: cr['name'] as string,
@@ -386,15 +386,15 @@ export class VercelAIAdapter {
     }
 
     // Handle allow
-    await this._emitAuditPre(envelope, decision)
+    await this._emitAuditPre(toolCall, decision)
     if (this._guard._onAllow) {
       try {
-        this._guard._onAllow(envelope)
+        this._guard._onAllow(toolCall)
       } catch {
         // on_allow callback raised — swallow
       }
     }
-    this._pending.set(callId, { envelope })
+    this._pending.set(callId, { toolCall })
 
     // Observe-mode audits — errors swallowed (must not block execution)
     for (const sr of decision.observeResults) {
@@ -403,15 +403,15 @@ export class VercelAIAdapter {
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
-            runId: envelope.runId,
-            callId: envelope.callId,
-            callIndex: envelope.callIndex,
-            toolName: envelope.toolName,
-            toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-            sideEffect: envelope.sideEffect,
-            environment: envelope.environment,
-            principal: envelope.principal
-              ? ({ ...envelope.principal } as Record<string, unknown>)
+            runId: toolCall.runId,
+            callId: toolCall.callId,
+            callIndex: toolCall.callIndex,
+            toolName: toolCall.toolName,
+            toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+            sideEffect: toolCall.sideEffect,
+            environment: toolCall.environment,
+            principal: toolCall.principal
+              ? ({ ...toolCall.principal } as Record<string, unknown>)
               : null,
             decisionSource: sr['source'] as string | null,
             decisionName: sr['name'] as string | null,
@@ -433,7 +433,7 @@ export class VercelAIAdapter {
   // -----------------------------------------------------------------------
 
   /**
-   * Run post-execution governance. Returns PostCallResult with findings.
+   * Run post-execution governance. Returns PostCallResult with violations.
    *
    * Exposed for direct testing without framework imports.
    */
@@ -445,34 +445,34 @@ export class VercelAIAdapter {
       return createPostCallResult({ result: toolResponse })
     }
 
-    const { envelope } = pending
+    const { toolCall } = pending
 
     // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(envelope.toolName, toolResponse)
+    const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
 
     // Run pipeline
-    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
+    const postDecision = await this._pipeline.postExecute(toolCall, toolResponse, toolSuccess)
 
     const effectiveResponse =
       postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
     // Record in session
-    await this._session.recordExecution(envelope.toolName, toolSuccess)
+    await this._session.recordExecution(toolCall.toolName, toolSuccess)
 
     // Emit audit
     const action: AuditAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         toolSuccess,
         postconditionsPassed: postDecision.postconditionsPassed,
@@ -485,11 +485,11 @@ export class VercelAIAdapter {
       }),
     )
 
-    const findings = buildFindings(postDecision as unknown as PostDecisionLike)
+    const violations = buildViolations(postDecision as unknown as PostDecisionLike)
     return createPostCallResult({
       result: effectiveResponse,
       postconditionsPassed: postDecision.postconditionsPassed,
-      findings,
+      violations,
       outputSuppressed: postDecision.outputSuppressed,
     })
   }
@@ -499,7 +499,7 @@ export class VercelAIAdapter {
   // -----------------------------------------------------------------------
 
   private async _emitAuditPre(
-    envelope: ReturnType<typeof createEnvelope>,
+    toolCall: ReturnType<typeof createEnvelope>,
     decision: PreDecision,
     auditAction?: AuditAction,
   ): Promise<void> {
@@ -509,15 +509,15 @@ export class VercelAIAdapter {
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         decisionSource: decision.decisionSource,
         decisionName: decision.decisionName,

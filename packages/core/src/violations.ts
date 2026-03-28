@@ -1,7 +1,7 @@
-/** Structured postcondition findings. */
+/** Structured postcondition violations. */
 
 // ---------------------------------------------------------------------------
-// Finding
+// Violation
 // ---------------------------------------------------------------------------
 
 /**
@@ -11,22 +11,22 @@
  * Returned to the caller via PostCallResult so they can
  * decide how to remediate.
  */
-export interface Finding {
+export interface Violation {
   readonly type: string
-  readonly contractId: string
+  readonly ruleId: string
   readonly field: string
   readonly message: string
   readonly metadata: Readonly<Record<string, unknown>>
 }
 
-/** Create a frozen Finding with defaults for metadata. */
-export function createFinding(
-  fields: Pick<Finding, 'type' | 'contractId' | 'field' | 'message'> &
-    Partial<Pick<Finding, 'metadata'>>,
-): Finding {
+/** Create a frozen Violation with defaults for metadata. */
+export function createViolation(
+  fields: Pick<Violation, 'type' | 'ruleId' | 'field' | 'message'> &
+    Partial<Pick<Violation, 'metadata'>>,
+): Violation {
   return Object.freeze({
     type: fields.type,
-    contractId: fields.contractId,
+    ruleId: fields.ruleId,
     field: fields.field,
     message: fields.message,
     metadata: Object.freeze({ ...(fields.metadata ?? {}) }),
@@ -38,18 +38,18 @@ export function createFinding(
 // ---------------------------------------------------------------------------
 
 /**
- * Result from a governed tool call, including postcondition findings.
+ * Result from a governed tool call, including postcondition violations.
  *
  * Returned by adapter's postToolCall and available via asToolWrapper.
  *
- * When postconditionsPassed is false, the findings list contains
- * structured Finding objects describing what was detected. The caller
+ * When postconditionsPassed is false, the violations list contains
+ * structured Violation objects describing what was detected. The caller
  * can then decide how to remediate (redact, replace, log, etc.).
  */
 export interface PostCallResult {
   readonly result: unknown
   readonly postconditionsPassed: boolean
-  readonly findings: readonly Finding[]
+  readonly violations: readonly Violation[]
   readonly outputSuppressed: boolean
 }
 
@@ -60,22 +60,22 @@ export function createPostCallResult(
   return Object.freeze({
     result: fields.result,
     postconditionsPassed: fields.postconditionsPassed ?? true,
-    findings: Object.freeze([...(fields.findings ?? [])]),
+    violations: Object.freeze([...(fields.violations ?? [])]),
     outputSuppressed: fields.outputSuppressed ?? false,
   })
 }
 
 // ---------------------------------------------------------------------------
-// classifyFinding
+// classifyViolation
 // ---------------------------------------------------------------------------
 
 /**
- * Classify a postcondition finding type from contract ID and message.
+ * Classify a postcondition finding type from rule ID and message.
  *
  * Returns a standard finding type string.
  */
-export function classifyFinding(contractId: string, verdictMessage: string): string {
-  const contractLower = contractId.toLowerCase()
+export function classifyViolation(ruleId: string, verdictMessage: string): string {
+  const contractLower = ruleId.toLowerCase()
   const messageLower = (verdictMessage || '').toLowerCase()
 
   const piiTerms = ['pii', 'ssn', 'patient', 'name', 'dob']
@@ -101,7 +101,7 @@ export function classifyFinding(contractId: string, verdictMessage: string): str
 // ---------------------------------------------------------------------------
 
 /**
- * Structural type for the PostDecision fields consumed by buildFindings.
+ * Structural type for the PostDecision fields consumed by buildViolations.
  *
  * The full PostDecision lives in pipeline.ts. This captures only the
  * subset needed here to avoid a circular import.
@@ -116,25 +116,25 @@ export interface PostDecisionLike {
 }
 
 // ---------------------------------------------------------------------------
-// buildFindings
+// buildViolations
 // ---------------------------------------------------------------------------
 
 /**
- * Build Finding objects from a PostDecision's failed postconditions.
+ * Build Violation objects from a PostDecision's failed postconditions.
  *
  * The `field` value is extracted from `metadata.field` if the
- * contract provides it (e.g. `Verdict.fail("msg", { field: "output.text" })`),
+ * rule provides it (e.g. `Decision.fail("msg", { field: "output.text" })`),
  * otherwise defaults to `"output"` for postconditions.
  */
-export function buildFindings(postDecision: PostDecisionLike): Finding[] {
-  const findings: Finding[] = []
+export function buildViolations(postDecision: PostDecisionLike): Violation[] {
+  const violations: Violation[] = []
   for (const cr of postDecision.contractsEvaluated) {
     if (!cr.passed) {
       const meta = cr.metadata ?? {}
-      findings.push(
-        createFinding({
-          type: classifyFinding(cr.name, cr.message ?? ''),
-          contractId: cr.name,
+      violations.push(
+        createViolation({
+          type: classifyViolation(cr.name, cr.message ?? ''),
+          ruleId: cr.name,
           field: (meta.field as string) ?? 'output',
           message: cr.message ?? '',
           metadata: meta,
@@ -142,5 +142,5 @@ export function buildFindings(postDecision: PostDecisionLike): Finding[] {
       )
     }
   }
-  return findings
+  return violations
 }

@@ -9,10 +9,10 @@ import {
   AuditAction,
   CollectingAuditSink,
   Edictum,
-  Verdict,
+  Decision,
   type Precondition,
   type Postcondition,
-  type SessionContract,
+  type SessionRule,
   createPrincipal,
 } from '@edictum/core'
 import { OpenAIAgentsAdapter } from '../src/index.js'
@@ -30,7 +30,7 @@ function makeGuard(options: ConstructorParameters<typeof Edictum>[0] = {}): Edic
 // ---------------------------------------------------------------------------
 
 describe('OpenAIAgentsAdapter', () => {
-  it('allows with no contracts', async () => {
+  it('allows with no rules', async () => {
     const guard = makeGuard()
     const adapter = new OpenAIAgentsAdapter(guard)
     const result = await adapter._pre('MyTool', { key: 'value' }, 'call-1')
@@ -40,17 +40,17 @@ describe('OpenAIAgentsAdapter', () => {
   it('denies when precondition fails', async () => {
     const noRm: Precondition = {
       tool: 'Bash',
-      check: async (envelope) => {
+      check: async (toolCall) => {
         if (
-          typeof envelope.args['command'] === 'string' &&
-          envelope.args['command'].includes('rm -rf')
+          typeof toolCall.args['command'] === 'string' &&
+          toolCall.args['command'].includes('rm -rf')
         ) {
-          return Verdict.fail('Cannot run rm -rf')
+          return Decision.fail('Cannot run rm -rf')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [noRm] })
+    const guard = makeGuard({ rules: [noRm] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     const result = await adapter._pre('Bash', { command: 'rm -rf /' }, 'call-1')
@@ -60,17 +60,17 @@ describe('OpenAIAgentsAdapter', () => {
   it('allows when precondition passes', async () => {
     const noRm: Precondition = {
       tool: 'Bash',
-      check: async (envelope) => {
+      check: async (toolCall) => {
         if (
-          typeof envelope.args['command'] === 'string' &&
-          envelope.args['command'].includes('rm -rf')
+          typeof toolCall.args['command'] === 'string' &&
+          toolCall.args['command'].includes('rm -rf')
         ) {
-          return Verdict.fail('Cannot run rm -rf')
+          return Decision.fail('Cannot run rm -rf')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
-    const guard = makeGuard({ contracts: [noRm] })
+    const guard = makeGuard({ rules: [noRm] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     const result = await adapter._pre('Bash', { command: 'ls' }, 'call-1')
@@ -81,7 +81,7 @@ describe('OpenAIAgentsAdapter', () => {
   // Post-execution
   // -----------------------------------------------------------------------
 
-  it('post returns result when no contracts', async () => {
+  it('post returns result when no rules', async () => {
     const guard = makeGuard()
     const adapter = new OpenAIAgentsAdapter(guard)
 
@@ -90,7 +90,7 @@ describe('OpenAIAgentsAdapter', () => {
 
     expect(postResult.result).toBe('tool output')
     expect(postResult.postconditionsPassed).toBe(true)
-    expect(postResult.findings).toHaveLength(0)
+    expect(postResult.violations).toHaveLength(0)
   })
 
   it('post returns result for unknown call_id', async () => {
@@ -109,9 +109,9 @@ describe('OpenAIAgentsAdapter', () => {
   it('observe mode converts deny to allow', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('always deny'),
+      check: async () => Decision.fail('always deny'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
@@ -121,9 +121,9 @@ describe('OpenAIAgentsAdapter', () => {
   it('observe mode emits CALL_WOULD_DENY audit event', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('always deny'),
+      check: async () => Decision.fail('always deny'),
     }
-    const guard = makeGuard({ mode: 'observe', contracts: [blockAll] })
+    const guard = makeGuard({ mode: 'observe', rules: [blockAll] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -141,9 +141,9 @@ describe('OpenAIAgentsAdapter', () => {
     const onDeny = vi.fn()
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll], onDeny })
+    const guard = makeGuard({ rules: [blockAll], onDeny })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -168,9 +168,9 @@ describe('OpenAIAgentsAdapter', () => {
     })
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll], onDeny })
+    const guard = makeGuard({ rules: [blockAll], onDeny })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     // Should not throw
@@ -184,10 +184,10 @@ describe('OpenAIAgentsAdapter', () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
-      check: async () => Verdict.fail('output issue'),
+      check: async () => Decision.fail('output issue'),
     }
     const guard = makeGuard({
-      contracts: [postContract],
+      rules: [postContract],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new OpenAIAgentsAdapter(guard)
@@ -219,9 +219,9 @@ describe('OpenAIAgentsAdapter', () => {
   it('emits CALL_DENIED on deny', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     await adapter._pre('MyTool', {}, 'call-1')
@@ -357,9 +357,9 @@ describe('OpenAIAgentsAdapter', () => {
   it('asGuardrails input trips on deny', async () => {
     const blockAll: Precondition = {
       tool: '*',
-      check: async () => Verdict.fail('blocked'),
+      check: async () => Decision.fail('blocked'),
     }
-    const guard = makeGuard({ contracts: [blockAll] })
+    const guard = makeGuard({ rules: [blockAll] })
     const adapter = new OpenAIAgentsAdapter(guard)
     const { inputGuardrail } = adapter.asGuardrails()
 
@@ -395,17 +395,17 @@ describe('OpenAIAgentsAdapter', () => {
 
   it('post suppresses output on deny effect', async () => {
     // Internal postcondition with effect: "deny" (user-facing Postcondition
-    // doesn't have an effect field — it's on internal contracts from YAML)
+    // doesn't have an effect field — it's on internal rules from YAML)
     const postContract = {
       _edictum_type: 'postcondition',
       type: 'postcondition',
       name: 'suppress_test',
       tool: '*',
       effect: 'deny',
-      check: async () => Verdict.fail('sensitive data detected'),
+      check: async () => Decision.fail('sensitive data detected'),
     }
     const guard = makeGuard({
-      contracts: [postContract as unknown as Postcondition],
+      rules: [postContract as unknown as Postcondition],
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new OpenAIAgentsAdapter(guard)
@@ -418,11 +418,11 @@ describe('OpenAIAgentsAdapter', () => {
   })
 
   // -----------------------------------------------------------------------
-  // Per-contract observe mode
+  // Per-rule observe mode
   // -----------------------------------------------------------------------
 
   // -----------------------------------------------------------------------
-  // Ambiguous same-name call correlation (Finding #8)
+  // Ambiguous same-name call correlation (Violation #8)
   // -----------------------------------------------------------------------
 
   describe('ambiguous same-name call correlation', () => {
@@ -430,9 +430,9 @@ describe('OpenAIAgentsAdapter', () => {
       const postContract: Postcondition = {
         tool: '*',
         contractType: 'post',
-        check: async () => Verdict.fail('should not run'),
+        check: async () => Decision.fail('should not run'),
       }
-      const guard = makeGuard({ contracts: [postContract] })
+      const guard = makeGuard({ rules: [postContract] })
       const adapter = new OpenAIAgentsAdapter(guard)
 
       // Two Read calls pending
@@ -450,10 +450,10 @@ describe('OpenAIAgentsAdapter', () => {
       const postContract: Postcondition = {
         tool: '*',
         contractType: 'post',
-        check: async () => Verdict.fail('postcondition ran'),
+        check: async () => Decision.fail('postcondition ran'),
       }
       const guard = makeGuard({
-        contracts: [postContract],
+        rules: [postContract],
         tools: { Read: { side_effect: 'pure' } },
       })
       const adapter = new OpenAIAgentsAdapter(guard)
@@ -474,10 +474,10 @@ describe('OpenAIAgentsAdapter', () => {
       const postContract: Postcondition = {
         tool: '*',
         contractType: 'post',
-        check: async () => Verdict.fail('postcondition ran'),
+        check: async () => Decision.fail('postcondition ran'),
       }
       const guard = makeGuard({
-        contracts: [postContract],
+        rules: [postContract],
         tools: { Read: { side_effect: 'pure' } },
       })
       const adapter = new OpenAIAgentsAdapter(guard)
@@ -489,18 +489,18 @@ describe('OpenAIAgentsAdapter', () => {
       const postResult = await adapter._post('call-2', 'file contents')
 
       expect(postResult.postconditionsPassed).toBe(false)
-      expect(postResult.findings.length).toBeGreaterThan(0)
+      expect(postResult.violations.length).toBeGreaterThan(0)
     })
   })
 
-  it('per-contract observe mode allows through with audit', async () => {
-    // Create an internal contract with observe mode
+  it('per-rule observe mode allows through with audit', async () => {
+    // Create an internal rule with observe mode
     const observeContract: Precondition & { mode?: string } = {
       tool: '*',
-      check: async () => Verdict.fail('would deny'),
+      check: async () => Decision.fail('would deny'),
       mode: 'observe',
     }
-    // Simulate internal contract with _edictum_type
+    // Simulate internal rule with _edictum_type
     const internalContract = {
       _edictum_type: 'precondition',
       _edictum_observe: false,
@@ -508,13 +508,13 @@ describe('OpenAIAgentsAdapter', () => {
       name: 'observe_test',
       tool: '*',
       mode: 'observe',
-      check: async () => Verdict.fail('would deny'),
+      check: async () => Decision.fail('would deny'),
     }
-    const guard = makeGuard({ contracts: [internalContract as unknown as Precondition] })
+    const guard = makeGuard({ rules: [internalContract as unknown as Precondition] })
     const adapter = new OpenAIAgentsAdapter(guard)
 
     const result = await adapter._pre('MyTool', {}, 'call-1')
-    // Per-contract observe: the contract itself has mode=observe,
+    // Per-rule observe: the rule itself has mode=observe,
     // so the pipeline marks it as observed but allows through
     expect(result).toBeNull()
   })

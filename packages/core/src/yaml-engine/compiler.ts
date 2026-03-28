@@ -1,18 +1,18 @@
-/** Compiler — convert parsed YAML contracts into contract objects and OperationLimits. */
+/** Compiler — convert parsed YAML rules into rule objects and OperationLimits. */
 
 import type { OperationLimits } from '../limits.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { CustomOperator, CustomSelector } from './evaluator.js'
 import { EdictumConfigError } from '../errors.js'
 import { validateOperators } from './compiler-utils.js'
-import { compilePre, compilePost, compileSession, mergeSessionLimits } from './compile-contracts.js'
+import { compilePre, compilePost, compileSession, mergeSessionLimits } from './compile-rules.js'
 import { compileSandbox } from './sandbox-compile-fn.js'
 
 // ---------------------------------------------------------------------------
 // CompiledBundle
 // ---------------------------------------------------------------------------
 
-/** Result of compiling a YAML contract bundle. */
+/** Result of compiling a YAML rule bundle. */
 export interface CompiledBundle {
   readonly preconditions: readonly unknown[]
   readonly postconditions: readonly unknown[]
@@ -37,7 +37,7 @@ export interface CompileOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Compile a validated YAML bundle into contract objects.
+ * Compile a validated YAML bundle into rule objects.
  *
  * @param bundle - A validated bundle dict (output of loadBundle).
  * @param options - Optional custom operators and selectors.
@@ -64,30 +64,30 @@ export function compileContracts(
   const sandboxContracts: unknown[] = []
   let limits: OperationLimits = { ...DEFAULT_LIMITS }
 
-  const contracts = (bundle.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    // Skip disabled contracts
-    if (contract.enabled === false) continue
+  const rules = (bundle.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    // Skip disabled rules
+    if (rule.enabled === false) continue
 
-    const contractType = contract.type as string
-    const contractMode = (contract.mode as string) ?? defaultMode
+    const contractType = rule.type as string
+    const contractMode = (rule.mode as string) ?? defaultMode
 
     if (contractType === 'pre') {
-      preconditions.push(compilePre(contract, contractMode, customOps, customSels))
+      preconditions.push(compilePre(rule, contractMode, customOps, customSels))
     } else if (contractType === 'post') {
-      postconditions.push(compilePost(contract, contractMode, customOps, customSels))
+      postconditions.push(compilePost(rule, contractMode, customOps, customSels))
     } else if (contractType === 'session') {
       // Use _observe (TS) not _shadow (Python)
-      const isObserve = (contract._observe as boolean) ?? (contract._shadow as boolean) ?? false
+      const isObserve = (rule._observe as boolean) ?? (rule._shadow as boolean) ?? false
       if (!isObserve) {
-        limits = mergeSessionLimits(contract, limits)
+        limits = mergeSessionLimits(rule, limits)
       }
-      sessionContracts.push(compileSession(contract, contractMode, limits))
+      sessionContracts.push(compileSession(rule, contractMode, limits))
     } else if (contractType === 'sandbox') {
-      sandboxContracts.push(compileSandbox(contract, contractMode))
+      sandboxContracts.push(compileSandbox(rule, contractMode))
     } else {
       throw new EdictumConfigError(
-        `Unknown contract type "${contractType}" in contract "${contract.id ?? 'unknown'}". ` +
+        `Unknown rule type "${contractType}" in rule "${rule.id ?? 'unknown'}". ` +
           `Expected "pre", "post", "session", or "sandbox".`,
       )
     }

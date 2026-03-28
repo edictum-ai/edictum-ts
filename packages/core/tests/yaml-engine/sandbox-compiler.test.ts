@@ -2,8 +2,8 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { createEnvelope } from '../../src/envelope.js'
-import type { ToolEnvelope } from '../../src/envelope.js'
+import { createEnvelope } from '../../src/tool-call.js'
+import type { ToolCall } from '../../src/tool-call.js'
 import {
   extractCommand,
   extractPaths,
@@ -17,7 +17,7 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function _bashEnvelope(command: string): ToolEnvelope {
+function _bashEnvelope(command: string): ToolCall {
   return createEnvelope('Bash', { command }, { bashCommand: command })
 }
 

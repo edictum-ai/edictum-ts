@@ -1,5 +1,5 @@
 /**
- * SSE client for receiving contract bundle updates from edictum-server.
+ * SSE client for receiving rule bundle updates from edictum-server.
  *
  * SIZE APPROVAL: This file exceeds 200 lines. SSE parsing, reconnect
  * logic, and event handling form a cohesive streaming client.
@@ -15,12 +15,12 @@ const MAX_SSE_BUFFER = 1_048_576 // 1 MB
 const SSE_IDLE_TIMEOUT_MS = 120_000 // 2 minutes
 
 /**
- * Receives contract bundle updates from edictum-server via SSE.
+ * Receives rule bundle updates from edictum-server via SSE.
  *
  * Subscribes to /api/v1/stream and yields updated bundles.
  * Implements auto-reconnect with exponential backoff.
  */
-export class ServerContractSource {
+export class ServerRuleSource {
   private readonly _client: EdictumServerClient
   private readonly _reconnectDelay: number
   private readonly _maxReconnectDelay: number
@@ -60,7 +60,7 @@ export class ServerContractSource {
   }
 
   /**
-   * Yield contract bundles as they arrive via SSE.
+   * Yield rule bundles as they arrive via SSE.
    *
    * Passes env, bundle_name, and policy_version as query params
    * so the server can filter events and detect drift.

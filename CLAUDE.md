@@ -1,10 +1,10 @@
 # CLAUDE.md — Edictum JS
 
-> Runtime contract enforcement for AI agent tool calls. TypeScript port of the edictum Python library with full feature parity.
+> Runtime rule enforcement for AI agent tool calls. TypeScript port of the edictum Python library with full feature parity.
 
 ## What is Edictum
 
-Runtime contract enforcement for AI agent tool calls. Deterministic pipeline: preconditions, postconditions, session contracts, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
+Runtime rule enforcement for AI agent tool calls. Deterministic pipeline: checks before execution, output checks after execution, session rules, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
 
 Current version: 0.2.0 (npm: `@edictum/core`)
 
@@ -12,13 +12,13 @@ Current version: 0.2.0 (npm: `@edictum/core`)
 
 **`@edictum/core` runs fully standalone. No server dependency. No adapter dependency. No framework dependency.**
 
-Core provides interfaces and implementations. The server package provides HTTP-backed implementations. Adapters are thin translation layers — governance logic stays in the pipeline.
+Core provides interfaces and implementations. The server package provides HTTP-backed implementations. Adapters are thin translation layers — rule enforcement logic stays in the pipeline.
 
 ## Architecture: Monorepo
 
 ```
 packages/
-├── core/              # @edictum/core — pipeline, contracts, audit, session, YAML engine
+├── core/              # @edictum/core — pipeline, rules, audit, session, YAML engine
 ├── vercel-ai/         # @edictum/vercel-ai — Vercel AI SDK adapter
 ├── openai-agents/     # @edictum/openai-agents — OpenAI Agents SDK adapter
 ├── openclaw/          # @edictum/edictum — OpenClaw adapter
@@ -44,10 +44,10 @@ packages/
 1. **Full feature parity with Python.** 147 features across 12 categories. Every feature has a parity test ID. If Python passes and TS fails, it's a bug.
 2. **Security is non-negotiable.** This is a security product. No shortcuts, no "good enough", no deferred fixes for vulnerabilities. Fail closed on every error path.
 3. **Minimal runtime deps in core.** js-yaml is a direct dependency. Optional: ajv, @opentelemetry/\*, @noble/ed25519.
-4. **Plain objects for contracts.** Interfaces define the shape. TypeScript validates at compile time. No decorators, no builders, no hidden metadata.
+4. **Plain objects for rules.** Interfaces define the shape. TypeScript validates at compile time. No decorators, no builders, no hidden metadata.
 5. **All async.** Every pipeline, session, and audit sink method is async. No sync variants.
-6. **Immutability by default.** ToolEnvelope is `Readonly<T>` + `Object.freeze()` + deep freeze. Principal is frozen. Contract state swaps atomically.
-7. **Adapters are thin.** All governance logic lives in GovernancePipeline. Adapters only translate between framework input/output and the pipeline.
+6. **Immutability by default.** `ToolCall` is `Readonly<T>` + `Object.freeze()` + deep freeze. Principal is frozen. Rule state swaps atomically.
+7. **Adapters are thin.** All rule enforcement logic lives in `CheckPipeline`. Adapters only translate between framework input/output and the pipeline.
 8. **Adversarial tests before ship.** Every security boundary has bypass tests. Positive tests prove it works. Adversarial tests prove it doesn't break.
 
 ## Coding Standards
@@ -55,7 +55,7 @@ packages/
 ### TypeScript
 
 - **TypeScript strict mode.** No `any` unless genuinely unavoidable and documented with a comment explaining why.
-- **`Readonly<T>` for immutable data.** All envelope, verdict, and decision types are readonly.
+- **`Readonly<T>` for immutable data.** All tool-call, decision, and violation types are readonly.
 - **`as const` + string literal unions** for enums. No TypeScript `enum` keyword.
 - **`interface` for protocols.** StorageBackend, AuditSink, ApprovalBackend are all interfaces.
 - **Async everywhere.** All pipeline, session, and audit sink methods are async.
@@ -72,37 +72,44 @@ packages/
 - **No premature abstraction.** Don't build extension points until there's a second user.
 - **No over-engineering.** Only make changes that are directly requested or clearly necessary.
 
-## Contract API Design
+## Rule API Design
 
-Contracts use **plain objects** with TypeScript interfaces. This is the most AI-friendly and most explicit API:
+Rules use **plain objects** with TypeScript interfaces. This is the most AI-friendly and most explicit API:
 
 ```typescript
+import { Decision, Edictum } from '@edictum/core'
+import type { Precondition } from '@edictum/core'
+
 const noRm: Precondition = {
   tool: 'Bash',
-  check: async (envelope) => {
-    if (envelope.bashCommand?.includes('rm -rf')) return Verdict.fail('Cannot run rm -rf')
-    return Verdict.pass()
+  check: async (toolCall) => {
+    if (toolCall.bashCommand?.includes('rm -rf')) return Decision.fail('Cannot run rm -rf')
+    return Decision.pass_()
   },
 }
 
-const guard = new Edictum({ contracts: [noRm] })
+const guard = new Edictum({ rules: [noRm] })
 ```
 
 Why plain objects: full autocomplete, compile-time validation, no hidden state, serializable, most reliable for AI-generated code.
 
 ## Terminology Enforcement
 
-Inherited from the Python library. ALL code, comments, docstrings, CLI output, and docs MUST use canonical terms:
+Inherited from the M1 terminology guide. ALL code, comments, docstrings, CLI output, and docs MUST use canonical terms in prose:
 
-| Wrong                   | Correct              |
-| ----------------------- | -------------------- |
-| rule / rules (in prose) | contract / contracts |
-| blocked                 | denied               |
-| engine (for runtime)    | pipeline             |
-| shadow mode             | observe mode         |
-| alert                   | finding              |
+| Banned                   | Canonical              |
+| ------------------------ | ---------------------- |
+| contract / contracts     | rule / rules           |
+| denied                   | blocked                |
+| finding / findings       | violation / violations |
+| engine / workflow / flow | pipeline               |
+| shadow mode              | observe mode           |
+| function call / action   | tool call              |
+| contract bundle          | ruleset                |
 
-**No exceptions.**
+**No exceptions in prose.**
+
+For code identifiers, use the actual exported symbol names from the repo.
 
 ## API Design Checklist
 
@@ -110,7 +117,7 @@ Before adding any new public API:
 
 - **Every accepted parameter has an observable effect.** If unimplemented, throw — never silently ignore.
 - **Collection parameters have documented merge semantics.** Document whether it EXTENDS or REPLACES defaults.
-- **Deny decisions propagate end-to-end.** Trace deny through every adapter. Never return "allow" after a deny.
+- **Block decisions propagate end-to-end.** Trace block through every adapter. Never return "allow" after a blocked decision.
 - **Callbacks fire exactly once.** Assert `callback.call_count === 1` in tests.
 - **All adapters handle the new feature.** Run adapter parity tests after any change.
 
@@ -152,7 +159,7 @@ Examples:
 
 147 features across 12 categories must pass in both Python and TypeScript. See memory file `project_parity_matrix_detail.md` for the full matrix with test IDs.
 
-Cross-language validation: shared YAML contract bundles + JSON input/output fixtures. Same input → same output → parity proven.
+Cross-language validation: shared YAML rulesets + JSON input/output fixtures. Same input → same output → parity proven.
 
 ## Bug & Issue Triage Rule
 
@@ -188,13 +195,13 @@ pnpm --filter @edictum/core test -- --grep "adapter parity"
 
 ## YAML Schema
 
-The contract schema lives in the `edictum-schemas` repo — single source of truth. Both this repo and the Python repo consume it as a dependency.
+The ruleset schema lives in the `edictum-schemas` repo — single source of truth. Both this repo and the Python repo consume it as a dependency.
 
-- `apiVersion: edictum/v1`, `kind: ContractBundle`
-- Contract types: `type: pre` (deny/approve), `type: post` (warn/redact/deny), `type: session` (deny only), `type: sandbox` (allowlist-based)
+- `apiVersion: edictum/v1`, `kind: Ruleset`
+- Rule types: `type: pre` (`action: block` / `action: ask`), `type: post` (`action: warn` / `action: redact` / `action: block`), `type: session` (`action: block` only), `type: sandbox` (allowlist-based)
 - Conditions: `when:` with boolean AST (`all/any/not`) and leaves (`selector: {operator: value}`)
 - 15 operators: exists, equals, not_equals, in, not_in, contains, contains_any, starts_with, ends_with, matches, matches_any, gt, gte, lt, lte
-- Missing fields evaluate to `false`. Type mismatches yield deny/warn + `policyError: true`
+- Missing fields evaluate to `false`. Type mismatches yield block/warn + `policyError: true`
 
 ## Ecosystem Context
 
@@ -203,9 +210,9 @@ Edictum is four repos that work together:
 - **edictum** (core Python): `edictum-ai/edictum` — MIT Python library. PyPI: `edictum`.
 - **edictum-ts** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
 - **edictum-console** (server): `edictum-ai/edictum-console` — Self-hostable FastAPI + React SPA.
-- **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared YAML contract schema.
+- **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared YAML ruleset schema.
 
-Both core libraries (Python and TS) work standalone. Console is an optional enhancement. Schema repo is the single source of truth for the contract format.
+Both core libraries (Python and TS) work standalone. Console is an optional enhancement. Schema repo is the single source of truth for the ruleset format.
 
 ## Cross-SDK Conformance Workflow
 

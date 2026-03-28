@@ -1,8 +1,8 @@
 # @edictum/claude-sdk
 
-Claude Agent SDK adapter for Edictum contract enforcement.
+Claude Agent SDK adapter for Edictum rule enforcement.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
 
 ## Install
 
@@ -16,18 +16,18 @@ pnpm add @edictum/claude-sdk @edictum/core
 import { Edictum } from '@edictum/core'
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
 
-const guard = Edictum.fromYaml('contracts.yaml')
+const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new ClaudeAgentSDKAdapter(guard)
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
 ```
 
 ## API
 
-- `ClaudeAgentSDKAdapter` -- adapter class
-  - `toSdkHooks(options?)` -- returns `{ PreToolUse, PostToolUse }` hook callback arrays
-  - `setPrincipal(principal)` -- update principal mid-session
-- `ClaudeAgentSDKAdapterOptions` -- constructor options (`sessionId`, `principal`, `principalResolver`)
-- `ToSdkHooksOptions` -- `{ onPostconditionWarn }` callback
+- `ClaudeAgentSDKAdapter` — adapter class
+  - `toSdkHooks(options?)` — returns `{ PreToolUse, PostToolUse }` hook callback arrays
+  - `setPrincipal(principal)` — update principal mid-session
+- `ClaudeAgentSDKAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
+- `ToSdkHooksOptions` — `{ onPostconditionWarn }` callback
 
 ## Links
 

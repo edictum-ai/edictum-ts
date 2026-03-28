@@ -10,15 +10,15 @@
 
 import type { Edictum } from './guard.js'
 import type { AuditAction } from './audit.js'
-import type { Principal, ToolEnvelope } from './envelope.js'
+import type { Principal, ToolCall } from './tool-call.js'
 import type { PreDecision } from './pipeline.js'
 import type { Session } from './session.js'
 
 import { ApprovalStatus } from './approval.js'
 import { AuditAction as AA, createAuditEvent } from './audit.js'
-import { createEnvelope } from './envelope.js'
+import { createEnvelope } from './tool-call.js'
 import { EdictumDenied, EdictumToolError } from './errors.js'
-import { GovernancePipeline } from './pipeline.js'
+import { CheckPipeline } from './pipeline.js'
 import { Session as SessionClass } from './session.js'
 
 // ---------------------------------------------------------------------------
@@ -70,20 +70,20 @@ export interface RunOptions {
 
 async function _emitRunPreAudit(
   guard: Edictum,
-  envelope: Readonly<ToolEnvelope>,
+  toolCall: Readonly<ToolCall>,
   session: Session,
   action: AuditAction,
   pre: PreDecision,
 ): Promise<void> {
   const event = createAuditEvent({
     action,
-    runId: envelope.runId,
-    callId: envelope.callId,
-    toolName: envelope.toolName,
-    toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-    sideEffect: envelope.sideEffect,
-    environment: envelope.environment,
-    principal: envelope.principal ? ({ ...envelope.principal } as Record<string, unknown>) : null,
+    runId: toolCall.runId,
+    callId: toolCall.callId,
+    toolName: toolCall.toolName,
+    toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+    sideEffect: toolCall.sideEffect,
+    environment: toolCall.environment,
+    principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
     decisionSource: pre.decisionSource,
     decisionName: pre.decisionName,
     reason: pre.reason,
@@ -106,7 +106,7 @@ async function _emitRunPreAudit(
 /**
  * Framework-agnostic entrypoint for governed tool execution.
  *
- * Creates session, pipeline, envelope. Runs pre-execute governance,
+ * Creates session, pipeline, toolCall. Runs pre-execute governance,
  * handles approval flow, executes the tool, runs post-execute governance,
  * emits audit events, and returns the (potentially redacted) result.
  */
@@ -119,7 +119,7 @@ export async function run(
 ): Promise<unknown> {
   const sessionId = options?.sessionId ?? guard.sessionId
   const session = new SessionClass(sessionId, guard.backend)
-  const pipeline = new GovernancePipeline(guard)
+  const pipeline = new CheckPipeline(guard)
 
   // Allow per-call environment override; fall back to guard-level default
   const env = options?.environment ?? guard.environment
@@ -133,7 +133,7 @@ export async function run(
     }
   }
 
-  const envelope = createEnvelope(toolName, args, {
+  const toolCall = createEnvelope(toolName, args, {
     runId: sessionId,
     environment: env,
     registry: guard.toolRegistry,
@@ -144,7 +144,7 @@ export async function run(
   await session.incrementAttempts()
 
   // TODO: Phase 3 — start OTel span
-  // const span = guard.telemetry.startToolSpan(envelope);
+  // const span = guard.telemetry.startToolSpan(toolCall);
 
   try {
     // TODO: Phase 3 — set policy version on span
@@ -153,7 +153,7 @@ export async function run(
     // }
 
     // Pre-execute
-    const pre = await pipeline.preExecute(envelope, session)
+    const pre = await pipeline.preExecute(toolCall, session)
 
     // Handle pending_approval: request approval from backend
     if (pre.action === 'pending_approval') {
@@ -166,13 +166,13 @@ export async function run(
         )
       }
 
-      const principalDict = envelope.principal
-        ? ({ ...envelope.principal } as Record<string, unknown>)
+      const principalDict = toolCall.principal
+        ? ({ ...toolCall.principal } as Record<string, unknown>)
         : null
 
       const approvalRequest = await guard._approvalBackend.requestApproval(
-        envelope.toolName,
-        envelope.args as Record<string, unknown>,
+        toolCall.toolName,
+        toolCall.args as Record<string, unknown>,
         pre.approvalMessage ?? pre.reason ?? '',
         {
           timeout: pre.approvalTimeout,
@@ -181,7 +181,7 @@ export async function run(
         },
       )
 
-      await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_REQUESTED, pre)
+      await _emitRunPreAudit(guard, toolCall, session, AA.CALL_APPROVAL_REQUESTED, pre)
 
       const decision = await guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
@@ -191,22 +191,22 @@ export async function run(
       // Resolve approval: approved, denied, or timeout (with timeout_effect)
       let approved = false
       if (decision.status === ApprovalStatus.TIMEOUT) {
-        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_TIMEOUT, pre)
+        await _emitRunPreAudit(guard, toolCall, session, AA.CALL_APPROVAL_TIMEOUT, pre)
         if (pre.approvalTimeoutEffect === 'allow') {
           approved = true
         }
       } else if (!decision.approved) {
-        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_DENIED, pre)
+        await _emitRunPreAudit(guard, toolCall, session, AA.CALL_APPROVAL_DENIED, pre)
       } else {
         approved = true
-        await _emitRunPreAudit(guard, envelope, session, AA.CALL_APPROVAL_GRANTED, pre)
+        await _emitRunPreAudit(guard, toolCall, session, AA.CALL_APPROVAL_GRANTED, pre)
       }
 
       if (approved) {
-        // TODO: Phase 3 — guard.telemetry.recordAllowed(envelope)
+        // TODO: Phase 3 — guard.telemetry.recordAllowed(toolCall)
         if (guard._onAllow) {
           try {
-            guard._onAllow(envelope)
+            guard._onAllow(toolCall)
           } catch {
             // on_allow callback raised — swallow
           }
@@ -216,10 +216,10 @@ export async function run(
         // approval-granted path handles its own audit and callbacks.
       } else {
         const denyReason = decision.reason ?? pre.reason ?? ''
-        // TODO: Phase 3 — guard.telemetry.recordDenial(envelope, denyReason)
+        // TODO: Phase 3 — guard.telemetry.recordDenial(toolCall, denyReason)
         if (guard._onDeny) {
           try {
-            guard._onDeny(envelope, denyReason, pre.decisionName)
+            guard._onDeny(toolCall, denyReason, pre.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
@@ -233,7 +233,7 @@ export async function run(
       }
     }
 
-    // Determine if this is a real deny or just per-contract observed denials
+    // Determine if this is a real deny or just per-rule observed denials
     const realDeny = pre.action === 'deny' && !pre.observed
 
     // Skip pre-execution audit for approval-granted path (already handled above)
@@ -241,13 +241,13 @@ export async function run(
       // Fall through directly to tool execution
     } else if (realDeny) {
       const auditAction = guard.mode === 'observe' ? AA.CALL_WOULD_DENY : AA.CALL_DENIED
-      await _emitRunPreAudit(guard, envelope, session, auditAction, pre)
-      // TODO: Phase 3 — guard.telemetry.recordDenial(envelope, pre.reason)
+      await _emitRunPreAudit(guard, toolCall, session, auditAction, pre)
+      // TODO: Phase 3 — guard.telemetry.recordDenial(toolCall, pre.reason)
 
       if (guard.mode === 'enforce') {
         if (guard._onDeny) {
           try {
-            guard._onDeny(envelope, pre.reason ?? '', pre.decisionName)
+            guard._onDeny(toolCall, pre.reason ?? '', pre.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
@@ -258,19 +258,19 @@ export async function run(
       // observe mode: fall through to execute
       // TODO: Phase 3 — span.setAttribute("governance.action", "would_deny")
     } else {
-      // Emit CALL_WOULD_DENY for any per-contract observed denials
+      // Emit CALL_WOULD_DENY for any per-rule observed denials
       for (const cr of pre.contractsEvaluated) {
         if (cr['observed'] && !cr['passed']) {
           const observedEvent = createAuditEvent({
             action: AA.CALL_WOULD_DENY,
-            runId: envelope.runId,
-            callId: envelope.callId,
-            toolName: envelope.toolName,
-            toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-            sideEffect: envelope.sideEffect,
-            environment: envelope.environment,
-            principal: envelope.principal
-              ? ({ ...envelope.principal } as Record<string, unknown>)
+            runId: toolCall.runId,
+            callId: toolCall.callId,
+            toolName: toolCall.toolName,
+            toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+            sideEffect: toolCall.sideEffect,
+            environment: toolCall.environment,
+            principal: toolCall.principal
+              ? ({ ...toolCall.principal } as Record<string, unknown>)
               : null,
             decisionSource: 'precondition',
             decisionName: cr['name'] as string,
@@ -284,11 +284,11 @@ export async function run(
         }
       }
 
-      await _emitRunPreAudit(guard, envelope, session, AA.CALL_ALLOWED, pre)
-      // TODO: Phase 3 — guard.telemetry.recordAllowed(envelope)
+      await _emitRunPreAudit(guard, toolCall, session, AA.CALL_ALLOWED, pre)
+      // TODO: Phase 3 — guard.telemetry.recordAllowed(toolCall)
       if (guard._onAllow) {
         try {
-          guard._onAllow(envelope)
+          guard._onAllow(toolCall)
         } catch {
           // on_allow callback raised — swallow
         }
@@ -301,14 +301,14 @@ export async function run(
       const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
       const observeEvent = createAuditEvent({
         action: observeAction,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        toolName: envelope.toolName,
-        toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        toolName: toolCall.toolName,
+        toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         decisionSource: sr['source'] as string | null,
         decisionName: sr['name'] as string | null,
@@ -324,9 +324,9 @@ export async function run(
     let result: unknown
     let toolSuccess: boolean
     try {
-      // Use the frozen envelope.args snapshot — prevents TOCTOU between
+      // Use the frozen toolCall.args snapshot — prevents TOCTOU between
       // governance evaluation and tool execution
-      result = toolCallable(envelope.args as Record<string, unknown>)
+      result = toolCallable(toolCall.args as Record<string, unknown>)
       // Await if the callable returns a promise
       if (
         result != null &&
@@ -346,20 +346,20 @@ export async function run(
     }
 
     // Post-execute
-    const post = await pipeline.postExecute(envelope, result, toolSuccess)
+    const post = await pipeline.postExecute(toolCall, result, toolSuccess)
     await session.recordExecution(toolName, toolSuccess)
 
     // Emit post-execute audit
     const postAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
     const postEvent = createAuditEvent({
       action: postAction,
-      runId: envelope.runId,
-      callId: envelope.callId,
-      toolName: envelope.toolName,
-      toolArgs: guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-      sideEffect: envelope.sideEffect,
-      environment: envelope.environment,
-      principal: envelope.principal ? ({ ...envelope.principal } as Record<string, unknown>) : null,
+      runId: toolCall.runId,
+      callId: toolCall.callId,
+      toolName: toolCall.toolName,
+      toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+      sideEffect: toolCall.sideEffect,
+      environment: toolCall.environment,
+      principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
       toolSuccess,
       postconditionsPassed: post.postconditionsPassed,
       contractsEvaluated: post.contractsEvaluated,

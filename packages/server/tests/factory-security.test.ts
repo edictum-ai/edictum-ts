@@ -78,7 +78,7 @@ describe('security', () => {
     ).rejects.toThrow()
   })
 
-  it('SSE watcher keeps existing contracts when unsigned bundle arrives', async () => {
+  it('SSE watcher keeps existing rules when unsigned bundle arrives', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
     const unsignedBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64 })
 
@@ -202,7 +202,7 @@ describe('server-assignment path (bundleName=null)', () => {
 
   it('succeeds when SSE delivers assignment before timeout', async () => {
     const assignmentEvent = JSON.stringify({ bundle_name: 'assigned-bundle' })
-    const assignedYamlB64 = Buffer.from(TEST_YAML.replace('no-rm', 'assigned-contract')).toString(
+    const assignedYamlB64 = Buffer.from(TEST_YAML.replace('no-rm', 'assigned-rule')).toString(
       'base64',
     )
 

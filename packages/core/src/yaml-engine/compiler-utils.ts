@@ -2,7 +2,7 @@
 
 import { EdictumConfigError } from '../errors.js'
 import { RedactionPolicy } from '../redaction.js'
-import type { ToolEnvelope } from '../envelope.js'
+import type { ToolCall } from '../tool-call.js'
 import {
   BUILTIN_OPERATOR_NAMES,
   _MISSING,
@@ -25,14 +25,14 @@ const _PLACEHOLDER_CAP = 200
  */
 export function expandMessage(
   template: string,
-  envelope: ToolEnvelope,
+  toolCall: ToolCall,
   outputText?: string | null,
   customSelectors?: Readonly<Record<string, CustomSelector>> | null,
 ): string {
   const redaction = new RedactionPolicy()
 
   return template.replace(_PLACEHOLDER_RE, (match, selectorRaw: string) => {
-    const value = resolveSelector(selectorRaw, envelope, outputText, customSelectors)
+    const value = resolveSelector(selectorRaw, toolCall, outputText, customSelectors)
     if (value === _MISSING || value == null) return match
     let text = String(value)
     if (redaction._looksLikeSecret(text)) text = '[REDACTED]'
@@ -51,11 +51,11 @@ export function validateOperators(
   customOperators: Readonly<Record<string, unknown>> | null,
 ): void {
   const known = new Set([...BUILTIN_OPERATOR_NAMES, ...Object.keys(customOperators ?? {})])
-  const contracts = (bundle.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    const when = contract.when as Record<string, unknown> | undefined
+  const rules = (bundle.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    const when = rule.when as Record<string, unknown> | undefined
     if (when) {
-      _validateExpressionOperators(when, known, contract.id as string)
+      _validateExpressionOperators(when, known, rule.id as string)
     }
   }
 }
@@ -63,25 +63,25 @@ export function validateOperators(
 function _validateExpressionOperators(
   expr: unknown,
   known: ReadonlySet<string>,
-  contractId: string,
+  ruleId: string,
 ): void {
   if (expr == null || typeof expr !== 'object') return
   const e = expr as Record<string, unknown>
 
   if ('all' in e) {
     for (const sub of e.all as Record<string, unknown>[]) {
-      _validateExpressionOperators(sub, known, contractId)
+      _validateExpressionOperators(sub, known, ruleId)
     }
     return
   }
   if ('any' in e) {
     for (const sub of e.any as Record<string, unknown>[]) {
-      _validateExpressionOperators(sub, known, contractId)
+      _validateExpressionOperators(sub, known, ruleId)
     }
     return
   }
   if ('not' in e) {
-    _validateExpressionOperators(e.not, known, contractId)
+    _validateExpressionOperators(e.not, known, ruleId)
     return
   }
 
@@ -90,7 +90,7 @@ function _validateExpressionOperators(
     if (operator != null && typeof operator === 'object') {
       for (const opName of Object.keys(operator as Record<string, unknown>)) {
         if (!known.has(opName)) {
-          throw new EdictumConfigError(`Contract '${contractId}': unknown operator '${opName}'`)
+          throw new EdictumConfigError(`Rule '${ruleId}': unknown operator '${opName}'`)
         }
       }
     }

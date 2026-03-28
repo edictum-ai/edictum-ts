@@ -9,7 +9,7 @@ import { EdictumConfigError } from '../errors.js'
 /**
  * Basic structural validation of a parsed YAML bundle.
  *
- * Checks apiVersion, kind, metadata, and contracts array.
+ * Checks apiVersion, kind, metadata, and rules array.
  * Full JSON Schema validation requires the edictum-schemas package (future).
  */
 export function validateSchema(data: Record<string, unknown>): void {
@@ -18,16 +18,16 @@ export function validateSchema(data: Record<string, unknown>): void {
       `Schema validation failed: apiVersion must be 'edictum/v1', got '${String(data.apiVersion)}'`,
     )
   }
-  if (data.kind !== 'ContractBundle') {
+  if (data.kind !== 'Ruleset') {
     throw new EdictumConfigError(
-      `Schema validation failed: kind must be 'ContractBundle', got '${String(data.kind)}'`,
+      `Schema validation failed: kind must be 'Ruleset', got '${String(data.kind)}'`,
     )
   }
   if (data.metadata != null && typeof data.metadata !== 'object') {
     throw new EdictumConfigError('Schema validation failed: metadata must be an object')
   }
-  if (!Array.isArray(data.contracts)) {
-    throw new EdictumConfigError('Schema validation failed: contracts must be an array')
+  if (!Array.isArray(data.rules)) {
+    throw new EdictumConfigError('Schema validation failed: rules must be an array')
   }
 }
 
@@ -35,43 +35,41 @@ export function validateSchema(data: Record<string, unknown>): void {
 // Unique IDs
 // ---------------------------------------------------------------------------
 
-// Reject control characters in contract IDs — null bytes, newlines, carriage
+// Reject control characters in rule IDs — null bytes, newlines, carriage
 // returns, and other C0/C1 control chars could corrupt storage keys or logs.
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/
 
 // JSON Schema: "pattern": "^[a-z0-9][a-z0-9_-]*$"
 const CONTRACT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/
 
-/** Validate a single contract ID for dangerous characters and format. */
-function validateContractId(contractId: string): void {
-  if (contractId.length > 10_000) {
-    throw new EdictumConfigError('Contract id exceeds maximum length')
+/** Validate a single rule ID for dangerous characters and format. */
+function validateContractId(ruleId: string): void {
+  if (ruleId.length > 10_000) {
+    throw new EdictumConfigError('Rule id exceeds maximum length')
   }
   // Control chars checked first — more specific error than pattern mismatch.
-  if (CONTROL_CHAR_RE.test(contractId)) {
+  if (CONTROL_CHAR_RE.test(ruleId)) {
     throw new EdictumConfigError(
-      `Contract id contains control characters: '${contractId.replace(CONTROL_CHAR_RE, '\\x??')}'`,
+      `Rule id contains control characters: '${ruleId.replace(CONTROL_CHAR_RE, '\\x??')}'`,
     )
   }
-  if (!CONTRACT_ID_RE.test(contractId)) {
-    throw new EdictumConfigError(
-      `Contract id '${contractId}' must match pattern ^[a-z0-9][a-z0-9_-]*$`,
-    )
+  if (!CONTRACT_ID_RE.test(ruleId)) {
+    throw new EdictumConfigError(`Rule id '${ruleId}' must match pattern ^[a-z0-9][a-z0-9_-]*$`)
   }
 }
 
-/** Ensure all contract IDs are unique within the bundle and free of control characters. */
+/** Ensure all rule IDs are unique within the bundle and free of control characters. */
 export function validateUniqueIds(data: Record<string, unknown>): void {
   const ids = new Set<string>()
-  const contracts = (data.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    const contractId = contract.id as string | undefined
-    if (contractId != null) {
-      validateContractId(contractId)
-      if (ids.has(contractId)) {
-        throw new EdictumConfigError(`Duplicate contract id: '${contractId}'`)
+  const rules = (data.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    const ruleId = rule.id as string | undefined
+    if (ruleId != null) {
+      validateContractId(ruleId)
+      if (ids.has(ruleId)) {
+        throw new EdictumConfigError(`Duplicate rule id: '${ruleId}'`)
       }
-      ids.add(contractId)
+      ids.add(ruleId)
     }
   }
 }
@@ -82,9 +80,9 @@ export function validateUniqueIds(data: Record<string, unknown>): void {
 
 /** Compile all regex patterns at load time to catch invalid patterns early. */
 export function validateRegexes(data: Record<string, unknown>): void {
-  const contracts = (data.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    const when = contract.when
+  const rules = (data.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    const when = rule.when
     if (when != null) {
       validateExpressionRegexes(when as Record<string, unknown>)
     }
@@ -133,15 +131,15 @@ function tryCompileRegex(pattern: string): void {
 // Pre-selector validation
 // ---------------------------------------------------------------------------
 
-/** Reject output.text selectors in type: pre contracts (spec violation). */
+/** Reject output.text selectors in type: pre rules (spec violation). */
 export function validatePreSelectors(data: Record<string, unknown>): void {
-  const contracts = (data.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    if (contract.type !== 'pre') continue
-    const when = contract.when
+  const rules = (data.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    if (rule.type !== 'pre') continue
+    const when = rule.when
     if (when != null && expressionHasSelector(when as Record<string, unknown>, 'output.text')) {
       throw new EdictumConfigError(
-        `Contract '${(contract.id as string) ?? '?'}': output.text selector is not available in type: pre contracts`,
+        `Rule '${(rule.id as string) ?? '?'}': output.text selector is not available in type: pre rules`,
       )
     }
   }
@@ -158,29 +156,29 @@ function expressionHasSelector(expr: unknown, target: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Sandbox contract validation
+// Sandbox rule validation
 // ---------------------------------------------------------------------------
 
-/** Validate sandbox contract field dependencies. */
+/** Validate sandbox rule field dependencies. */
 export function validateSandboxContracts(data: Record<string, unknown>): void {
-  const contracts = (data.contracts ?? []) as Record<string, unknown>[]
-  for (const contract of contracts) {
-    if (contract.type !== 'sandbox') continue
-    const cid = (contract.id as string) ?? '?'
+  const rules = (data.rules ?? []) as Record<string, unknown>[]
+  for (const rule of rules) {
+    if (rule.type !== 'sandbox') continue
+    const cid = (rule.id as string) ?? '?'
 
-    if ('not_within' in contract && !('within' in contract)) {
-      throw new EdictumConfigError(`Contract '${cid}': not_within requires within to also be set`)
+    if ('not_within' in rule && !('within' in rule)) {
+      throw new EdictumConfigError(`Rule '${cid}': not_within requires within to also be set`)
     }
-    if ('not_allows' in contract && !('allows' in contract)) {
-      throw new EdictumConfigError(`Contract '${cid}': not_allows requires allows to also be set`)
+    if ('not_allows' in rule && !('allows' in rule)) {
+      throw new EdictumConfigError(`Rule '${cid}': not_allows requires allows to also be set`)
     }
-    if ('not_allows' in contract) {
-      const notAllows = (contract.not_allows ?? {}) as Record<string, unknown>
+    if ('not_allows' in rule) {
+      const notAllows = (rule.not_allows ?? {}) as Record<string, unknown>
       if ('domains' in notAllows) {
-        const allows = (contract.allows ?? {}) as Record<string, unknown>
+        const allows = (rule.allows ?? {}) as Record<string, unknown>
         if (!('domains' in allows)) {
           throw new EdictumConfigError(
-            `Contract '${cid}': not_allows.domains requires allows.domains to also be set`,
+            `Rule '${cid}': not_allows.domains requires allows.domains to also be set`,
           )
         }
       }

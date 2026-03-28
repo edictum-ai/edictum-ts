@@ -93,7 +93,7 @@ describe('validation', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Basic connection + initial contract fetch
+// Basic connection + initial rule fetch
 // ---------------------------------------------------------------------------
 
 describe('basic connection', () => {
@@ -242,7 +242,7 @@ describe('guard works end-to-end', () => {
     if (sg) await sg.close()
   })
 
-  it('enforces contracts from server-fetched bundle', async () => {
+  it('enforces rules from server-fetched bundle', async () => {
     setup()
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
 
@@ -476,7 +476,7 @@ describe('parameter behavior', () => {
       autoWatch: false,
       approvalBackend: customApproval,
     })
-    // Verify via internal field — no approval-type contract in the test
+    // Verify via internal field — no approval-type rule in the test
     // YAML to trigger the approval flow behaviorally.
     expect(sg.guard._approvalBackend).toBe(customApproval)
     await sg.close()

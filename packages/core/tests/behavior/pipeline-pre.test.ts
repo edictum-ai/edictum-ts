@@ -1,21 +1,21 @@
-/** Tests for GovernancePipeline.preExecute — pre-execution governance flows. */
+/** Tests for CheckPipeline.preExecute — pre-execution governance flows. */
 
 import { describe, expect, test } from 'vitest'
 
-import { Verdict } from '../../src/contracts.js'
-import type { Precondition, SessionContract } from '../../src/contracts.js'
-import { createEnvelope } from '../../src/envelope.js'
-import type { ToolEnvelope } from '../../src/envelope.js'
+import { Decision } from '../../src/rules.js'
+import type { Precondition, SessionRule } from '../../src/rules.js'
+import { createEnvelope } from '../../src/tool-call.js'
+import type { ToolCall } from '../../src/tool-call.js'
 import { EdictumConfigError } from '../../src/errors.js'
 import { Edictum } from '../../src/guard.js'
 import { HookDecision } from '../../src/hooks.js'
 import type { OperationLimits } from '../../src/limits.js'
-import { GovernancePipeline } from '../../src/pipeline.js'
+import { CheckPipeline } from '../../src/pipeline.js'
 import { Session } from '../../src/session.js'
 import { MemoryBackend } from '../../src/storage.js'
 import type { HookRegistration } from '../../src/types.js'
 import { NullAuditSink } from '../helpers.js'
-import type { Postcondition } from '../../src/contracts.js'
+import type { Postcondition } from '../../src/rules.js'
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -25,7 +25,7 @@ interface MakeGuardOptions {
   environment?: string
   mode?: 'enforce' | 'observe'
   limits?: OperationLimits
-  contracts?: (Precondition | Postcondition | SessionContract)[]
+  rules?: (Precondition | Postcondition | SessionRule)[]
   hooks?: HookRegistration[]
   backend?: MemoryBackend
   tools?: Record<string, { side_effect?: string; idempotent?: boolean }>
@@ -37,7 +37,7 @@ function makeGuard(opts: MakeGuardOptions = {}): Edictum {
     mode: opts.mode,
     auditSink: new NullAuditSink(),
     backend: opts.backend ?? new MemoryBackend(),
-    contracts: opts.contracts,
+    rules: opts.rules,
     hooks: opts.hooks,
     limits: opts.limits,
     tools: opts.tools,
@@ -52,12 +52,12 @@ describe('TestPreExecute', () => {
   test('allow_with_no_contracts', async () => {
     const backend = new MemoryBackend()
     const guard = makeGuard({ backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('allow')
     expect(decision.reason).toBeNull()
   })
@@ -69,13 +69,13 @@ describe('TestPreExecute', () => {
       backend,
     })
     const session = new Session('test', backend)
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
 
     await session.incrementAttempts()
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.decisionSource).toBe('attempt_limit')
     expect(decision.reason!.toLowerCase()).toContain('retry loop')
@@ -83,7 +83,7 @@ describe('TestPreExecute', () => {
 
   test('hook_deny', async () => {
     const backend = new MemoryBackend()
-    function denyAll(_envelope: ToolEnvelope): HookDecision {
+    function denyAll(_envelope: ToolCall): HookDecision {
       return HookDecision.deny('denied by hook')
     }
 
@@ -93,12 +93,12 @@ describe('TestPreExecute', () => {
       callback: denyAll,
     }
     const guard = makeGuard({ hooks: [hook], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.decisionSource).toBe('hook')
     expect(decision.reason).toBe('denied by hook')
@@ -108,7 +108,7 @@ describe('TestPreExecute', () => {
 
   test('hook_allow_continues', async () => {
     const backend = new MemoryBackend()
-    function allowAll(_envelope: ToolEnvelope): HookDecision {
+    function allowAll(_envelope: ToolCall): HookDecision {
       return HookDecision.allow()
     }
 
@@ -118,12 +118,12 @@ describe('TestPreExecute', () => {
       callback: allowAll,
     }
     const guard = makeGuard({ hooks: [hook], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('allow')
     expect(decision.hooksEvaluated).toHaveLength(1)
   })
@@ -132,21 +132,21 @@ describe('TestPreExecute', () => {
     const backend = new MemoryBackend()
     const mustHaveName: Precondition = {
       tool: '*',
-      check: (envelope) => {
-        if (!('name' in envelope.args)) {
-          return Verdict.fail('Missing required arg: name')
+      check: (toolCall) => {
+        if (!('name' in toolCall.args)) {
+          return Decision.fail('Missing required arg: name')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
 
-    const guard = makeGuard({ contracts: [mustHaveName], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ rules: [mustHaveName], backend })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.decisionSource).toBe('precondition')
     expect(decision.reason).toContain('name')
@@ -156,33 +156,33 @@ describe('TestPreExecute', () => {
     const backend = new MemoryBackend()
     const mustHaveName: Precondition = {
       tool: '*',
-      check: (envelope) => {
-        if (!('name' in envelope.args)) {
-          return Verdict.fail('Missing required arg: name')
+      check: (toolCall) => {
+        if (!('name' in toolCall.args)) {
+          return Decision.fail('Missing required arg: name')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
 
-    const guard = makeGuard({ contracts: [mustHaveName], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', { name: 'test' })
+    const guard = makeGuard({ rules: [mustHaveName], backend })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', { name: 'test' })
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('allow')
   })
 
   test('session_contract_deny', async () => {
     const backend = new MemoryBackend()
-    const max3Execs: SessionContract = {
+    const max3Execs: SessionRule = {
       check: async (sess) => {
         const count = await sess.executionCount()
         if (count >= 3) {
-          return Verdict.fail('Too many executions')
+          return Decision.fail('Too many executions')
         }
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
 
@@ -191,12 +191,12 @@ describe('TestPreExecute', () => {
       await session.recordExecution('T', true)
     }
 
-    const guard = makeGuard({ contracts: [max3Execs], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ rules: [max3Execs], backend })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.decisionSource).toBe('session_contract')
   })
@@ -208,14 +208,14 @@ describe('TestPreExecute', () => {
       backend,
     })
     const session = new Session('test', backend)
-    const pipeline = new GovernancePipeline(guard)
+    const pipeline = new CheckPipeline(guard)
 
     await session.recordExecution('T', true)
     await session.recordExecution('T', true)
     await session.incrementAttempts()
 
-    const envelope = createEnvelope('TestTool', {})
-    const decision = await pipeline.preExecute(envelope, session)
+    const toolCall = createEnvelope('TestTool', {})
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.decisionSource).toBe('operation_limit')
     expect(decision.decisionName).toBe('max_tool_calls')
@@ -232,13 +232,13 @@ describe('TestPreExecute', () => {
       backend,
     })
     const session = new Session('test', backend)
-    const pipeline = new GovernancePipeline(guard)
+    const pipeline = new CheckPipeline(guard)
 
     await session.recordExecution('Bash', true)
     await session.incrementAttempts()
 
-    const envelope = createEnvelope('Bash', { command: 'ls' })
-    const decision = await pipeline.preExecute(envelope, session)
+    const toolCall = createEnvelope('Bash', { command: 'ls' })
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.action).toBe('deny')
     expect(decision.reason!.toLowerCase()).toContain('per-tool limit')
   })
@@ -247,7 +247,7 @@ describe('TestPreExecute', () => {
     const backend = new MemoryBackend()
     const order: string[] = []
 
-    function trackingHook(_envelope: ToolEnvelope): HookDecision {
+    function trackingHook(_envelope: ToolCall): HookDecision {
       order.push('hook')
       return HookDecision.allow()
     }
@@ -256,7 +256,7 @@ describe('TestPreExecute', () => {
       tool: '*',
       check: (_envelope) => {
         order.push('precondition')
-        return Verdict.pass_()
+        return Decision.pass_()
       },
     }
 
@@ -266,16 +266,16 @@ describe('TestPreExecute', () => {
       callback: trackingHook,
     }
     const guard = makeGuard({
-      contracts: [trackingPrecondition],
+      rules: [trackingPrecondition],
       hooks: [hook],
       backend,
     })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    await pipeline.preExecute(envelope, session)
+    await pipeline.preExecute(toolCall, session)
     expect(order).toEqual(['hook', 'precondition'])
   })
 
@@ -283,16 +283,16 @@ describe('TestPreExecute', () => {
     const backend = new MemoryBackend()
     const checkA: Precondition = {
       tool: '*',
-      check: (_envelope) => Verdict.pass_(),
+      check: (_envelope) => Decision.pass_(),
     }
 
-    const guard = makeGuard({ contracts: [checkA], backend })
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const guard = makeGuard({ rules: [checkA], backend })
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     const session = new Session('pipeline-test', backend)
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     expect(decision.contractsEvaluated).toHaveLength(1)
     expect(decision.contractsEvaluated[0]!['type']).toBe('precondition')
     expect(decision.contractsEvaluated[0]!['passed']).toBe(true)
@@ -302,11 +302,11 @@ describe('TestPreExecute', () => {
     const backend = new MemoryBackend()
     const bashOnly: Precondition = {
       tool: 'Bash',
-      check: (_envelope) => Verdict.fail('bash denied'),
+      check: (_envelope) => Decision.fail('bash denied'),
     }
 
-    const guard = makeGuard({ contracts: [bashOnly], backend })
-    const pipeline = new GovernancePipeline(guard)
+    const guard = makeGuard({ rules: [bashOnly], backend })
+    const pipeline = new CheckPipeline(guard)
     const session = new Session('pipeline-test', backend)
 
     const readEnvelope = createEnvelope('Read', { file_path: '/tmp/x' })
@@ -329,20 +329,20 @@ describe('TestObserveMode', () => {
     const backend = new MemoryBackend()
     const alwaysFail: Precondition = {
       tool: '*',
-      check: (_envelope) => Verdict.fail('always fails'),
+      check: (_envelope) => Decision.fail('always fails'),
     }
 
     const guard = makeGuard({
       mode: 'observe',
-      contracts: [alwaysFail],
+      rules: [alwaysFail],
       backend,
     })
     const session = new Session('test', backend)
-    const pipeline = new GovernancePipeline(guard)
-    const envelope = createEnvelope('TestTool', {})
+    const pipeline = new CheckPipeline(guard)
+    const toolCall = createEnvelope('TestTool', {})
     await session.incrementAttempts()
 
-    const decision = await pipeline.preExecute(envelope, session)
+    const decision = await pipeline.preExecute(toolCall, session)
     // Pipeline returns deny — the observe-mode conversion is the caller's job
     expect(decision.action).toBe('deny')
   })
@@ -357,11 +357,11 @@ describe('TestContractTypeDiscrimination', () => {
     expect(
       () =>
         new Edictum({
-          contracts: [
+          rules: [
             {
               tool: 'Bash',
               contractType: 'unknown' as unknown as 'pre',
-              check: () => Verdict.pass_(),
+              check: () => Decision.pass_(),
             },
           ],
         }),
@@ -373,11 +373,11 @@ describe('TestContractTypeDiscrimination', () => {
     const denyAll: Precondition = {
       contractType: 'pre',
       tool: '*',
-      check: (_env) => Verdict.fail('fired'),
+      check: (_env) => Decision.fail('fired'),
     }
 
-    const guard = makeGuard({ contracts: [denyAll], backend })
-    const pipeline = new GovernancePipeline(guard)
+    const guard = makeGuard({ rules: [denyAll], backend })
+    const pipeline = new CheckPipeline(guard)
     const session = new Session('t', backend)
     await session.incrementAttempts()
 
@@ -391,11 +391,11 @@ describe('TestContractTypeDiscrimination', () => {
     const post: Postcondition = {
       contractType: 'post',
       tool: '*',
-      check: (_env, _res) => Verdict.fail('post fired'),
+      check: (_env, _res) => Decision.fail('post fired'),
     }
 
-    const guard = makeGuard({ contracts: [post], backend })
-    const pipeline = new GovernancePipeline(guard)
+    const guard = makeGuard({ rules: [post], backend })
+    const pipeline = new CheckPipeline(guard)
     const session = new Session('t', backend)
     await session.incrementAttempts()
 
@@ -410,14 +410,14 @@ describe('TestContractTypeDiscrimination', () => {
       _edictum_type: 'unknown_type',
       name: 'bad',
       tool: '*',
-      check: () => Verdict.pass_(),
+      check: () => Decision.pass_(),
     }
 
     expect(
       () =>
         new Edictum({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          contracts: [badContract as any],
+          rules: [badContract as any],
         }),
     ).toThrow(EdictumConfigError)
   })

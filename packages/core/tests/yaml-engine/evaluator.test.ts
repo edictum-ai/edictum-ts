@@ -2,8 +2,8 @@
 
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { createEnvelope, createPrincipal } from '../../src/envelope.js'
-import type { ToolEnvelope } from '../../src/envelope.js'
+import { createEnvelope, createPrincipal } from '../../src/tool-call.js'
+import type { ToolCall } from '../../src/tool-call.js'
 import {
   evaluateExpression,
   PolicyError,
@@ -19,7 +19,7 @@ function _envelope(
   args: Record<string, unknown> = {},
   environment = 'production',
   principal?: ReturnType<typeof createPrincipal> | null,
-): ToolEnvelope {
+): ToolCall {
   return createEnvelope(toolName, args, {
     environment,
     principal: principal ?? null,

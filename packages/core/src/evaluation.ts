@@ -1,12 +1,12 @@
-/** Evaluation result types for dry-run contract evaluation. */
+/** Evaluation result types for dry-run rule evaluation. */
 
 // ---------------------------------------------------------------------------
-// ContractResult
+// RuleResult
 // ---------------------------------------------------------------------------
 
-/** Result of evaluating a single contract. */
-export interface ContractResult {
-  readonly contractId: string
+/** Result of evaluating a single rule. */
+export interface RuleResult {
+  readonly ruleId: string
   readonly contractType: string // "precondition" | "postcondition" | "sandbox"
   readonly passed: boolean
   readonly message: string | null
@@ -16,13 +16,13 @@ export interface ContractResult {
   readonly policyError: boolean
 }
 
-/** Create a frozen ContractResult with defaults matching the Python dataclass. */
-export function createContractResult(
-  fields: Pick<ContractResult, 'contractId' | 'contractType' | 'passed'> &
-    Partial<Omit<ContractResult, 'contractId' | 'contractType' | 'passed'>>,
-): ContractResult {
+/** Create a frozen RuleResult with defaults matching the Python dataclass. */
+export function createRuleResult(
+  fields: Pick<RuleResult, 'ruleId' | 'contractType' | 'passed'> &
+    Partial<Omit<RuleResult, 'ruleId' | 'contractType' | 'passed'>>,
+): RuleResult {
   return Object.freeze({
-    contractId: fields.contractId,
+    ruleId: fields.ruleId,
     contractType: fields.contractType,
     passed: fields.passed,
     message: fields.message ?? null,
@@ -37,11 +37,11 @@ export function createContractResult(
 // EvaluationResult
 // ---------------------------------------------------------------------------
 
-/** Result of dry-run evaluation of a tool call against contracts. */
+/** Result of dry-run evaluation of a tool call against rules. */
 export interface EvaluationResult {
-  readonly verdict: string // "allow" | "deny" | "warn"
+  readonly decision: string // "allow" | "deny" | "warn"
   readonly toolName: string
-  readonly contracts: readonly ContractResult[]
+  readonly rules: readonly RuleResult[]
   readonly denyReasons: readonly string[]
   readonly warnReasons: readonly string[]
   readonly contractsEvaluated: number
@@ -50,13 +50,13 @@ export interface EvaluationResult {
 
 /** Create a frozen EvaluationResult with defaults matching the Python dataclass. */
 export function createEvaluationResult(
-  fields: Pick<EvaluationResult, 'verdict' | 'toolName'> &
-    Partial<Omit<EvaluationResult, 'verdict' | 'toolName'>>,
+  fields: Pick<EvaluationResult, 'decision' | 'toolName'> &
+    Partial<Omit<EvaluationResult, 'decision' | 'toolName'>>,
 ): EvaluationResult {
   return Object.freeze({
-    verdict: fields.verdict,
+    decision: fields.decision,
     toolName: fields.toolName,
-    contracts: Object.freeze([...(fields.contracts ?? [])]),
+    rules: Object.freeze([...(fields.rules ?? [])]),
     denyReasons: Object.freeze([...(fields.denyReasons ?? [])]),
     warnReasons: Object.freeze([...(fields.warnReasons ?? [])]),
     contractsEvaluated: fields.contractsEvaluated ?? 0,

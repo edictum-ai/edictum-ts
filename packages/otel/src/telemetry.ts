@@ -2,7 +2,7 @@
  * GovernanceTelemetry — OTel span and metric instrumentation.
  *
  * Wraps @opentelemetry/api to emit governance-specific spans for every
- * contract evaluation and counters for denied/allowed tool calls.
+ * rule evaluation and counters for denied/allowed tool calls.
  *
  * Install: npm install @edictum/otel @opentelemetry/api
  */
@@ -77,26 +77,26 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
   }
 
   /** Start a span for a tool call evaluation. */
-  startToolSpan(envelope: TelemetryEnvelope): TelemetrySpan {
+  startToolSpan(toolCall: TelemetryEnvelope): TelemetrySpan {
     // Sanitize toolName for span name and attributes — strip control chars
     // to prevent injection into trace backends.
-    const safeName = sanitizeToolName(envelope.toolName)
+    const safeName = sanitizeToolName(toolCall.toolName)
     const span = this._tracer.startSpan(`tool.execute ${safeName}`, {
       attributes: {
         'tool.name': safeName,
-        'tool.side_effect': sanitizeAttr(envelope.sideEffect),
-        'tool.call_index': envelope.callIndex,
-        'governance.environment': sanitizeAttr(envelope.environment),
-        'governance.run_id': sanitizeAttr(envelope.runId),
+        'tool.side_effect': sanitizeAttr(toolCall.sideEffect),
+        'tool.call_index': toolCall.callIndex,
+        'governance.environment': sanitizeAttr(toolCall.environment),
+        'governance.run_id': sanitizeAttr(toolCall.runId),
       },
     })
     return new OTelSpanWrapper(span)
   }
 
   /** Increment the denied counter for the given tool. */
-  recordDenial(envelope: TelemetryEnvelope, reason?: string): void {
+  recordDenial(toolCall: TelemetryEnvelope, reason?: string): void {
     const attrs: Record<string, string> = {
-      'tool.name': sanitizeToolName(envelope.toolName),
+      'tool.name': sanitizeToolName(toolCall.toolName),
     }
     if (reason !== undefined) {
       // Truncate to limit metric label cardinality — full reason belongs in spans
@@ -106,8 +106,8 @@ export class GovernanceTelemetry implements GovernanceTelemetryLike {
   }
 
   /** Increment the allowed counter for the given tool. */
-  recordAllowed(envelope: TelemetryEnvelope): void {
-    this._allowedCounter.add(1, { 'tool.name': sanitizeToolName(envelope.toolName) })
+  recordAllowed(toolCall: TelemetryEnvelope): void {
+    this._allowedCounter.add(1, { 'tool.name': sanitizeToolName(toolCall.toolName) })
   }
 
   /** Set span status to ERROR and end it. */

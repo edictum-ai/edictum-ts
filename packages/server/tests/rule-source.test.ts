@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { EdictumServerClient } from '../src/client.js'
-import { ServerContractSource } from '../src/contract-source.js'
+import { ServerRuleSource } from '../src/rule-source.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,7 +42,7 @@ function sseResponse(lines: string[]): Response {
 // SSE parsing
 // ---------------------------------------------------------------------------
 
-describe('ServerContractSource.watch', () => {
+describe('ServerRuleSource.watch', () => {
   it('yields contract_update events', async () => {
     const bundle = { apiVersion: 'edictum/v1', revision_hash: 'abc123' }
     const client = mockClient()
@@ -50,7 +50,7 @@ describe('ServerContractSource.watch', () => {
       sseResponse([`event: contract_update`, `data: ${JSON.stringify(bundle)}`, ``]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -73,7 +73,7 @@ describe('ServerContractSource.watch', () => {
       ]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -102,7 +102,7 @@ describe('ServerContractSource.watch', () => {
       ]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -131,7 +131,7 @@ describe('ServerContractSource.watch', () => {
       ]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -156,7 +156,7 @@ describe('ServerContractSource.watch', () => {
       ]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -182,7 +182,7 @@ describe('ServerContractSource.watch', () => {
       ]),
     )
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     for await (const item of source.watch()) {
@@ -199,10 +199,10 @@ describe('ServerContractSource.watch', () => {
 // Query params
 // ---------------------------------------------------------------------------
 
-describe('ServerContractSource query params', () => {
+describe('ServerRuleSource query params', () => {
   it('passes env to rawFetch', async () => {
     const client = mockClient({ env: 'production' })
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
 
     // Close after first fetch attempt to prevent reconnect loop
     vi.mocked(client.rawFetch).mockImplementation(async () => {
@@ -224,7 +224,7 @@ describe('ServerContractSource query params', () => {
 
   it('passes bundle_name when set', async () => {
     const client = mockClient({ bundleName: 'my-bundle' })
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
 
     vi.mocked(client.rawFetch).mockImplementation(async () => {
       await source.close()
@@ -242,7 +242,7 @@ describe('ServerContractSource query params', () => {
 
   it('passes tags as JSON when set', async () => {
     const client = mockClient({ tags: { team: 'platform' } })
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
 
     vi.mocked(client.rawFetch).mockImplementation(async () => {
       await source.close()
@@ -263,10 +263,10 @@ describe('ServerContractSource query params', () => {
 // close()
 // ---------------------------------------------------------------------------
 
-describe('ServerContractSource.close', () => {
+describe('ServerRuleSource.close', () => {
   it('sets connected to false', async () => {
     const client = mockClient()
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
 
     await source.connect()
     // connected stays false until watch() establishes HTTP connection
@@ -281,7 +281,7 @@ describe('ServerContractSource.close', () => {
 // Reconnect (unit-level)
 // ---------------------------------------------------------------------------
 
-describe('ServerContractSource reconnect', () => {
+describe('ServerRuleSource reconnect', () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -300,7 +300,7 @@ describe('ServerContractSource reconnect', () => {
         sseResponse([`event: contract_update`, `data: ${JSON.stringify(bundle)}`, ``]),
       )
 
-    const source = new ServerContractSource(client, { reconnectDelay: 100 })
+    const source = new ServerRuleSource(client, { reconnectDelay: 100 })
     const results: Record<string, unknown>[] = []
 
     const watchPromise = (async () => {
@@ -327,45 +327,43 @@ describe('ServerContractSource reconnect', () => {
 describe('constructor validation', () => {
   it('rejects reconnectDelay = 0', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { reconnectDelay: 0 })).toThrow(/reconnectDelay/)
+    expect(() => new ServerRuleSource(client, { reconnectDelay: 0 })).toThrow(/reconnectDelay/)
   })
 
   it('rejects reconnectDelay = NaN', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { reconnectDelay: NaN })).toThrow(
-      /reconnectDelay/,
-    )
+    expect(() => new ServerRuleSource(client, { reconnectDelay: NaN })).toThrow(/reconnectDelay/)
   })
 
   it('rejects reconnectDelay = Infinity', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { reconnectDelay: Infinity })).toThrow(
+    expect(() => new ServerRuleSource(client, { reconnectDelay: Infinity })).toThrow(
       /reconnectDelay/,
     )
   })
 
   it('rejects negative reconnectDelay', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { reconnectDelay: -1 })).toThrow(/reconnectDelay/)
+    expect(() => new ServerRuleSource(client, { reconnectDelay: -1 })).toThrow(/reconnectDelay/)
   })
 
   it('rejects maxReconnectDelay < reconnectDelay', () => {
     const client = mockClient()
     expect(
-      () => new ServerContractSource(client, { reconnectDelay: 5000, maxReconnectDelay: 1000 }),
+      () => new ServerRuleSource(client, { reconnectDelay: 5000, maxReconnectDelay: 1000 }),
     ).toThrow(/maxReconnectDelay/)
   })
 
   it('rejects maxReconnectDelay = NaN', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { maxReconnectDelay: NaN })).toThrow(
+    expect(() => new ServerRuleSource(client, { maxReconnectDelay: NaN })).toThrow(
       /maxReconnectDelay/,
     )
   })
 
   it('rejects maxReconnectDelay = Infinity', () => {
     const client = mockClient()
-    expect(() => new ServerContractSource(client, { maxReconnectDelay: Infinity })).toThrow(
+    expect(() => new ServerRuleSource(client, { maxReconnectDelay: Infinity })).toThrow(
       /maxReconnectDelay/,
     )
   })
@@ -373,19 +371,19 @@ describe('constructor validation', () => {
   it('accepts valid reconnectDelay and maxReconnectDelay', () => {
     const client = mockClient()
     expect(
-      () => new ServerContractSource(client, { reconnectDelay: 500, maxReconnectDelay: 5000 }),
+      () => new ServerRuleSource(client, { reconnectDelay: 500, maxReconnectDelay: 5000 }),
     ).not.toThrow()
   })
 
   it('reconnectDelay is used as initial delay value', () => {
     const client = mockClient()
-    const source = new ServerContractSource(client, { reconnectDelay: 200 })
+    const source = new ServerRuleSource(client, { reconnectDelay: 200 })
     expect((source as any)._reconnectDelay).toBe(200)
   })
 
   it('maxReconnectDelay caps backoff', () => {
     const client = mockClient()
-    const source = new ServerContractSource(client, {
+    const source = new ServerRuleSource(client, {
       reconnectDelay: 500,
       maxReconnectDelay: 2000,
     })
@@ -418,7 +416,7 @@ describe('security', () => {
     // First call: oversized stream. Second call: never (close before reconnect).
     client.rawFetch = vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 }))
 
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     await source.connect()
 
     // Start watch, close immediately after first stream ends

@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto'
 import type { ApprovalBackend } from './approval.js'
 import type { AuditSink } from './audit.js'
 import { EdictumConfigError } from './errors.js'
-import type { Principal, ToolEnvelope } from './envelope.js'
+import type { Principal, ToolCall } from './tool-call.js'
 import { Edictum } from './guard.js'
 import type { OperationLimits } from './limits.js'
 import type { RedactionPolicy } from './redaction.js'
@@ -38,8 +38,8 @@ export interface YamlFactoryOptions {
   readonly redaction?: RedactionPolicy
   readonly backend?: StorageBackend
   readonly environment?: string
-  readonly onDeny?: (envelope: ToolEnvelope, reason: string, source: string | null) => void
-  readonly onAllow?: (envelope: ToolEnvelope) => void
+  readonly onDeny?: (toolCall: ToolCall, reason: string, source: string | null) => void
+  readonly onAllow?: (toolCall: ToolCall) => void
   readonly customOperators?: Record<string, CustomOperator>
   readonly customSelectors?: Record<string, CustomSelector>
   readonly successCheck?: (toolName: string, result: unknown) => boolean
@@ -58,7 +58,7 @@ export interface FromYamlOptions extends YamlFactoryOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Create an Edictum instance from one or more YAML contract bundle paths.
+ * Create an Edictum instance from one or more YAML rule bundle paths.
  *
  * When multiple paths are given, bundles are composed left-to-right
  * (later layers override earlier ones).
@@ -168,7 +168,7 @@ export interface ReloadOptions {
 }
 
 /**
- * Atomically replace a guard's contracts from a YAML string.
+ * Atomically replace a guard's rules from a YAML string.
  *
  * Builds a new CompiledState from the YAML content and swaps the
  * guard's internal state reference. Concurrent evaluations that
@@ -192,7 +192,7 @@ export function reload(guard: Edictum, yamlContent: string, options: ReloadOptio
   // Classify into enforce/observe lists via the same logic the constructor uses.
   // We build a temporary Edictum to leverage _classifyContracts, then steal its state.
   const temp = new Edictum({
-    contracts: allContracts as never[],
+    rules: allContracts as never[],
     limits: compiled.limits,
     policyVersion: bundleHash.hex,
   })
@@ -243,7 +243,7 @@ function _buildGuard(
     mode: effectiveMode as 'enforce' | 'observe',
     limits: compiled.limits,
     tools: Object.keys(mergedTools).length > 0 ? mergedTools : undefined,
-    contracts: allContracts as never[],
+    rules: allContracts as never[],
     auditSink: options.auditSink,
     redaction: options.redaction,
     backend: options.backend,

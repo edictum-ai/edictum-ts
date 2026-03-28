@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { EdictumServerClient } from '../src/client.js'
-import { ServerContractSource } from '../src/contract-source.js'
+import { ServerRuleSource } from '../src/rule-source.js'
 
 // ---------------------------------------------------------------------------
 // SSE timeout — connection timeout must not kill long-lived streams
@@ -56,7 +56,7 @@ describe('SSE connection timeout isolation', () => {
       apiKey: 'test-key',
       timeout: connectionTimeout,
     })
-    const source = new ServerContractSource(client)
+    const source = new ServerRuleSource(client)
     const results: Record<string, unknown>[] = []
 
     const watchPromise = (async () => {

@@ -40,7 +40,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       tool_args: { command: 'rm -rf /' },
       message: 'Dangerous command detected',
       timeout: 300,
-      timeout_effect: 'deny',
+      timeout_action: 'deny',
     })
 
     expect(request.approvalId).toBe('approval-123')

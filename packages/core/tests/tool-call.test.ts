@@ -1,5 +1,5 @@
 /**
- * Tests for ToolEnvelope, createEnvelope, ToolRegistry, BashClassifier.
+ * Tests for ToolCall, createEnvelope, ToolRegistry, BashClassifier.
  *
  * Ported from: edictum/tests/test_envelope.py
  */
@@ -21,41 +21,41 @@ describe('TestCreateEnvelope', () => {
       nested: { key: 'value' },
       list: [1, 2, 3],
     }
-    const envelope = createEnvelope('TestTool', original)
+    const toolCall = createEnvelope('TestTool', original)
     ;(original.nested as Record<string, unknown>).key = 'mutated'
     ;(original.list as number[]).push(4)
-    expect((envelope.args.nested as Record<string, unknown>).key).toBe('value')
-    expect(envelope.args.list).toEqual([1, 2, 3])
+    expect((toolCall.args.nested as Record<string, unknown>).key).toBe('value')
+    expect(toolCall.args.list).toEqual([1, 2, 3])
   })
 
   test('metadata_deep_copy', () => {
     const meta: Record<string, unknown> = { info: { nested: true } }
-    const envelope = createEnvelope('TestTool', {}, { metadata: meta })
+    const toolCall = createEnvelope('TestTool', {}, { metadata: meta })
     ;(meta.info as Record<string, unknown>).nested = false
-    expect((envelope.metadata.info as Record<string, unknown>).nested).toBe(true)
+    expect((toolCall.metadata.info as Record<string, unknown>).nested).toBe(true)
   })
 
   test('frozen_immutability', () => {
-    const envelope = createEnvelope('TestTool', { key: 'value' })
+    const toolCall = createEnvelope('TestTool', { key: 'value' })
     expect(() => {
-      ;(envelope as Record<string, unknown>).toolName = 'Modified'
+      ;(toolCall as Record<string, unknown>).toolName = 'Modified'
     }).toThrow(TypeError)
   })
 
   test('factory_defaults', () => {
-    const envelope = createEnvelope('TestTool', {})
-    expect(envelope.toolName).toBe('TestTool')
-    expect(envelope.args).toEqual({})
-    expect(envelope.runId).toBe('')
-    expect(envelope.callIndex).toBe(0)
-    expect(envelope.sideEffect).toBe(SideEffect.IRREVERSIBLE)
-    expect(envelope.idempotent).toBe(false)
-    expect(envelope.environment).toBe('production')
-    expect(envelope.callId).toBeTruthy() // should be a UUID
+    const toolCall = createEnvelope('TestTool', {})
+    expect(toolCall.toolName).toBe('TestTool')
+    expect(toolCall.args).toEqual({})
+    expect(toolCall.runId).toBe('')
+    expect(toolCall.callIndex).toBe(0)
+    expect(toolCall.sideEffect).toBe(SideEffect.IRREVERSIBLE)
+    expect(toolCall.idempotent).toBe(false)
+    expect(toolCall.environment).toBe('production')
+    expect(toolCall.callId).toBeTruthy() // should be a UUID
   })
 
   test('run_id_and_call_index', () => {
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'TestTool',
       {},
       {
@@ -63,39 +63,39 @@ describe('TestCreateEnvelope', () => {
         callIndex: 5,
       },
     )
-    expect(envelope.runId).toBe('run-1')
-    expect(envelope.callIndex).toBe(5)
+    expect(toolCall.runId).toBe('run-1')
+    expect(toolCall.callIndex).toBe(5)
   })
 
   test('bash_command_extraction', () => {
-    const envelope = createEnvelope('Bash', { command: 'ls -la /tmp' })
-    expect(envelope.bashCommand).toBe('ls -la /tmp')
-    expect(envelope.sideEffect).toBe(SideEffect.READ)
+    const toolCall = createEnvelope('Bash', { command: 'ls -la /tmp' })
+    expect(toolCall.bashCommand).toBe('ls -la /tmp')
+    expect(toolCall.sideEffect).toBe(SideEffect.READ)
   })
 
   test('read_file_path_extraction', () => {
-    const envelope = createEnvelope('Read', { file_path: '/tmp/test.txt' })
-    expect(envelope.filePath).toBe('/tmp/test.txt')
+    const toolCall = createEnvelope('Read', { file_path: '/tmp/test.txt' })
+    expect(toolCall.filePath).toBe('/tmp/test.txt')
   })
 
   test('write_file_path_extraction', () => {
-    const envelope = createEnvelope('Write', { file_path: '/tmp/out.txt' })
-    expect(envelope.filePath).toBe('/tmp/out.txt')
+    const toolCall = createEnvelope('Write', { file_path: '/tmp/out.txt' })
+    expect(toolCall.filePath).toBe('/tmp/out.txt')
   })
 
   test('camel_case_file_path', () => {
-    const envelope = createEnvelope('Read', { filePath: '/tmp/test.txt' })
-    expect(envelope.filePath).toBe('/tmp/test.txt')
+    const toolCall = createEnvelope('Read', { filePath: '/tmp/test.txt' })
+    expect(toolCall.filePath).toBe('/tmp/test.txt')
   })
 
   test('camel_case_write_file_path', () => {
-    const envelope = createEnvelope('Edit', { filePath: '/app/.env' })
-    expect(envelope.filePath).toBe('/app/.env')
+    const toolCall = createEnvelope('Edit', { filePath: '/app/.env' })
+    expect(toolCall.filePath).toBe('/app/.env')
   })
 
   test('glob_path_extraction', () => {
-    const envelope = createEnvelope('Glob', { path: '/src' })
-    expect(envelope.filePath).toBe('/src')
+    const toolCall = createEnvelope('Glob', { path: '/src' })
+    expect(toolCall.filePath).toBe('/src')
   })
 
   test('non_serializable_args_fallback', () => {
@@ -104,22 +104,22 @@ describe('TestCreateEnvelope', () => {
      * is JSON roundtrip which drops the function entirely.
      */
     const fn = () => 42
-    const envelope = createEnvelope('TestTool', {
+    const toolCall = createEnvelope('TestTool', {
       obj: { val: 42 },
       cb: fn,
     })
     // The regular object survives deep copy
-    expect((envelope.args.obj as Record<string, unknown>).val).toBe(42)
+    expect((toolCall.args.obj as Record<string, unknown>).val).toBe(42)
     // The function is dropped by JSON roundtrip fallback
-    expect(envelope.args.cb).toBeUndefined()
+    expect(toolCall.args.cb).toBeUndefined()
   })
 
   test('with_registry', () => {
     const registry = new ToolRegistry()
     registry.register('MyTool', SideEffect.READ, true)
-    const envelope = createEnvelope('MyTool', {}, { registry })
-    expect(envelope.sideEffect).toBe(SideEffect.READ)
-    expect(envelope.idempotent).toBe(true)
+    const toolCall = createEnvelope('MyTool', {}, { registry })
+    expect(toolCall.sideEffect).toBe(SideEffect.READ)
+    expect(toolCall.idempotent).toBe(true)
   })
 })
 
@@ -344,20 +344,20 @@ describe('TestSideEffect', () => {
 
 describe('CreateEnvelopeSideEffectOverride', () => {
   test('explicit_sideEffect_overrides_default', () => {
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'CustomTool',
       {},
       {
         sideEffect: SideEffect.PURE,
       },
     )
-    expect(envelope.sideEffect).toBe(SideEffect.PURE)
+    expect(toolCall.sideEffect).toBe(SideEffect.PURE)
   })
 
   test('explicit_sideEffect_overrides_registry', () => {
     const registry = new ToolRegistry()
     registry.register('CustomTool', SideEffect.WRITE)
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'CustomTool',
       {},
       {
@@ -365,33 +365,33 @@ describe('CreateEnvelopeSideEffectOverride', () => {
         registry,
       },
     )
-    expect(envelope.sideEffect).toBe(SideEffect.READ)
+    expect(toolCall.sideEffect).toBe(SideEffect.READ)
   })
 
   test('explicit_idempotent_overrides_default', () => {
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'CustomTool',
       {},
       {
         idempotent: true,
       },
     )
-    expect(envelope.idempotent).toBe(true)
+    expect(toolCall.idempotent).toBe(true)
   })
 
   test('registry_used_when_no_explicit_override', () => {
     const registry = new ToolRegistry()
     registry.register('CustomTool', SideEffect.PURE, true)
-    const envelope = createEnvelope('CustomTool', {}, { registry })
-    expect(envelope.sideEffect).toBe(SideEffect.PURE)
-    expect(envelope.idempotent).toBe(true)
+    const toolCall = createEnvelope('CustomTool', {}, { registry })
+    expect(toolCall.sideEffect).toBe(SideEffect.PURE)
+    expect(toolCall.idempotent).toBe(true)
   })
 
   test('explicit_sideEffect_with_registry_idempotent_preserved', () => {
     const registry = new ToolRegistry()
     registry.register('MyTool', SideEffect.WRITE, true)
     // Explicit sideEffect overrides registry, but registry idempotent still applies
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'MyTool',
       {},
       {
@@ -399,14 +399,14 @@ describe('CreateEnvelopeSideEffectOverride', () => {
         registry,
       },
     )
-    expect(envelope.sideEffect).toBe(SideEffect.READ)
-    expect(envelope.idempotent).toBe(true)
+    expect(toolCall.sideEffect).toBe(SideEffect.READ)
+    expect(toolCall.idempotent).toBe(true)
   })
 
   test('explicit_idempotent_overrides_registry', () => {
     const registry = new ToolRegistry()
     registry.register('MyTool', SideEffect.PURE, true)
-    const envelope = createEnvelope(
+    const toolCall = createEnvelope(
       'MyTool',
       {},
       {
@@ -414,8 +414,8 @@ describe('CreateEnvelopeSideEffectOverride', () => {
         registry,
       },
     )
-    expect(envelope.sideEffect).toBe(SideEffect.PURE)
-    expect(envelope.idempotent).toBe(false)
+    expect(toolCall.sideEffect).toBe(SideEffect.PURE)
+    expect(toolCall.idempotent).toBe(false)
   })
 
   test('explicit_sideEffect_overrides_BashClassifier', () => {

@@ -2,9 +2,9 @@
  * OpenAI Agents SDK adapter -- per-tool input/output guardrail integration.
  *
  * The adapter does NOT contain governance logic -- that lives in
- * GovernancePipeline. The adapter only:
+ * CheckPipeline. The adapter only:
  * 1. Creates envelopes from SDK guardrail data
- * 2. Manages pending state (envelope + span) between input/output guardrails
+ * 2. Manages pending state (toolCall + span) between input/output guardrails
  * 3. Translates PreDecision/PostDecision into guardrail output format
  * 4. Handles observe mode (deny -> allow conversion)
  *
@@ -21,15 +21,15 @@ import {
   createAuditEvent,
   createEnvelope,
   type Edictum,
-  GovernancePipeline,
+  CheckPipeline,
   type PostCallResult,
   type Principal,
-  type ToolEnvelope,
+  type ToolCall,
   Session,
-  buildFindings,
+  buildViolations,
   createPostCallResult,
   defaultSuccessCheck,
-  type Finding,
+  type Violation,
   type PreDecision,
   type PostDecisionLike,
 } from '@edictum/core'
@@ -73,7 +73,7 @@ export interface OpenAIAgentsAdapterOptions {
 // ---------------------------------------------------------------------------
 
 export interface AsGuardrailsOptions {
-  readonly onPostconditionWarn?: (result: unknown, findings: Finding[]) => void
+  readonly onPostconditionWarn?: (result: unknown, violations: Violation[]) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -82,20 +82,20 @@ export interface AsGuardrailsOptions {
 
 export class OpenAIAgentsAdapter {
   private readonly _guard: Edictum
-  private readonly _pipeline: GovernancePipeline
+  private readonly _pipeline: CheckPipeline
   private readonly _sessionId: string
   private readonly _session: Session
   private _callIndex: number
-  private readonly _pending: Map<string, { envelope: Readonly<ToolEnvelope> }>
+  private readonly _pending: Map<string, { toolCall: Readonly<ToolCall> }>
   private _principal: Principal | null
   private readonly _principalResolver:
     | ((toolName: string, toolInput: Record<string, unknown>) => Principal)
     | null
-  private _onPostconditionWarn: ((result: unknown, findings: Finding[]) => void) | null
+  private _onPostconditionWarn: ((result: unknown, violations: Violation[]) => void) | null
 
   constructor(guard: Edictum, options?: OpenAIAgentsAdapterOptions) {
     this._guard = guard
-    this._pipeline = new GovernancePipeline(guard)
+    this._pipeline = new CheckPipeline(guard)
     this._sessionId = options?.sessionId ?? randomUUID()
     this._session = new Session(this._sessionId, guard.backend)
     this._callIndex = 0
@@ -221,7 +221,7 @@ export class OpenAIAgentsAdapter {
     toolInput: Record<string, unknown>,
     callId: string,
   ): Promise<string | null> {
-    const envelope = createEnvelope(toolName, toolInput, {
+    const toolCall = createEnvelope(toolName, toolInput, {
       runId: this._sessionId,
       callIndex: this._callIndex,
       toolUseId: callId,
@@ -236,21 +236,21 @@ export class OpenAIAgentsAdapter {
 
     try {
       // Run pipeline
-      const decision = await this._pipeline.preExecute(envelope, this._session)
+      const decision = await this._pipeline.preExecute(toolCall, this._session)
 
-      // Finding 1: Handle pending_approval
+      // Note 1: Handle pending_approval
       if (decision.action === 'pending_approval') {
         if (this._guard._approvalBackend == null) {
           return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
         }
 
-        const principalDict = envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        const principalDict = toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null
 
         const approvalRequest = await this._guard._approvalBackend.requestApproval(
-          envelope.toolName,
-          envelope.args as Record<string, unknown>,
+          toolCall.toolName,
+          toolCall.args as Record<string, unknown>,
           decision.approvalMessage ?? decision.reason ?? '',
           {
             timeout: decision.approvalTimeout,
@@ -259,7 +259,7 @@ export class OpenAIAgentsAdapter {
           },
         )
 
-        await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_REQUESTED)
+        await this._emitAuditPre(toolCall, decision, AuditAction.CALL_APPROVAL_REQUESTED)
 
         const approvalDecision = await this._guard._approvalBackend.waitForDecision(
           approvalRequest.approvalId,
@@ -268,32 +268,32 @@ export class OpenAIAgentsAdapter {
 
         let approved = false
         if (approvalDecision.status === ApprovalStatus.TIMEOUT) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_TIMEOUT)
+          await this._emitAuditPre(toolCall, decision, AuditAction.CALL_APPROVAL_TIMEOUT)
           if (decision.approvalTimeoutEffect === 'allow') {
             approved = true
           }
         } else if (!approvalDecision.approved) {
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_DENIED)
+          await this._emitAuditPre(toolCall, decision, AuditAction.CALL_APPROVAL_DENIED)
         } else {
           approved = true
-          await this._emitAuditPre(envelope, decision, AuditAction.CALL_APPROVAL_GRANTED)
+          await this._emitAuditPre(toolCall, decision, AuditAction.CALL_APPROVAL_GRANTED)
         }
 
         if (approved) {
           if (this._guard._onAllow) {
             try {
-              this._guard._onAllow(envelope)
+              this._guard._onAllow(toolCall)
             } catch {
               // on_allow callback raised — swallow
             }
           }
-          this._pending.set(callId, { envelope })
+          this._pending.set(callId, { toolCall })
           return null
         } else {
           const denyReason = approvalDecision.reason ?? decision.reason ?? ''
           if (this._guard._onDeny) {
             try {
-              this._guard._onDeny(envelope, denyReason, decision.decisionName)
+              this._guard._onDeny(toolCall, denyReason, decision.decisionName)
             } catch {
               // on_deny callback raised — swallow
             }
@@ -305,17 +305,17 @@ export class OpenAIAgentsAdapter {
 
       // Handle observe mode: convert deny to allow with warning
       if (this._guard.mode === 'observe' && decision.action === 'deny') {
-        await this._emitAuditPre(envelope, decision, AuditAction.CALL_WOULD_DENY)
-        this._pending.set(callId, { envelope })
+        await this._emitAuditPre(toolCall, decision, AuditAction.CALL_WOULD_DENY)
+        this._pending.set(callId, { toolCall })
         return null // allow through
       }
 
       // Handle deny
       if (decision.action === 'deny') {
-        await this._emitAuditPre(envelope, decision)
+        await this._emitAuditPre(toolCall, decision)
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(envelope, decision.reason ?? '', decision.decisionName)
+            this._guard._onDeny(toolCall, decision.reason ?? '', decision.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
@@ -324,25 +324,25 @@ export class OpenAIAgentsAdapter {
         return `DENIED: ${decision.reason}`
       }
 
-      // Handle per-contract observed denials
+      // Handle per-rule observed denials
       if (decision.observed) {
         for (const cr of decision.contractsEvaluated) {
           if (cr['observed'] && !cr['passed']) {
             await this._guard.auditSink.emit(
               createAuditEvent({
                 action: AuditAction.CALL_WOULD_DENY,
-                runId: envelope.runId,
-                callId: envelope.callId,
-                callIndex: envelope.callIndex,
-                toolName: envelope.toolName,
-                toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<
+                runId: toolCall.runId,
+                callId: toolCall.callId,
+                callIndex: toolCall.callIndex,
+                toolName: toolCall.toolName,
+                toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<
                   string,
                   unknown
                 >,
-                sideEffect: envelope.sideEffect,
-                environment: envelope.environment,
-                principal: envelope.principal
-                  ? ({ ...envelope.principal } as Record<string, unknown>)
+                sideEffect: toolCall.sideEffect,
+                environment: toolCall.environment,
+                principal: toolCall.principal
+                  ? ({ ...toolCall.principal } as Record<string, unknown>)
                   : null,
                 decisionSource: 'precondition',
                 decisionName: cr['name'] as string,
@@ -357,15 +357,15 @@ export class OpenAIAgentsAdapter {
       }
 
       // Handle allow
-      await this._emitAuditPre(envelope, decision)
+      await this._emitAuditPre(toolCall, decision)
       if (this._guard._onAllow) {
         try {
-          this._guard._onAllow(envelope)
+          this._guard._onAllow(toolCall)
         } catch {
           // on_allow callback raised — swallow
         }
       }
-      this._pending.set(callId, { envelope })
+      this._pending.set(callId, { toolCall })
 
       // Observe-mode audits — errors swallowed (must not block execution)
       for (const sr of decision.observeResults) {
@@ -376,15 +376,15 @@ export class OpenAIAgentsAdapter {
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: observeAction,
-              runId: envelope.runId,
-              callId: envelope.callId,
-              callIndex: envelope.callIndex,
-              toolName: envelope.toolName,
-              toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-              sideEffect: envelope.sideEffect,
-              environment: envelope.environment,
-              principal: envelope.principal
-                ? ({ ...envelope.principal } as Record<string, unknown>)
+              runId: toolCall.runId,
+              callId: toolCall.callId,
+              callIndex: toolCall.callIndex,
+              toolName: toolCall.toolName,
+              toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+              sideEffect: toolCall.sideEffect,
+              environment: toolCall.environment,
+              principal: toolCall.principal
+                ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
               decisionSource: sr['source'] as string | null,
               decisionName: sr['name'] as string | null,
@@ -412,7 +412,7 @@ export class OpenAIAgentsAdapter {
   // -----------------------------------------------------------------------
 
   /**
-   * Run post-execution governance. Returns PostCallResult with findings.
+   * Run post-execution governance. Returns PostCallResult with violations.
    *
    * Exposed for direct testing without framework imports.
    */
@@ -424,34 +424,34 @@ export class OpenAIAgentsAdapter {
       return createPostCallResult({ result: toolResponse })
     }
 
-    const { envelope } = pending
+    const { toolCall } = pending
 
     // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(envelope.toolName, toolResponse)
+    const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
 
     // Run pipeline
-    const postDecision = await this._pipeline.postExecute(envelope, toolResponse, toolSuccess)
+    const postDecision = await this._pipeline.postExecute(toolCall, toolResponse, toolSuccess)
 
     const effectiveResponse =
       postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
     // Record in session
-    await this._session.recordExecution(envelope.toolName, toolSuccess)
+    await this._session.recordExecution(toolCall.toolName, toolSuccess)
 
     // Emit audit
     const action = toolSuccess ? AuditAction.CALL_EXECUTED : AuditAction.CALL_FAILED
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         toolSuccess,
         postconditionsPassed: postDecision.postconditionsPassed,
@@ -464,18 +464,18 @@ export class OpenAIAgentsAdapter {
       }),
     )
 
-    const findings = buildFindings(postDecision as unknown as PostDecisionLike)
+    const violations = buildViolations(postDecision as unknown as PostDecisionLike)
     const postResult = createPostCallResult({
       result: effectiveResponse,
       postconditionsPassed: postDecision.postconditionsPassed,
-      findings,
+      violations,
       outputSuppressed: postDecision.outputSuppressed,
     })
 
     // Call callback for side effects
     if (!postResult.postconditionsPassed && this._onPostconditionWarn) {
       try {
-        this._onPostconditionWarn(postResult.result, [...postResult.findings])
+        this._onPostconditionWarn(postResult.result, [...postResult.violations])
       } catch {
         // on_postcondition_warn callback raised — swallow
       }
@@ -489,7 +489,7 @@ export class OpenAIAgentsAdapter {
   // -----------------------------------------------------------------------
 
   private async _emitAuditPre(
-    envelope: Readonly<ToolEnvelope>,
+    toolCall: Readonly<ToolCall>,
     decision: PreDecision,
     auditAction?: AuditAction,
   ): Promise<void> {
@@ -500,15 +500,15 @@ export class OpenAIAgentsAdapter {
     await this._guard.auditSink.emit(
       createAuditEvent({
         action,
-        runId: envelope.runId,
-        callId: envelope.callId,
-        callIndex: envelope.callIndex,
-        toolName: envelope.toolName,
-        toolArgs: this._guard.redaction.redactArgs(envelope.args) as Record<string, unknown>,
-        sideEffect: envelope.sideEffect,
-        environment: envelope.environment,
-        principal: envelope.principal
-          ? ({ ...envelope.principal } as Record<string, unknown>)
+        runId: toolCall.runId,
+        callId: toolCall.callId,
+        callIndex: toolCall.callIndex,
+        toolName: toolCall.toolName,
+        toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+        sideEffect: toolCall.sideEffect,
+        environment: toolCall.environment,
+        principal: toolCall.principal
+          ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
         decisionSource: decision.decisionSource,
         decisionName: decision.decisionName,

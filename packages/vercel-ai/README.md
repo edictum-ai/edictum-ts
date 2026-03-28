@@ -1,8 +1,8 @@
 # @edictum/vercel-ai
 
-Vercel AI SDK adapter for Edictum contract enforcement.
+Vercel AI SDK adapter for Edictum rule enforcement.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
 
 ## Install
 
@@ -16,7 +16,7 @@ pnpm add @edictum/vercel-ai @edictum/core
 import { Edictum } from '@edictum/core'
 import { VercelAIAdapter } from '@edictum/vercel-ai'
 
-const guard = Edictum.fromYaml('contracts.yaml')
+const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new VercelAIAdapter(guard)
 
 const result = await generateText({
@@ -28,11 +28,11 @@ const result = await generateText({
 
 ## API
 
-- `VercelAIAdapter` -- adapter class
-  - `asCallbacks(options?)` -- returns `{ experimental_onToolCallStart, experimental_onToolCallFinish }`
-  - `setPrincipal(principal)` -- update principal mid-session
-- `VercelAIAdapterOptions` -- constructor options (`sessionId`, `principal`, `principalResolver`)
-- `AsCallbacksOptions` -- `{ onPostconditionWarn }` callback
+- `VercelAIAdapter` — adapter class
+  - `asCallbacks(options?)` — returns `{ experimental_onToolCallStart, experimental_onToolCallFinish }`
+  - `setPrincipal(principal)` — update principal mid-session
+- `VercelAIAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
+- `AsCallbacksOptions` — `{ onPostconditionWarn }` callback
 
 ## Links
 

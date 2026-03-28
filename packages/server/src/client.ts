@@ -9,7 +9,7 @@
 import { EdictumConfigError } from '@edictum/core'
 
 // Safe identifier: alphanumeric, hyphens, underscores, dots. No path separators,
-// control chars, or whitespace. Matches tool_name validation in envelope.
+// control chars, or whitespace. Matches tool_name validation in toolCall.
 export const SAFE_IDENTIFIER_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 
 /** Raised when the server returns an error response. */
@@ -320,7 +320,7 @@ export class EdictumServerClient {
 
 /**
  * Update a client's effective bundle name. Internal to the server package —
- * only used by the factory's SSE watcher after a successful contract reload.
+ * only used by the factory's SSE watcher after a successful rule reload.
  * Not exported from index.ts. Accessible via subpath import but validated —
  * callers who bypass the public API do so at their own risk.
  *
