@@ -1,8 +1,8 @@
 # @edictum/otel
 
-OpenTelemetry integration for Edictum contract enforcement.
+OpenTelemetry integration for Edictum rule enforcement.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
 
 ## Install
 
@@ -32,11 +32,11 @@ const telemetry = await createTelemetry()
 
 ## API
 
-- `GovernanceTelemetry` -- emits governance spans and counters (requires `@opentelemetry/api`)
-- `NoOpTelemetry`, `NoOpSpan` -- no-op fallback when OTel isn't installed
-- `createTelemetry()` -- async factory with runtime detection
-- `hasOtel()`, `hasOtelAsync()` -- check if `@opentelemetry/api` is available
-- `configureOtel(options)` -- setup helper for common OTel configurations
+- `GovernanceTelemetry` — emits rule-enforcement spans and counters (requires `@opentelemetry/api`)
+- `NoOpTelemetry`, `NoOpSpan` — no-op fallback when OTel isn't installed
+- `createTelemetry()` — async factory with runtime detection
+- `hasOtel()`, `hasOtelAsync()` — check if `@opentelemetry/api` is available
+- `configureOtel(options)` — setup helper for common OTel configurations
 
 ## Links
 

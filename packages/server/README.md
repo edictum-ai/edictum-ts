@@ -2,7 +2,7 @@
 
 Server SDK for connecting Edictum-governed agents to [Edictum Console](https://github.com/edictum-ai/edictum-console).
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
 
 ## Install
 
@@ -22,7 +22,7 @@ const { guard, close } = await createServerGuard({
 })
 
 // guard is a standard Edictum instance backed by the server
-// Contracts hot-reload via SSE, audit events stream to the server
+// Rules hot-reload via SSE, audit events stream to the server
 
 // Clean up on shutdown
 await close()
@@ -30,13 +30,13 @@ await close()
 
 ## API
 
-- `createServerGuard(options)` -- factory returning `{ guard, close }` with server-backed contracts, audit, sessions, and approvals
-- `EdictumServerClient` -- low-level HTTP client for the console API
-- `ServerContractSource` -- SSE-based contract hot-reload
-- `ServerAuditSink` -- streams audit events to the server
-- `ServerBackend` -- server-backed session storage
-- `ServerApprovalBackend` -- server-backed HITL approval workflows
-- `verifyBundleSignature(bundle, publicKey)` -- Ed25519 bundle signature verification
+- `createServerGuard(options)` — factory returning `{ guard, close }` with server-backed rules, audit, sessions, and approvals
+- `EdictumServerClient` — low-level HTTP client for the console API
+- `ServerContractSource` — SSE-based rules hot-reload
+- `ServerAuditSink` — streams audit events to the server
+- `ServerBackend` — server-backed session storage
+- `ServerApprovalBackend` — server-backed HITL approval workflows
+- `verifyBundleSignature(bundle, publicKey)` — Ed25519 bundle signature verification
 
 ## Links
 

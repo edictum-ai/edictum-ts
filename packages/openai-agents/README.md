@@ -1,8 +1,8 @@
 # @edictum/openai-agents
 
-OpenAI Agents SDK adapter for Edictum contract enforcement.
+OpenAI Agents SDK adapter for Edictum rule enforcement.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) -- runtime contract enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
 
 ## Install
 
@@ -16,18 +16,18 @@ pnpm add @edictum/openai-agents @edictum/core
 import { Edictum } from '@edictum/core'
 import { OpenAIAgentsAdapter } from '@edictum/openai-agents'
 
-const guard = Edictum.fromYaml('contracts.yaml')
+const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new OpenAIAgentsAdapter(guard)
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 ```
 
 ## API
 
-- `OpenAIAgentsAdapter` -- adapter class
-  - `asGuardrails(options?)` -- returns `{ inputGuardrail, outputGuardrail }`
-  - `setPrincipal(principal)` -- update principal mid-session
-- `OpenAIAgentsAdapterOptions` -- constructor options (`sessionId`, `principal`, `principalResolver`)
-- `AsGuardrailsOptions` -- `{ onPostconditionWarn }` callback
+- `OpenAIAgentsAdapter` — adapter class
+  - `asGuardrails(options?)` — returns `{ inputGuardrail, outputGuardrail }`
+  - `setPrincipal(principal)` — update principal mid-session
+- `OpenAIAgentsAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
+- `AsGuardrailsOptions` — `{ onPostconditionWarn }` callback
 
 ## Links
 
