@@ -33,7 +33,14 @@ export async function loadWorkflowState(
   }
 
   const state = ensureWorkflowState(parseWorkflowState(raw))
+  const validStageIds = new Set(definition.stages.map((stage) => stage.id))
   state.sessionId = session.sessionId
+  state.evidence.reads = capStringArray(state.evidence.reads, MAX_WORKFLOW_EVIDENCE_ITEMS)
+  state.evidence.stageCalls = Object.fromEntries(
+    Object.entries(state.evidence.stageCalls)
+      .filter(([stageId]) => validStageIds.has(stageId))
+      .map(([stageId, calls]) => [stageId, capStringArray(calls, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
+  )
   if (state.activeStage !== '' && getWorkflowStageById(definition, state.activeStage) == null) {
     throw new Error(
       `workflow: persisted active stage ${JSON.stringify(state.activeStage)} does not exist`,
@@ -137,6 +144,10 @@ function normalizeStringArray(value: unknown): string[] {
     return []
   }
   return value.filter((item): item is string => typeof item === 'string')
+}
+
+function capStringArray(items: string[], limit: number): string[] {
+  return items.length <= limit ? items : items.slice(0, limit)
 }
 
 function normalizeStringMap(value: unknown): Record<string, string> {

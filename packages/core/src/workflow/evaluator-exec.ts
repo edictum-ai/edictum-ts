@@ -33,6 +33,7 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
       let exitCode = 0
       let outputTruncated = false
       let timedOut = false
+      let terminatedByTimeout = false
 
       child.stdout.on('data', (chunk: Buffer) => {
         const capture = captureExecOutputChunk(chunk, bufferedBytes)
@@ -52,31 +53,46 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
       })
 
       await new Promise<void>((resolve, reject) => {
+        let settled = false
         const timeout = setTimeout(() => {
-          timedOut = true
-          terminateExecChild(child)
-        }, options.timeoutMs)
-
-        child.on('error', (error) => {
-          clearTimeout(timeout)
-          reject(
-            new Error(
-              `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} failed: ${error}`,
-            ),
-          )
-        })
-        child.on('close', (code) => {
-          clearTimeout(timeout)
-          if (timedOut) {
-            reject(
-              new Error(
-                `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} timed out after ${options.timeoutMs}ms`,
-              ),
-            )
+          if (settled) {
             return
           }
-          exitCode = code ?? 0
-          resolve()
+          timedOut = true
+          terminatedByTimeout = terminateExecChild(child)
+        }, options.timeoutMs)
+
+        const settle = (fn: () => void) => {
+          if (settled) {
+            return
+          }
+          settled = true
+          clearTimeout(timeout)
+          fn()
+        }
+
+        child.once('error', (error) => {
+          settle(() => {
+            reject(
+              new Error(
+                `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} failed: ${error}`,
+              ),
+            )
+          })
+        })
+        child.once('close', (code) => {
+          settle(() => {
+            if (timedOut && terminatedByTimeout) {
+              reject(
+                new Error(
+                  `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} timed out after ${options.timeoutMs}ms`,
+                ),
+              )
+              return
+            }
+            exitCode = code ?? 0
+            resolve()
+          })
         })
       })
 
@@ -113,25 +129,24 @@ function captureExecOutputChunk(
   }
 }
 
-function terminateExecChild(child: ChildProcess): void {
+function terminateExecChild(child: ChildProcess): boolean {
   if (child.killed) {
-    return
+    return true
   }
 
   if (process.platform === 'win32') {
-    child.kill('SIGKILL')
-    return
+    return child.kill('SIGKILL')
   }
 
   const pid = child.pid
   if (pid == null) {
-    child.kill('SIGKILL')
-    return
+    return child.kill('SIGKILL')
   }
 
   try {
     process.kill(-pid, 'SIGKILL')
+    return true
   } catch {
-    child.kill('SIGKILL')
+    return child.kill('SIGKILL')
   }
 }

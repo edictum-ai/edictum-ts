@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 
 import { Edictum, EdictumDenied, MemoryBackend, Session } from '../../src/index.js'
+import { MAX_WORKFLOW_EVIDENCE_ITEMS, workflowStateKey } from '../../src/workflow/state.js'
 import {
   makeCall,
   makeWorkflowRuntime,
@@ -86,6 +87,110 @@ stages:
     expect(state.activeStage).toBe('implement')
     expect(state.completedStages).toEqual([])
     expect(state.approvals).toEqual({})
+  })
+
+  describe('security', () => {
+    test('rejects corrupted persisted workflow state', async () => {
+      const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: corrupt-state-process
+stages:
+  - id: implement
+    tools: [Edit]
+`)
+      const session = makeWorkflowSession('wf-corrupt-state')
+
+      await session.setValue(workflowStateKey('corrupt-state-process'), '{"activeStage":')
+
+      await expect(runtime.state(session)).rejects.toThrow(/decode persisted state/i)
+    })
+
+    test('caps persisted evidence arrays and ignores phantom stage evidence on reload', async () => {
+      const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: persisted-evidence-process
+stages:
+  - id: implement
+    tools: [Edit]
+`)
+      const session = makeWorkflowSession('wf-persisted-evidence')
+
+      await session.setValue(
+        workflowStateKey('persisted-evidence-process'),
+        JSON.stringify({
+          activeStage: 'implement',
+          completedStages: [],
+          approvals: {},
+          evidence: {
+            reads: Array.from(
+              { length: MAX_WORKFLOW_EVIDENCE_ITEMS + 25 },
+              (_, index) => `spec-${index}.md`,
+            ),
+            stageCalls: {
+              implement: Array.from(
+                { length: MAX_WORKFLOW_EVIDENCE_ITEMS + 25 },
+                (_, index) => `echo ${index}`,
+              ),
+              phantom: ['echo bypass'],
+            },
+          },
+        }),
+      )
+
+      const state = await runtime.state(session)
+
+      expect(state.evidence.reads).toHaveLength(MAX_WORKFLOW_EVIDENCE_ITEMS)
+      expect(state.evidence.stageCalls.implement).toHaveLength(MAX_WORKFLOW_EVIDENCE_ITEMS)
+      expect(state.evidence.stageCalls.phantom).toBeUndefined()
+    })
+
+    test('phantom persisted stage data does not satisfy workflow gates', async () => {
+      const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: phantom-stage-process
+stages:
+  - id: read-context
+    tools: [Read]
+    exit:
+      - condition: file_read("specs/008.md")
+        message: Read the workflow spec first
+  - id: review
+    entry:
+      - condition: stage_complete("read-context")
+    approval:
+      message: Approval required before push
+  - id: push
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+`)
+      const session = makeWorkflowSession('wf-phantom-stage')
+
+      await session.setValue(
+        workflowStateKey('phantom-stage-process'),
+        JSON.stringify({
+          activeStage: 'read-context',
+          completedStages: ['phantom-stage'],
+          approvals: { 'phantom-stage': 'approved' },
+          evidence: {
+            reads: [],
+            stageCalls: { 'phantom-stage': ['echo bypass'] },
+          },
+        }),
+      )
+
+      const decision = await runtime.evaluate(
+        session,
+        makeCall('Bash', { command: 'git push origin feature' }),
+      )
+
+      expect(decision.action).toBe('block')
+      expect(decision.stageId).toBe('read-context')
+      expect(decision.reason).toBe('Read the workflow spec first')
+    })
   })
 })
 
