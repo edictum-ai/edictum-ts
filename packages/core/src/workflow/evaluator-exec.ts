@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 
 import type { FactEvaluator } from './evaluator.js'
 import { type FactResult } from './evaluator.js'
@@ -22,6 +23,7 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
       const shell = process.platform === 'win32' ? 'cmd' : 'sh'
       const flag = process.platform === 'win32' ? '/C' : '-c'
       const child = spawn(shell, [flag, request.parsed.arg], {
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       })
 
@@ -39,7 +41,7 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           timedOut = true
-          child.kill()
+          terminateExecChild(child)
         }, options.timeoutMs)
 
         child.on('error', (error) => {
@@ -75,5 +77,28 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
         workflow: request.definition.metadata.name,
       }
     },
+  }
+}
+
+function terminateExecChild(child: ChildProcess): void {
+  if (child.killed) {
+    return
+  }
+
+  if (process.platform === 'win32') {
+    child.kill('SIGKILL')
+    return
+  }
+
+  const pid = child.pid
+  if (pid == null) {
+    child.kill('SIGKILL')
+    return
+  }
+
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    child.kill('SIGKILL')
   }
 }

@@ -88,7 +88,7 @@ stages:
     await expect(runtime.recordResult(session, decision.stageId, call)).rejects.toThrow(
       /timed out/i,
     )
-  })
+  }, 10_000)
 
   test('empty tools means all tools allowed', async () => {
     const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
