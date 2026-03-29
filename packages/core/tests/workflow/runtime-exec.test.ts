@@ -90,6 +90,35 @@ stages:
     )
   }, 10_000)
 
+  test('exec evaluator caps buffered output evidence', async () => {
+    const runtime = makeWorkflowRuntime(
+      `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-output-cap
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("node -e \\"process.stdout.write('x'.repeat(20000))\\"", exit_code=0)
+        message: command must succeed
+`,
+      { execEvaluatorEnabled: true },
+    )
+    const evaluation = await runtime.evaluateWorkflowGates(
+      runtime.definition.stages[0]!,
+      await runtime.state(makeWorkflowSession('wf-exec-output-cap')),
+      makeCall('Bash', { command: 'node --version' }),
+      runtime.definition.stages[0]!.exit,
+    )
+
+    expect(evaluation.blocked).toBe(false)
+    const evidence = evaluation.evaluation.records[0]?.metadata?.gate_evidence
+    expect(typeof evidence).toBe('string')
+    expect((evidence as string).length).toBeLessThan(4_300)
+    expect(evidence).toContain('[truncated]')
+  })
+
   test('empty tools means all tools allowed', async () => {
     const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
 kind: Workflow

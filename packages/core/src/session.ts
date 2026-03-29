@@ -62,6 +62,9 @@ export class Session {
 
   constructor(sessionId: string, backend: StorageBackend) {
     _validateStorageKeyComponent(sessionId, 'session_id')
+    if (sessionId.includes(':')) {
+      throw new EdictumConfigError('Invalid session_id: colon is not allowed in session_id')
+    }
     this._sid = sessionId
     this._backend = backend
   }

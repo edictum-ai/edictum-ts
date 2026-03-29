@@ -217,7 +217,7 @@ export async function evaluate(
     workflowSkipped: guard.getWorkflowRuntime() != null,
     workflowReason:
       guard.getWorkflowRuntime() != null
-        ? 'workflow evaluation requires runtime session state and is enforced only by run() in M1'
+        ? 'workflow evaluation requires runtime session state; use run() to enforce workflow gates'
         : null,
   })
 }

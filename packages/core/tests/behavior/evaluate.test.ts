@@ -95,6 +95,7 @@ stages:
     const result = await guard.evaluate('Edit', { path: 'src/app.ts' })
     expect(result.workflowSkipped).toBe(true)
     expect(result.workflowReason).toContain('runtime session state')
+    expect(result.workflowReason).not.toContain('M1')
   })
 })
 

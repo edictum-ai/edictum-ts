@@ -1,6 +1,10 @@
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+
 import { describe, expect, test } from 'vitest'
 
-import { loadWorkflowString } from '../../src/index.js'
+import { loadWorkflow, loadWorkflowString } from '../../src/index.js'
 
 describe('WorkflowLoad', () => {
   test('parses workflow document', () => {
@@ -50,5 +54,27 @@ stages:
         message: broken gate
 `),
     ).toThrow(/invalid regex/)
+  })
+
+  test('resolves workflow file paths through realpath', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'edictum-workflow-'))
+    const targetPath = join(dir, 'workflow.yaml')
+    const linkPath = join(dir, 'workflow-link.yaml')
+    writeFileSync(
+      targetPath,
+      `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: linked-workflow
+stages:
+  - id: review
+    tools: [Read]
+`,
+      'utf8',
+    )
+    symlinkSync(targetPath, linkPath)
+
+    const definition = loadWorkflow(linkPath)
+    expect(definition.metadata.name).toBe('linked-workflow')
   })
 })

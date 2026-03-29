@@ -140,9 +140,15 @@ describe('security', () => {
       expect(() => new Session('sess\u2029ion', new MemoryBackend())).toThrow(/Invalid session_id/)
     })
 
+    test('colon in session ID rejected', () => {
+      expect(() => new Session('victim:workflow:myworkflow', new MemoryBackend())).toThrow(
+        /colon is not allowed/,
+      )
+    })
+
     test('valid session IDs accepted', () => {
       expect(() => new Session('test-session', new MemoryBackend())).not.toThrow()
-      expect(() => new Session('user:abc:123', new MemoryBackend())).not.toThrow()
+      expect(() => new Session('user-abc-123', new MemoryBackend())).not.toThrow()
       expect(() => new Session('sess_v2', new MemoryBackend())).not.toThrow()
     })
   })

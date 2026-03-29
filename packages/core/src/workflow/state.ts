@@ -7,6 +7,10 @@ export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
 
 export function workflowStateKey(name: string): string {
+  return `workflow_state__${name}`
+}
+
+function legacyWorkflowStateKey(name: string): string {
   return `workflow:${name}:state`
 }
 
@@ -14,7 +18,10 @@ export async function loadWorkflowState(
   session: Session,
   definition: WorkflowDefinition,
 ): Promise<MutableWorkflowState> {
-  const raw = await session.getValue(workflowStateKey(definition.metadata.name))
+  const key = workflowStateKey(definition.metadata.name)
+  const raw =
+    (await session.getValue(key)) ??
+    (await session.getValue(legacyWorkflowStateKey(definition.metadata.name)))
   if (raw == null) {
     return ensureWorkflowState({
       sessionId: session.sessionId,
@@ -42,7 +49,12 @@ export async function saveWorkflowState(
 ): Promise<void> {
   state.sessionId = session.sessionId
   ensureWorkflowState(state)
-  await session.setValue(workflowStateKey(definition.metadata.name), JSON.stringify(state))
+  const key = workflowStateKey(definition.metadata.name)
+  await session.setValue(key, JSON.stringify(state))
+  const legacyKey = legacyWorkflowStateKey(definition.metadata.name)
+  if (legacyKey !== key) {
+    await session.deleteValue(legacyKey)
+  }
 }
 
 export function recordWorkflowApproval(state: MutableWorkflowState, stageId: string): void {

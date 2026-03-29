@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 
 import { loadAll } from 'js-yaml'
 
@@ -18,7 +18,7 @@ export const MAX_WORKFLOW_DOCUMENT_SIZE = 1_048_576
 
 export function loadWorkflow(path: string): WorkflowDefinition {
   try {
-    return parseWorkflowDocument(readFileSync(path, 'utf8'))
+    return parseWorkflowDocument(readFileSync(realpathSync(path), 'utf8'))
   } catch (exc) {
     if (exc instanceof EdictumConfigError) {
       throw exc
