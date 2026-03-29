@@ -1,7 +1,7 @@
 import type { ToolEnvelope } from '../envelope.js'
 import type { Session } from '../session.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
-import { ensureWorkflowState, type WorkflowState } from './result.js'
+import { ensureWorkflowState, type MutableWorkflowState } from './result.js'
 
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
@@ -13,7 +13,7 @@ export function workflowStateKey(name: string): string {
 export async function loadWorkflowState(
   session: Session,
   definition: WorkflowDefinition,
-): Promise<WorkflowState> {
+): Promise<MutableWorkflowState> {
   const raw = await session.getValue(workflowStateKey(definition.metadata.name))
   if (raw == null) {
     return ensureWorkflowState({
@@ -38,20 +38,20 @@ export async function loadWorkflowState(
 export async function saveWorkflowState(
   session: Session,
   definition: WorkflowDefinition,
-  state: WorkflowState,
+  state: MutableWorkflowState,
 ): Promise<void> {
   state.sessionId = session.sessionId
   ensureWorkflowState(state)
   await session.setValue(workflowStateKey(definition.metadata.name), JSON.stringify(state))
 }
 
-export function recordWorkflowApproval(state: WorkflowState, stageId: string): void {
+export function recordWorkflowApproval(state: MutableWorkflowState, stageId: string): void {
   ensureWorkflowState(state)
   state.approvals[stageId] = WORKFLOW_APPROVED_STATUS
 }
 
 export function recordWorkflowResult(
-  state: WorkflowState,
+  state: MutableWorkflowState,
   stageId: string,
   envelope: ToolEnvelope,
 ): void {
@@ -91,7 +91,7 @@ function appendCapped(items: string[], item: string, limit: number): string[] {
   return [...items, item]
 }
 
-function parseWorkflowState(raw: string): WorkflowState {
+function parseWorkflowState(raw: string): MutableWorkflowState {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)

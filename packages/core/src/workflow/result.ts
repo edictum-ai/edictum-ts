@@ -16,14 +16,27 @@ export interface WorkflowEvaluation {
 }
 
 export interface WorkflowState {
+  readonly sessionId: string
+  readonly activeStage: string
+  readonly completedStages: readonly string[]
+  readonly approvals: Readonly<Record<string, string>>
+  readonly evidence: WorkflowEvidence
+}
+
+export interface WorkflowEvidence {
+  readonly reads: readonly string[]
+  readonly stageCalls: Readonly<Record<string, readonly string[]>>
+}
+
+export interface MutableWorkflowState {
   sessionId: string
   activeStage: string
   completedStages: string[]
   approvals: Record<string, string>
-  evidence: WorkflowEvidence
+  evidence: MutableWorkflowEvidence
 }
 
-export interface WorkflowEvidence {
+export interface MutableWorkflowEvidence {
   reads: string[]
   stageCalls: Record<string, string[]>
 }
@@ -45,11 +58,32 @@ export function workflowStateCompletedStage(state: WorkflowState, stageId: strin
   return state.completedStages.includes(stageId)
 }
 
-export function ensureWorkflowState(state: WorkflowState): WorkflowState {
-  state.completedStages ??= []
-  state.approvals ??= {}
-  state.evidence ??= { reads: [], stageCalls: {} }
-  state.evidence.reads ??= []
-  state.evidence.stageCalls ??= {}
-  return state
+export function ensureWorkflowState(state: Partial<MutableWorkflowState>): MutableWorkflowState {
+  const normalized = state as MutableWorkflowState
+  normalized.sessionId ??= ''
+  normalized.activeStage ??= ''
+  normalized.completedStages ??= []
+  normalized.approvals ??= {}
+  const evidence = (normalized.evidence ??= { reads: [], stageCalls: {} })
+  evidence.reads ??= []
+  evidence.stageCalls ??= {}
+  return normalized
+}
+
+export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState {
+  return {
+    sessionId: state.sessionId,
+    activeStage: state.activeStage,
+    completedStages: [...state.completedStages],
+    approvals: { ...state.approvals },
+    evidence: {
+      reads: [...state.evidence.reads],
+      stageCalls: Object.fromEntries(
+        Object.entries(state.evidence.stageCalls).map(([stageId, commands]) => [
+          stageId,
+          [...commands],
+        ]),
+      ),
+    },
+  }
 }

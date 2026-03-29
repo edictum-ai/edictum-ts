@@ -1,6 +1,6 @@
 import type { ToolEnvelope } from '../envelope.js'
 import { getWorkflowStageById } from './definition.js'
-import type { WorkflowState } from './result.js'
+import type { MutableWorkflowState } from './result.js'
 import { WORKFLOW_APPROVED_STATUS } from './state.js'
 import type { WorkflowRuntime } from './runtime.js'
 import { getNextWorkflowStageIndex, workflowProgressEvent } from './runtime-helpers.js'
@@ -8,7 +8,7 @@ import { workflowStateCompletedStage } from './result.js'
 
 export async function advanceWorkflowAfterSuccess(
   runtime: WorkflowRuntime,
-  state: WorkflowState,
+  state: MutableWorkflowState,
   stageId: string,
   envelope: ToolEnvelope,
 ): Promise<Record<string, unknown>[]> {

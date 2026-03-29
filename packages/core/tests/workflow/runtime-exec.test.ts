@@ -64,6 +64,32 @@ stages:
     )
   })
 
+  test('exec evaluator times out hung commands', async () => {
+    const hangingCommand = 'node -e "setTimeout(() => {}, 5000)"'
+    const runtime = makeWorkflowRuntime(
+      `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-timeout
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("node -e \\"setTimeout(() => {}, 5000)\\"", exit_code=0)
+        message: Command must finish
+`,
+      { execEvaluatorEnabled: true, execEvaluatorTimeoutMs: 25 },
+    )
+    const session = makeWorkflowSession('wf-exec-timeout')
+    const call = makeCall('Bash', { command: hangingCommand })
+    const decision = await runtime.evaluate(session, call)
+
+    expect(decision.action).toBe('allow')
+    await expect(runtime.recordResult(session, decision.stageId, call)).rejects.toThrow(
+      /timed out/i,
+    )
+  })
+
   test('empty tools means all tools allowed', async () => {
     const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
 kind: Workflow

@@ -15,10 +15,15 @@ import {
 } from './evaluator.js'
 import { approvalEvaluator } from './evaluator-approval.js'
 import { commandEvaluator } from './evaluator-command.js'
-import { execEvaluator } from './evaluator-exec.js'
+import { createExecEvaluator } from './evaluator-exec.js'
 import { fileReadEvaluator } from './evaluator-file.js'
 import { stageCompleteEvaluator } from './evaluator-stage.js'
-import { createWorkflowEvaluation, WorkflowAction, type WorkflowEvaluation } from './result.js'
+import {
+  createWorkflowEvaluation,
+  createWorkflowStateSnapshot,
+  WorkflowAction,
+  type WorkflowEvaluation,
+} from './result.js'
 import { advanceWorkflowAfterSuccess } from './runtime-post.js'
 import { evaluateWorkflowRuntime } from './runtime-eval.js'
 import { workflowMetadata, workflowStageIds } from './runtime-helpers.js'
@@ -29,10 +34,13 @@ import {
   saveWorkflowState,
 } from './state.js'
 import type { WorkflowGate, WorkflowStage } from './definition.js'
-import type { WorkflowState } from './result.js'
+import type { MutableWorkflowState, WorkflowState } from './result.js'
+
+const DEFAULT_EXEC_EVALUATOR_TIMEOUT_MS = 30_000
 
 export interface WorkflowRuntimeOptions {
   readonly execEvaluatorEnabled?: boolean
+  readonly execEvaluatorTimeoutMs?: number
 }
 
 export class WorkflowRuntime {
@@ -44,6 +52,13 @@ export class WorkflowRuntime {
   constructor(definition: WorkflowDefinition, options: WorkflowRuntimeOptions = {}) {
     this.definition = validateWorkflowDefinition(definition)
 
+    if (
+      options.execEvaluatorTimeoutMs != null &&
+      (!Number.isInteger(options.execEvaluatorTimeoutMs) || options.execEvaluatorTimeoutMs <= 0)
+    ) {
+      throw new Error('workflow: execEvaluatorTimeoutMs must be a positive integer')
+    }
+
     if (usesExecCondition(this.definition) && !options.execEvaluatorEnabled) {
       throw new Error('workflow: exec(...) conditions require execEvaluatorEnabled')
     }
@@ -54,7 +69,13 @@ export class WorkflowRuntime {
       approval: approvalEvaluator,
       command_matches: commandEvaluator,
       command_not_matches: commandEvaluator,
-      ...(options.execEvaluatorEnabled ? { exec: execEvaluator } : {}),
+      ...(options.execEvaluatorEnabled
+        ? {
+            exec: createExecEvaluator({
+              timeoutMs: options.execEvaluatorTimeoutMs ?? DEFAULT_EXEC_EVALUATOR_TIMEOUT_MS,
+            }),
+          }
+        : {}),
     }
   }
 
@@ -63,7 +84,9 @@ export class WorkflowRuntime {
   }
 
   async state(session: Session): Promise<WorkflowState> {
-    return await this.withLock(async () => await loadWorkflowState(session, this.definition))
+    return await this.withLock(async () =>
+      createWorkflowStateSnapshot(await loadWorkflowState(session, this.definition)),
+    )
   }
 
   async reset(session: Session, stageId: string): Promise<void> {
@@ -124,7 +147,7 @@ export class WorkflowRuntime {
 
   async evaluateWorkflowGates(
     stage: WorkflowStage,
-    state: WorkflowState,
+    state: WorkflowState | MutableWorkflowState,
     envelope: ToolEnvelope,
     gates: WorkflowGate[],
   ): Promise<{ evaluation: WorkflowEvaluation; blocked: boolean }> {

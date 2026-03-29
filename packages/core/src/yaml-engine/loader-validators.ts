@@ -18,9 +18,14 @@ export function validateSchema(data: Record<string, unknown>): void {
       `Schema validation failed: apiVersion must be 'edictum/v1', got '${String(data.apiVersion)}'`,
     )
   }
-  if (data.kind !== 'ContractBundle' && data.kind !== 'Ruleset') {
+  if (data.kind === 'ContractBundle') {
     throw new EdictumConfigError(
-      `Schema validation failed: kind must be 'ContractBundle' or 'Ruleset', got '${String(data.kind)}'`,
+      "Schema validation failed: kind 'ContractBundle' is no longer supported; migrate the bundle to kind 'Ruleset'",
+    )
+  }
+  if (data.kind !== 'Ruleset') {
+    throw new EdictumConfigError(
+      `Schema validation failed: kind must be 'Ruleset', got '${String(data.kind)}'`,
     )
   }
   if (data.metadata != null && typeof data.metadata !== 'object') {

@@ -442,7 +442,7 @@ export class CheckPipeline {
     // 7. All checks passed
     const pe = hasPolicyError(contractsEvaluated)
 
-    // 8. Observe-mode contract evaluation (never affects the decision)
+    // 8. Observe-mode rule evaluation (never affects the decision)
     const observeResults = await this._evaluateObserveContracts(toolCall, session)
 
     return createPreDecision({

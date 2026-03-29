@@ -86,7 +86,7 @@ export function mustWorkflowStageIndex(definition: WorkflowDefinition, stageId: 
   return index
 }
 
-export function joinWorkflowEvidence(items: string[]): string {
+export function joinWorkflowEvidence(items: readonly string[]): string {
   return items.join(' | ')
 }
 
