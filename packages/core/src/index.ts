@@ -92,6 +92,26 @@ export type { PreDecision, PostDecision } from './pipeline.js'
 export { Edictum } from './guard.js'
 export type { EdictumOptions } from './guard.js'
 
+// Workflow Gates
+export {
+  WorkflowAction,
+  WorkflowRuntime,
+  loadWorkflow,
+  loadWorkflowString,
+} from './workflow/index.js'
+export type {
+  WorkflowApproval,
+  WorkflowCheck,
+  WorkflowDefinition,
+  WorkflowEvaluation,
+  WorkflowEvidence,
+  WorkflowGate,
+  WorkflowMetadata,
+  WorkflowRuntimeOptions,
+  WorkflowStage,
+  WorkflowState,
+} from './workflow/index.js'
+
 // Runner (framework-agnostic tool execution)
 export { defaultSuccessCheck, run } from './runner.js'
 export type { RunOptions } from './runner.js'

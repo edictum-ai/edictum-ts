@@ -214,6 +214,11 @@ export async function evaluate(
     warnReasons,
     contractsEvaluated: rules.length,
     policyError: rules.some((r) => r.policyError),
+    workflowSkipped: guard.getWorkflowRuntime() != null,
+    workflowReason:
+      guard.getWorkflowRuntime() != null
+        ? 'workflow evaluation requires runtime session state and is enforced only by run() in M1'
+        : null,
   })
 }
 

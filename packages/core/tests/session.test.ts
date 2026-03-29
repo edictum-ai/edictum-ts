@@ -89,6 +89,17 @@ describe('TestSession', () => {
     expect((backend as any)._counters.get('s:test-sess:execs')).toBe(1)
     expect((backend as any)._counters.get('s:test-sess:tool:Bash')).toBe(1)
   })
+
+  test('session values round-trip', async () => {
+    const backend = new MemoryBackend()
+    const session = new Session('test-sess', backend)
+
+    await session.setValue('workflow:test:state', '{"activeStage":"read-context"}')
+    expect(await session.getValue('workflow:test:state')).toBe('{"activeStage":"read-context"}')
+
+    await session.deleteValue('workflow:test:state')
+    expect(await session.getValue('workflow:test:state')).toBeNull()
+  })
 })
 
 describe('security', () => {

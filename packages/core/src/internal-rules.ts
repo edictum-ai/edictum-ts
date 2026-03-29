@@ -15,6 +15,7 @@ import type { OperationLimits } from './limits.js'
 import type { Session } from './session.js'
 import type { Decision } from './rules.js'
 import type { HookRegistration } from './types.js'
+import type { WorkflowRuntime } from './workflow/index.js'
 
 // ---------------------------------------------------------------------------
 // Internal rule types
@@ -95,4 +96,6 @@ export interface GuardLike {
   getObservePostconditions(toolCall: ToolCall): InternalPostcondition[]
   getObserveSandboxContracts(toolCall: ToolCall): InternalSandboxRule[]
   getObserveSessionContracts(): InternalSessionRule[]
+
+  getWorkflowRuntime(): WorkflowRuntime | null
 }

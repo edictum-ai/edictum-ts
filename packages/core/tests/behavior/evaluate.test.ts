@@ -8,6 +8,7 @@ import { Edictum } from '../../src/guard.js'
 import { MemoryBackend } from '../../src/storage.js'
 import { NullAuditSink } from '../helpers.js'
 import { createPrincipal } from '../../src/tool-call.js'
+import { WorkflowRuntime, loadWorkflowString } from '../../src/workflow/index.js'
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -71,6 +72,29 @@ describe('EvaluateBasicVerdicts', () => {
 
     expect(result.decision).toBe('allow')
     expect(result.denyReasons).toEqual([])
+  })
+
+  test('workflow_runtime_is_reported_as_skipped_in_dry_run', async () => {
+    const workflowRuntime = new WorkflowRuntime(
+      loadWorkflowString(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: dry-run-skip
+stages:
+  - id: read-context
+    tools: [Read]
+`),
+    )
+    const guard = new Edictum({
+      environment: 'test',
+      auditSink: new NullAuditSink(),
+      backend: new MemoryBackend(),
+      workflowRuntime,
+    })
+
+    const result = await guard.evaluate('Edit', { path: 'src/app.ts' })
+    expect(result.workflowSkipped).toBe(true)
+    expect(result.workflowReason).toContain('runtime session state')
   })
 })
 

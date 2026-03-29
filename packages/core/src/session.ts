@@ -70,6 +70,24 @@ export class Session {
     return this._sid
   }
 
+  /** Return a namespaced session-scoped value. */
+  async getValue(name: string): Promise<string | null> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    return await this._backend.get(`s:${this._sid}:${name}`)
+  }
+
+  /** Store a namespaced session-scoped value. */
+  async setValue(name: string, value: string): Promise<void> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    await this._backend.set(`s:${this._sid}:${name}`, value)
+  }
+
+  /** Delete a namespaced session-scoped value. */
+  async deleteValue(name: string): Promise<void> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    await this._backend.delete(`s:${this._sid}:${name}`)
+  }
+
   /** Increment attempt counter. Called in PreToolUse (before governance). */
   async incrementAttempts(): Promise<number> {
     return await this._backend.increment(`s:${this._sid}:attempts`)

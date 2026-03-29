@@ -42,6 +42,7 @@ import { RedactionPolicy } from './redaction.js'
 import { MemoryBackend } from './storage.js'
 import type { StorageBackend } from './storage.js'
 import type { HookRegistration } from './types.js'
+import type { WorkflowRuntime } from './workflow/index.js'
 
 // ---------------------------------------------------------------------------
 // User rule type discrimination
@@ -76,6 +77,7 @@ export interface EdictumOptions {
   readonly principal?: Principal
   readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
   readonly approvalBackend?: ApprovalBackend
+  readonly workflowRuntime?: WorkflowRuntime
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +117,7 @@ export class Edictum implements GuardLike {
     | ((toolName: string, toolInput: Record<string, unknown>) => Principal)
     | null
   /** @internal */ readonly _approvalBackend: ApprovalBackend | null
+  private readonly _workflowRuntime: WorkflowRuntime | null
 
   constructor(options: EdictumOptions = {}) {
     this.environment = options.environment ?? 'production'
@@ -127,6 +130,7 @@ export class Edictum implements GuardLike {
     this._principal = options.principal ?? null
     this._principalResolver = options.principalResolver ?? null
     this._approvalBackend = options.approvalBackend ?? null
+    this._workflowRuntime = options.workflowRuntime ?? null
 
     // Audit sink: local sink always present
     this._localSink = new CollectingAuditSink()
@@ -304,6 +308,10 @@ export class Edictum implements GuardLike {
       this._state.observeSandboxContracts as InternalSandboxRule[],
       toolCall,
     )
+  }
+
+  getWorkflowRuntime(): WorkflowRuntime | null {
+    return this._workflowRuntime
   }
 
   // -----------------------------------------------------------------------

@@ -20,6 +20,7 @@ import { Edictum } from './guard.js'
 import type { OperationLimits } from './limits.js'
 import type { RedactionPolicy } from './redaction.js'
 import type { StorageBackend } from './storage.js'
+import type { WorkflowRuntime } from './workflow/index.js'
 import { composeBundles } from './yaml-engine/composer.js'
 import type { CompositionReport } from './yaml-engine/composer.js'
 import { compileContracts } from './yaml-engine/compiler.js'
@@ -46,6 +47,7 @@ export interface YamlFactoryOptions {
   readonly principal?: Principal
   readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
   readonly approvalBackend?: ApprovalBackend
+  readonly workflowRuntime?: WorkflowRuntime
 }
 
 /** Options for fromYaml, extending base with returnReport. */
@@ -254,5 +256,6 @@ function _buildGuard(
     principal: options.principal,
     principalResolver: options.principalResolver,
     approvalBackend: options.approvalBackend,
+    workflowRuntime: options.workflowRuntime,
   })
 }

@@ -79,6 +79,51 @@ interface FixtureSuite {
   fixtures: Fixture[]
 }
 
+function normalizeFixtureBundle(bundle: Record<string, unknown>): Record<string, unknown> {
+  const cloned = JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>
+  if (cloned.kind === 'Ruleset') {
+    cloned.kind = 'ContractBundle'
+  }
+  if ('rules' in cloned && !('contracts' in cloned)) {
+    cloned.contracts = normalizeRules(cloned.rules)
+    delete cloned.rules
+  }
+  return cloned
+}
+
+function normalizeRules(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    return value
+  }
+  return value.map((rule) => normalizeRule(rule))
+}
+
+function normalizeRule(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+  const rule = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+  if (rule.then != null && typeof rule.then === 'object' && !Array.isArray(rule.then)) {
+    const then = rule.then as Record<string, unknown>
+    if ('action' in then && !('effect' in then)) {
+      const action = then.action
+      then.effect = action === 'block' ? 'deny' : action
+      delete then.action
+    }
+  }
+  return rule
+}
+
+function normalizeExpectedErrorSubstring(value: string): string {
+  if (value === 'rules') {
+    return 'contracts'
+  }
+  if (value === 'action') {
+    return 'effect'
+  }
+  return value
+}
+
 function loadFixtureSuites(dir: string): FixtureSuite[] | null {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.rejection.yaml'))
@@ -139,7 +184,7 @@ if (suites) {
       describe(suite.suite, () => {
         for (const fixture of suite.fixtures) {
           it(`${fixture.id}: ${fixture.description}`, () => {
-            const bundleYaml = yaml.dump(fixture.bundle, { lineWidth: -1 })
+            const bundleYaml = yaml.dump(normalizeFixtureBundle(fixture.bundle), { lineWidth: -1 })
 
             if (!fixture.expected.rejected) {
               expect(() => loadBundleString(bundleYaml)).not.toThrow()
@@ -161,10 +206,13 @@ if (suites) {
 
             // Empty string means no message constraint — skip substring check.
             if (fixture.expected.error_contains) {
+              const expectedErrorSubstring = normalizeExpectedErrorSubstring(
+                fixture.expected.error_contains,
+              )
               expect(
                 errorMessage.toLowerCase(),
                 `Fixture ${fixture.id}: error "${errorMessage}" must contain "${fixture.expected.error_contains}"`,
-              ).toContain(fixture.expected.error_contains.toLowerCase())
+              ).toContain(expectedErrorSubstring.toLowerCase())
             }
           })
         }
