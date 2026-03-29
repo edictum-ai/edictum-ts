@@ -81,12 +81,14 @@ interface FixtureSuite {
 
 function normalizeFixtureBundle(bundle: Record<string, unknown>): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>
-  if (cloned.kind === 'Ruleset') {
-    cloned.kind = 'ContractBundle'
+  if (cloned.kind === 'ContractBundle') {
+    cloned.kind = 'Ruleset'
   }
-  if ('rules' in cloned && !('contracts' in cloned)) {
-    cloned.contracts = normalizeRules(cloned.rules)
-    delete cloned.rules
+  if ('contracts' in cloned && !('rules' in cloned)) {
+    cloned.rules = normalizeRules(cloned.contracts)
+    delete cloned.contracts
+  } else if ('rules' in cloned) {
+    cloned.rules = normalizeRules(cloned.rules)
   }
   return cloned
 }
@@ -105,21 +107,21 @@ function normalizeRule(value: unknown): unknown {
   const rule = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
   if (rule.then != null && typeof rule.then === 'object' && !Array.isArray(rule.then)) {
     const then = rule.then as Record<string, unknown>
-    if ('action' in then && !('effect' in then)) {
-      const action = then.action
-      then.effect = action === 'block' ? 'deny' : action
-      delete then.action
+    if ('effect' in then && !('action' in then)) {
+      const effect = then.effect
+      then.action = effect === 'deny' ? 'block' : effect === 'approve' ? 'ask' : effect
+      delete then.effect
     }
   }
   return rule
 }
 
 function normalizeExpectedErrorSubstring(value: string): string {
-  if (value === 'rules') {
-    return 'contracts'
+  if (value === 'contracts') {
+    return 'rules'
   }
-  if (value === 'action') {
-    return 'effect'
+  if (value === 'effect') {
+    return 'action'
   }
   return value
 }
