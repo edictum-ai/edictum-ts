@@ -1,3 +1,5 @@
+import { deepFreeze } from '../tool-call.js'
+
 export const WorkflowAction = {
   ALLOW: 'allow',
   BLOCK: 'block',
@@ -44,14 +46,14 @@ export interface MutableWorkflowEvidence {
 export function createWorkflowEvaluation(
   fields: Partial<WorkflowEvaluation> = {},
 ): WorkflowEvaluation {
-  return {
+  return deepFreeze({
     action: fields.action ?? WorkflowAction.ALLOW,
     reason: fields.reason ?? '',
     stageId: fields.stageId ?? '',
     records: fields.records ?? [],
     audit: fields.audit ?? null,
     events: fields.events ?? [],
-  }
+  })
 }
 
 export function workflowStateCompletedStage(state: WorkflowState, stageId: string): boolean {

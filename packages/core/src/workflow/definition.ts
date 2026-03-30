@@ -1,5 +1,5 @@
 import { EdictumConfigError } from '../errors.js'
-import { _validateToolName } from '../envelope.js'
+import { validateToolName } from '../tool-call.js'
 import { compileWorkflowRegex, parseCondition } from './evaluator.js'
 
 const WORKFLOW_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/
@@ -98,7 +98,7 @@ function validateWorkflowStage(stage: WorkflowStage): void {
 
   for (const tool of stage.tools) {
     try {
-      _validateToolName(tool)
+      validateToolName(tool)
     } catch (exc) {
       throw new EdictumConfigError(
         `workflow: invalid tool ${JSON.stringify(tool)} in stage ${JSON.stringify(stage.id)}: ${exc}`,

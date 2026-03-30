@@ -234,7 +234,7 @@ export async function run(
             `workflow approval requested for ${JSON.stringify(pre.workflowStageId)} but no workflow runtime configured`,
           )
         }
-        if (approvalRound + 1 > MAX_WORKFLOW_APPROVAL_ROUNDS) {
+        if (approvalRound >= MAX_WORKFLOW_APPROVAL_ROUNDS) {
           throw new Error(
             `workflow: exceeded maximum approval rounds (${MAX_WORKFLOW_APPROVAL_ROUNDS})`,
           )

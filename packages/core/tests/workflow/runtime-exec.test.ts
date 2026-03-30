@@ -90,6 +90,35 @@ stages:
     )
   }, 10_000)
 
+  test('exec evaluator rejects signal-killed commands', async () => {
+    if (process.platform === 'win32') {
+      return
+    }
+
+    const runtime = makeWorkflowRuntime(
+      `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-signal
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("kill -9 $$", exit_code=0)
+        message: command must succeed
+`,
+      { execEvaluatorEnabled: true },
+    )
+    const session = makeWorkflowSession('wf-exec-signal')
+    const call = makeCall('Bash', { command: 'node --version' })
+    const decision = await runtime.evaluate(session, call)
+
+    expect(decision.action).toBe('allow')
+    await expect(runtime.recordResult(session, decision.stageId, call)).rejects.toThrow(
+      /killed by signal/i,
+    )
+  })
+
   test('exec evaluator caps buffered output evidence', async () => {
     const runtime = makeWorkflowRuntime(
       `apiVersion: edictum/v1

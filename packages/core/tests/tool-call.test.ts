@@ -12,7 +12,7 @@ import {
   EdictumConfigError,
   SideEffect,
   ToolRegistry,
-  _validateToolName,
+  validateToolName,
 } from '../src/index.js'
 
 describe('TestCreateEnvelope', () => {
@@ -310,6 +310,7 @@ describe('security', () => {
     })
 
     test('tool_name_empty_string_rejected', () => {
+      expect(() => validateToolName('')).toThrow(EdictumConfigError)
       expect(() => createEnvelope('', {})).toThrow(EdictumConfigError)
       expect(() => createEnvelope('', {})).toThrow(/Invalid tool_name/)
     })
@@ -317,6 +318,7 @@ describe('security', () => {
     test('tool_name_normal_names_accepted', () => {
       /** Common tool name formats should all work. */
       // These should not throw
+      expect(() => validateToolName('Bash')).not.toThrow()
       createEnvelope('Bash', {})
       createEnvelope('file.read', {})
       createEnvelope('google-search', {})

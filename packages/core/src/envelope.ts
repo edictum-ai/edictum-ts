@@ -5,7 +5,6 @@ export {
   deepFreeze,
   SideEffect,
   ToolRegistry,
-  _validateToolName,
 } from './tool-call.js'
 export type {
   CreateEnvelopeOptions,

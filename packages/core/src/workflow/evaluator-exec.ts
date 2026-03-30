@@ -90,7 +90,15 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
               )
               return
             }
-            exitCode = code ?? 0
+            if (code == null) {
+              reject(
+                new Error(
+                  `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} killed by signal`,
+                ),
+              )
+              return
+            }
+            exitCode = code
             resolve()
           })
         })

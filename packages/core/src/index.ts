@@ -13,8 +13,8 @@ export {
   deepFreeze,
   SideEffect,
   ToolRegistry,
-  _validateToolName,
 } from './tool-call.js'
+export { validateToolName } from './tool-call.js'
 export type { CreateEnvelopeOptions, Principal, ToolCall } from './tool-call.js'
 
 // Contracts
