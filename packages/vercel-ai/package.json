@@ -1,6 +1,6 @@
 {
   "name": "@edictum/vercel-ai",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Vercel AI SDK adapter for edictum",
   "license": "MIT",
   "type": "module",
