@@ -202,6 +202,7 @@ The ruleset schema lives in the `edictum-schemas` repo — single source of trut
 - Conditions: `when:` with boolean AST (`all/any/not`) and leaves (`selector: {operator: value}`)
 - 15 operators: exists, equals, not_equals, in, not_in, contains, contains_any, starts_with, ends_with, matches, matches_any, gt, gte, lt, lte
 - Missing fields evaluate to `false`. Type mismatches yield block/warn + `policyError: true`
+- `apiVersion: edictum/v1`, `kind: Workflow` — multi-stage gate definition with `stages`, `entry`/`exit` gates, `tools`, `checks`, and optional `approval` per stage
 
 ## Ecosystem Context
 

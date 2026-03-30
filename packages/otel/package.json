@@ -1,7 +1,7 @@
 {
   "name": "@edictum/otel",
   "version": "0.2.0",
-  "description": "OpenTelemetry integration for edictum governance pipeline",
+  "description": "OpenTelemetry integration for Edictum rule enforcement",
   "license": "MIT",
   "type": "module",
   "exports": {

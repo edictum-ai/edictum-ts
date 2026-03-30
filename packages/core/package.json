@@ -1,7 +1,7 @@
 {
   "name": "@edictum/core",
   "version": "0.3.0",
-  "description": "Runtime contract enforcement for AI agent tool calls",
+  "description": "Runtime rule enforcement for AI agent tool calls",
   "license": "MIT",
   "type": "module",
   "exports": {
