@@ -47,7 +47,6 @@ rules:
 `
 
 export const TEST_YAML_B64 = Buffer.from(TEST_YAML).toString('base64')
-export const TEST_YAML_OBSERVE_B64 = Buffer.from(TEST_YAML_OBSERVE).toString('base64')
 
 export const BASE_OPTS = {
   url: 'http://localhost:8000',

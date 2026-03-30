@@ -152,6 +152,25 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     expect(decision.reason).toBe('Too risky')
   })
 
+  it('returns rejected decision for legacy denied status', async () => {
+    const client = mockClient()
+    vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
+    vi.mocked(client.get).mockResolvedValue({
+      status: 'denied',
+      decided_by: 'reviewer',
+      decision_reason: 'Too risky',
+    })
+
+    const backend = new ServerApprovalBackend(client)
+    await backend.requestApproval('Tool', {}, 'msg')
+
+    const decision = await backend.waitForDecision('a1')
+
+    expect(decision.approved).toBe(false)
+    expect(decision.status).toBe(ApprovalStatus.DENIED)
+    expect(decision.reason).toBe('Too risky')
+  })
+
   it('returns timeout decision from timed_out status', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })

@@ -35,6 +35,13 @@ describe('security', () => {
     ).rejects.toThrow(/exceeds maximum size/)
   })
 
+  it('rejects oversized yaml_bytes payloads (memory exhaustion attack)', async () => {
+    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: 'A'.repeat(700_000) }))
+    await expect(
+      createServerGuard({ ...BASE_OPTS, bundleName: 'b', autoWatch: false }),
+    ).rejects.toThrow(/exceeds maximum size/)
+  })
+
   it('rejects tampered YAML with a signature for different content', async () => {
     const keypair = generateKeyPairSync('ed25519')
     const pubDer = keypair.publicKey.export({ type: 'spki', format: 'der' })

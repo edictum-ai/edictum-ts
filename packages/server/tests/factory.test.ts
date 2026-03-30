@@ -6,6 +6,7 @@ import { createServerGuard } from '../src/factory.js'
 import type { ServerGuard, WatchErrorHandler } from '../src/factory.js'
 import {
   TEST_YAML,
+  TEST_YAML_B64,
   TEST_YAML_OBSERVE,
   BASE_OPTS,
   mockJson,
@@ -108,6 +109,12 @@ describe('basic connection', () => {
     setup({ yaml: TEST_YAML_OBSERVE })
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
     expect(sg.guard.mode).toBe('observe')
+  })
+
+  it('supports legacy yaml_bytes ruleset responses', async () => {
+    setup({ yaml_bytes: TEST_YAML_B64 })
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
+    expect(sg.guard).toBeInstanceOf(Edictum)
   })
 
   it('explicit mode overrides ruleset defaults.mode', async () => {

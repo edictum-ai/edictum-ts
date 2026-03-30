@@ -7,7 +7,7 @@
  *
  * SIZE APPROVAL: This file exceeds 200 lines. It mirrors Python's
  * _server_factory.py (228 LOC) — validation, bundle fetch, SSE watcher
- * startup, assignment waiting, and cleanup form a cohesive factory.
+ * startup, and cleanup form a cohesive factory.
  */
 
 import { Edictum, EdictumConfigError, compileContracts, loadBundleString } from '@edictum/core'
@@ -337,7 +337,7 @@ function _extractYamlContent(
     }
   }
 
-  throw new EdictumConfigError(`${sourceLabel} missing 'yaml' field`)
+  throw new EdictumConfigError(`${sourceLabel} missing 'yaml' or 'yaml_bytes' field`)
 }
 
 // ---------------------------------------------------------------------------
