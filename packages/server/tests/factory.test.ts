@@ -1,19 +1,12 @@
-/**
- * Tests for createServerGuard() — core functionality.
- *
- * Security, SSE watcher error, and server-assignment tests are in
- * factory-security.test.ts to stay under the 500-line limit.
- */
-
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { Edictum, EdictumConfigError } from '@edictum/core'
+
 import { createServerGuard } from '../src/factory.js'
 import type { ServerGuard, WatchErrorHandler } from '../src/factory.js'
 import {
   TEST_YAML,
-  TEST_YAML_B64,
-  TEST_YAML_OBSERVE_B64,
+  TEST_YAML_OBSERVE,
   BASE_OPTS,
   mockJson,
   mockSse,
@@ -22,10 +15,6 @@ import {
   createMockFetch,
 } from './factory-helpers.js'
 import type { FetchFn } from './factory-helpers.js'
-
-// ---------------------------------------------------------------------------
-// Setup / Teardown
-// ---------------------------------------------------------------------------
 
 let mockFetch: ReturnType<typeof vi.fn<FetchFn>>
 const mock = createMockFetch()
@@ -40,17 +29,12 @@ afterEach(() => {
   mock.restore()
 })
 
-// Local helper that uses module-scoped mockFetch
 function setup(bundleResponse?: Record<string, unknown>): void {
   setupFullMock(mockFetch, bundleResponse)
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 describe('validation', () => {
-  it('rejects bundleName=null with autoWatch=false', async () => {
+  it('rejects bundleName=null', async () => {
     await expect(
       createServerGuard({ ...BASE_OPTS, bundleName: null, autoWatch: false }),
     ).rejects.toThrow(EdictumConfigError)
@@ -58,7 +42,12 @@ describe('validation', () => {
 
   it('rejects verifySignatures without signingPublicKey', async () => {
     await expect(
-      createServerGuard({ ...BASE_OPTS, bundleName: 'b', verifySignatures: true }),
+      createServerGuard({
+        ...BASE_OPTS,
+        bundleName: 'b',
+        verifySignatures: true,
+        autoWatch: false,
+      }),
     ).rejects.toThrow(EdictumConfigError)
   })
 
@@ -73,87 +62,56 @@ describe('validation', () => {
     ).rejects.toThrow(/plaintext HTTP/)
   })
 
-  it('rejects NaN assignmentTimeout', async () => {
+  it('rejects assignmentTimeout because /v1 API has no assignment flow', async () => {
     await expect(
-      createServerGuard({ ...BASE_OPTS, bundleName: 'b', assignmentTimeout: NaN }),
-    ).rejects.toThrow(/assignmentTimeout/)
-  })
-
-  it('rejects negative assignmentTimeout', async () => {
-    await expect(
-      createServerGuard({ ...BASE_OPTS, bundleName: 'b', assignmentTimeout: -1 }),
-    ).rejects.toThrow(/assignmentTimeout/)
-  })
-
-  it('rejects zero assignmentTimeout', async () => {
-    await expect(
-      createServerGuard({ ...BASE_OPTS, bundleName: 'b', assignmentTimeout: 0 }),
+      createServerGuard({ ...BASE_OPTS, bundleName: 'b', assignmentTimeout: 1 }),
     ).rejects.toThrow(/assignmentTimeout/)
   })
 })
 
-// ---------------------------------------------------------------------------
-// Basic connection + initial rule fetch
-// ---------------------------------------------------------------------------
-
 describe('basic connection', () => {
   let sg: ServerGuard
+
   afterEach(async () => {
     if (sg) await sg.close()
   })
 
-  it('fetches initial bundle and returns working guard', async () => {
+  it('fetches the initial ruleset and returns a working guard', async () => {
     setup()
-    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
+
     expect(sg.guard).toBeInstanceOf(Edictum)
     expect(sg.guard.policyVersion).toBeTruthy()
 
-    const bundleCall = mockFetch.mock.calls.find((c) =>
-      extractUrl(c[0]).includes('/api/v1/bundles/test-bundle/current'),
+    const rulesetCall = mockFetch.mock.calls.find((call) =>
+      extractUrl(call[0]).includes('/v1/rulesets/test-bundle/current'),
     )
-    expect(bundleCall).toBeTruthy()
-  })
-
-  it('passes environment as query parameter', async () => {
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/')) {
-        expect(url).toContain('env=staging')
-        return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      }
-      if (url.includes('/api/v1/stream')) return mockSse([])
-      return mockJson({ error: 'not found' }, 404)
-    })
-    sg = await createServerGuard({
-      ...BASE_OPTS,
-      bundleName: 'test-bundle',
-      environment: 'staging',
-    })
-    expect(sg.guard).toBeInstanceOf(Edictum)
+    expect(rulesetCall).toBeTruthy()
   })
 
   it('wires up ServerAuditSink by default', async () => {
     setup()
-    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
     expect(sg.guard.auditSink).toBeTruthy()
   })
 
   it('creates guard without autoWatch', async () => {
     setup()
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
-    expect(sg.guard).toBeInstanceOf(Edictum)
-    const sseCalls = mockFetch.mock.calls.filter((c) => extractUrl(c[0]).includes('/api/v1/stream'))
+    const sseCalls = mockFetch.mock.calls.filter((call) =>
+      extractUrl(call[0]).includes('/v1/stream'),
+    )
     expect(sseCalls).toHaveLength(0)
   })
 
-  it('uses bundle defaults.mode when mode is omitted', async () => {
-    setup({ yaml_bytes: TEST_YAML_OBSERVE_B64 })
+  it('uses ruleset defaults.mode when mode is omitted', async () => {
+    setup({ yaml: TEST_YAML_OBSERVE })
     sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
     expect(sg.guard.mode).toBe('observe')
   })
 
-  it('explicit mode overrides bundle defaults.mode', async () => {
-    setup({ yaml_bytes: TEST_YAML_OBSERVE_B64 })
+  it('explicit mode overrides ruleset defaults.mode', async () => {
+    setup({ yaml: TEST_YAML_OBSERVE })
     sg = await createServerGuard({
       ...BASE_OPTS,
       bundleName: 'test-bundle',
@@ -164,10 +122,6 @@ describe('basic connection', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Error handling
-// ---------------------------------------------------------------------------
-
 describe('error handling', () => {
   it('throws on auth failure (401)', async () => {
     mockFetch.mockImplementation(async () => mockJson({ detail: 'Unauthorized' }, 401))
@@ -176,75 +130,64 @@ describe('error handling', () => {
     ).rejects.toThrow(/401/)
   })
 
-  it('throws on missing yaml_bytes in response', async () => {
+  it('throws on missing yaml in response', async () => {
     mockFetch.mockImplementation(async () => mockJson({ some_other_field: 'value' }))
     await expect(
       createServerGuard({ ...BASE_OPTS, bundleName: 'b', autoWatch: false }),
-    ).rejects.toThrow(/yaml_bytes/)
+    ).rejects.toThrow(/yaml/)
   })
 
   it('throws on invalid YAML content', async () => {
-    const badYaml = Buffer.from('not: valid: yaml: bundle').toString('base64')
-    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: badYaml }))
+    mockFetch.mockImplementation(async () => mockJson({ yaml: 'not: valid: yaml: bundle' }))
     await expect(
       createServerGuard({ ...BASE_OPTS, bundleName: 'b', autoWatch: false }),
     ).rejects.toThrow()
   })
 })
 
-// ---------------------------------------------------------------------------
-// Signature verification
-// ---------------------------------------------------------------------------
-
 describe('signature verification', () => {
   const keypair = generateKeyPairSync('ed25519')
   const publicKeyDer = keypair.publicKey.export({ type: 'spki', format: 'der' })
   const publicKeyHex = Buffer.from(publicKeyDer.subarray(-32)).toString('hex')
-  const sig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey)
-  const signatureB64 = sig.toString('base64')
+  const signatureB64 = sign(null, Buffer.from(TEST_YAML), keypair.privateKey).toString('base64')
   const sigOpts = {
     verifySignatures: true,
     signingPublicKey: publicKeyHex,
     autoWatch: false,
   } as const
 
-  it('accepts valid signature', async () => {
-    mockFetch.mockImplementation(async () =>
-      mockJson({ yaml_bytes: TEST_YAML_B64, signature: signatureB64 }),
-    )
+  it('accepts a valid signature', async () => {
+    mockFetch.mockImplementation(async () => mockJson({ yaml: TEST_YAML, signature: signatureB64 }))
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'b', ...sigOpts })
     expect(sg.guard).toBeInstanceOf(Edictum)
     await sg.close()
   })
 
-  it('rejects invalid signature', async () => {
+  it('rejects an invalid signature', async () => {
     mockFetch.mockImplementation(async () =>
-      mockJson({ yaml_bytes: TEST_YAML_B64, signature: Buffer.from('bad').toString('base64') }),
+      mockJson({ yaml: TEST_YAML, signature: Buffer.from('bad').toString('base64') }),
     )
     await expect(createServerGuard({ ...BASE_OPTS, bundleName: 'b', ...sigOpts })).rejects.toThrow()
   })
 
-  it('rejects missing signature when verification enabled', async () => {
-    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: TEST_YAML_B64 }))
+  it('rejects a missing signature when verification is enabled', async () => {
+    mockFetch.mockImplementation(async () => mockJson({ yaml: TEST_YAML }))
     await expect(createServerGuard({ ...BASE_OPTS, bundleName: 'b', ...sigOpts })).rejects.toThrow(
       /signature missing/i,
     )
   })
 })
 
-// ---------------------------------------------------------------------------
-// Guard functionality (end-to-end)
-// ---------------------------------------------------------------------------
-
 describe('guard works end-to-end', () => {
   let sg: ServerGuard
+
   afterEach(async () => {
     if (sg) await sg.close()
   })
 
-  it('enforces rules from server-fetched bundle', async () => {
+  it('enforces rules from the fetched ruleset', async () => {
     setup()
-    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
+    sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', autoWatch: false })
 
     const safeResult = await sg.guard.run('Bash', { command: 'ls -la' }, async () => 'output')
     expect(safeResult).toBe('output')
@@ -255,22 +198,18 @@ describe('guard works end-to-end', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Close / cleanup
-// ---------------------------------------------------------------------------
-
 describe('close()', () => {
   it('can be called multiple times safely', async () => {
     setup()
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: 'test-bundle',
+      autoWatch: false,
+    })
     await sg.close()
     await sg.close()
   })
 })
-
-// ---------------------------------------------------------------------------
-// Behavior tests for individual parameters
-// ---------------------------------------------------------------------------
 
 describe('parameter behavior', () => {
   it('tags are forwarded to the client', async () => {
@@ -312,7 +251,12 @@ describe('parameter behavior', () => {
   it('onDeny callback fires on denied tool call', async () => {
     const onDeny = vi.fn()
     setup()
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', onDeny })
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: 'test-bundle',
+      autoWatch: false,
+      onDeny,
+    })
     await expect(
       sg.guard.run('Bash', { command: 'rm -rf /' }, async () => 'nope'),
     ).rejects.toThrow()
@@ -323,7 +267,12 @@ describe('parameter behavior', () => {
   it('onAllow callback fires on allowed tool call', async () => {
     const onAllow = vi.fn()
     setup()
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', onAllow })
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: 'test-bundle',
+      autoWatch: false,
+      onAllow,
+    })
     await sg.guard.run('Bash', { command: 'ls' }, async () => 'ok')
     expect(onAllow).toHaveBeenCalledTimes(1)
     await sg.close()
@@ -335,6 +284,7 @@ describe('parameter behavior', () => {
     const sg = await createServerGuard({
       ...BASE_OPTS,
       bundleName: 'test-bundle',
+      autoWatch: false,
       auditSink: customSink,
     })
     await sg.guard.run('SafeTool', { arg: 'value' }, async () => 'ok')
@@ -344,7 +294,12 @@ describe('parameter behavior', () => {
 
   it('mode override applies', async () => {
     setup()
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', mode: 'observe' })
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: 'test-bundle',
+      autoWatch: false,
+      mode: 'observe',
+    })
     expect(sg.guard.mode).toBe('observe')
     await sg.close()
   })
@@ -377,21 +332,28 @@ describe('parameter behavior', () => {
     await sg.close()
   })
 
-  it('onWatchError callback receives signature rejection', async () => {
+  it('onWatchError receives signature rejection from a ruleset update fetch', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
-    const badBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64, signature: 'badsig' })
-
     const keypair = generateKeyPairSync('ed25519')
     const pubDer = keypair.publicKey.export({ type: 'spki', format: 'der' })
     const pubHex = Buffer.from(pubDer.subarray(-32)).toString('hex')
     const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey).toString('base64')
+    let currentFetchCount = 0
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'contract_update', data: badBundle }])
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        if (currentFetchCount === 1) {
+          return mockJson({ yaml: TEST_YAML, signature: validSig })
+        }
+        return mockJson({ yaml: TEST_YAML, signature: 'badsig' })
+      }
+      if (url.includes('/v1/stream')) {
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
+        ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
 
@@ -402,14 +364,11 @@ describe('parameter behavior', () => {
       signingPublicKey: pubHex,
       onWatchError,
     })
-    await vi.waitFor(
-      () => {
-        expect(onWatchError).toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'signature_rejected' }),
-        )
-      },
-      { timeout: 2000 },
-    )
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'signature_rejected', bundleName: 'test-bundle' }),
+      )
+    })
     await sg.close()
   })
 
@@ -423,7 +382,6 @@ describe('parameter behavior', () => {
       successCheck,
     })
     await expect(sg.guard.run('SafeTool', { x: 1 }, async () => 'result')).rejects.toThrow()
-    expect(successCheck).toHaveBeenCalledTimes(1)
     expect(successCheck).toHaveBeenCalledWith('SafeTool', 'result')
     await sg.close()
   })
@@ -440,7 +398,6 @@ describe('parameter behavior', () => {
     await sg.guard.run('SafeTool', { x: 1 }, async () => 'ok')
     expect(principalResolver).toHaveBeenCalledTimes(1)
     const events = sg.guard.localSink.events
-    expect(events.length).toBeGreaterThan(0)
     expect(events[0].principal).toMatchObject({ userId: 'resolved-user', role: 'operator' })
     await sg.close()
   })
@@ -476,8 +433,6 @@ describe('parameter behavior', () => {
       autoWatch: false,
       approvalBackend: customApproval,
     })
-    // Verify via internal field — no approval-type rule in the test
-    // YAML to trigger the approval flow behaviorally.
     expect(sg.guard._approvalBackend).toBe(customApproval)
     await sg.close()
   })

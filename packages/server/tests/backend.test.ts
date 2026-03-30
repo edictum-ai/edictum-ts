@@ -38,7 +38,7 @@ describe('ServerBackend.get', () => {
 
     const result = await backend.get('session:123:count')
     expect(result).toBe('hello')
-    expect(client.get).toHaveBeenCalledWith('/api/v1/sessions/session%3A123%3Acount')
+    expect(client.get).toHaveBeenCalledWith('/v1/sessions/session%3A123%3Acount')
   })
 
   it('returns null on 404', async () => {
@@ -74,7 +74,7 @@ describe('ServerBackend.set', () => {
 
     await backend.set('my-key', 'my-value')
 
-    expect(client.put).toHaveBeenCalledWith('/api/v1/sessions/my-key', {
+    expect(client.put).toHaveBeenCalledWith('/v1/sessions/my-key', {
       value: 'my-value',
     })
   })
@@ -92,7 +92,7 @@ describe('ServerBackend.delete', () => {
 
     await backend.delete('my-key')
 
-    expect(client.delete).toHaveBeenCalledWith('/api/v1/sessions/my-key')
+    expect(client.delete).toHaveBeenCalledWith('/v1/sessions/my-key')
   })
 
   it('ignores 404 on delete', async () => {
@@ -125,7 +125,7 @@ describe('ServerBackend.increment', () => {
     const result = await backend.increment('counter', 2)
 
     expect(result).toBe(5)
-    expect(client.post).toHaveBeenCalledWith('/api/v1/sessions/counter/increment', { amount: 2 })
+    expect(client.post).toHaveBeenCalledWith('/v1/sessions/counter/increment', { amount: 2 })
   })
 
   it('throws on non-number response value', async () => {
@@ -205,7 +205,7 @@ describe('ServerBackend.increment', () => {
 
     await backend.increment('counter')
 
-    expect(client.post).toHaveBeenCalledWith('/api/v1/sessions/counter/increment', { amount: 1 })
+    expect(client.post).toHaveBeenCalledWith('/v1/sessions/counter/increment', { amount: 1 })
   })
 })
 
@@ -233,7 +233,7 @@ describe('ServerBackend.batchGet', () => {
     const result = await backend.batchGet(['a', 'b', 'c'])
 
     expect(result).toEqual({ a: '1', b: '2', c: null })
-    expect(client.post).toHaveBeenCalledWith('/api/v1/sessions/batch', {
+    expect(client.post).toHaveBeenCalledWith('/v1/sessions/batch', {
       keys: ['a', 'b', 'c'],
     })
   })

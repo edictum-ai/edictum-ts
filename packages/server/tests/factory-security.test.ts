@@ -1,31 +1,18 @@
-/**
- * Security, SSE watcher error, and server-assignment tests for createServerGuard().
- *
- * SIZE APPROVAL: This file exceeds 200 lines. Security adversarial tests,
- * SSE watcher error tests, and server-assignment path tests form a single
- * cohesive security test suite that cannot be meaningfully split further.
- */
-
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { Edictum, EdictumConfigError } from '@edictum/core'
+import { EdictumConfigError } from '@edictum/core'
+
 import { createServerGuard } from '../src/factory.js'
 import type { WatchErrorHandler } from '../src/factory.js'
 import {
   TEST_YAML,
-  TEST_YAML_B64,
   BASE_OPTS,
   mockJson,
   mockSse,
   extractUrl,
-  setupFullMock,
   createMockFetch,
 } from './factory-helpers.js'
 import type { FetchFn } from './factory-helpers.js'
-
-// ---------------------------------------------------------------------------
-// Setup / Teardown
-// ---------------------------------------------------------------------------
 
 let mockFetch: ReturnType<typeof vi.fn<FetchFn>>
 const mock = createMockFetch()
@@ -40,33 +27,25 @@ afterEach(() => {
   mock.restore()
 })
 
-function setup(bundleResponse?: Record<string, unknown>): void {
-  setupFullMock(mockFetch, bundleResponse)
-}
-
-// ---------------------------------------------------------------------------
-// Security — adversarial bypass tests
-// ---------------------------------------------------------------------------
-
 describe('security', () => {
-  it('rejects oversized yaml_bytes (memory exhaustion attack)', async () => {
-    const oversizedB64 = 'A'.repeat(700_000)
-    mockFetch.mockImplementation(async () => mockJson({ yaml_bytes: oversizedB64 }))
+  it('rejects oversized yaml payloads (memory exhaustion attack)', async () => {
+    mockFetch.mockImplementation(async () => mockJson({ yaml: 'x'.repeat(600_000) }))
     await expect(
       createServerGuard({ ...BASE_OPTS, bundleName: 'b', autoWatch: false }),
     ).rejects.toThrow(/exceeds maximum size/)
   })
 
-  it('rejects tampered YAML with signature for different content', async () => {
+  it('rejects tampered YAML with a signature for different content', async () => {
     const keypair = generateKeyPairSync('ed25519')
     const pubDer = keypair.publicKey.export({ type: 'spki', format: 'der' })
     const pubHex = Buffer.from(pubDer.subarray(-32)).toString('hex')
-    const legitimateSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey)
-    const tamperedB64 = Buffer.from(TEST_YAML.replace('rm -rf', 'ls')).toString('base64')
+    const legitimateSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey).toString('base64')
+    const tamperedYaml = TEST_YAML.replace('rm -rf', 'ls')
 
     mockFetch.mockImplementation(async () =>
-      mockJson({ yaml_bytes: tamperedB64, signature: legitimateSig.toString('base64') }),
+      mockJson({ yaml: tamperedYaml, signature: legitimateSig }),
     )
+
     await expect(
       createServerGuard({
         ...BASE_OPTS,
@@ -78,21 +57,28 @@ describe('security', () => {
     ).rejects.toThrow()
   })
 
-  it('SSE watcher keeps existing rules when unsigned bundle arrives', async () => {
+  it('keeps existing rules when an updated ruleset fetch fails signature verification', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
-    const unsignedBundle = JSON.stringify({ yaml_bytes: TEST_YAML_B64 })
-
     const keypair = generateKeyPairSync('ed25519')
     const pubDer = keypair.publicKey.export({ type: 'spki', format: 'der' })
     const pubHex = Buffer.from(pubDer.subarray(-32)).toString('hex')
-    const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey)
+    const validSig = sign(null, Buffer.from(TEST_YAML), keypair.privateKey).toString('base64')
+    let currentFetchCount = 0
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64, signature: validSig.toString('base64') })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'contract_update', data: unsignedBundle }])
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        if (currentFetchCount === 1) {
+          return mockJson({ yaml: TEST_YAML, signature: validSig })
+        }
+        return mockJson({ yaml: TEST_YAML, signature: 'badsig' })
+      }
+      if (url.includes('/v1/stream')) {
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
+        ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
 
@@ -105,237 +91,212 @@ describe('security', () => {
     })
     const initialVersion = sg.guard.policyVersion
 
-    await vi.waitFor(
-      () => {
-        expect(onWatchError).toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'signature_rejected' }),
-        )
-      },
-      { timeout: 2000 },
-    )
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'signature_rejected', bundleName: 'test-bundle' }),
+      )
+    })
+
     expect(sg.guard.policyVersion).toBe(initialVersion)
     await sg.close()
   })
 
-  it('rejects assignment_changed with path-separator bundle_name at SSE level', async () => {
-    const maliciousEvent = JSON.stringify({ bundle_name: '../../evil' })
-    let fetchedMaliciousBundle = false
+  it('does not fetch a malicious ruleset path from stream data', async () => {
+    let fetchedMaliciousRuleset = false
+    let sseCallCount = 0
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/test-bundle'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'assignment_changed', data: maliciousEvent }])
-      if (url.includes('evil')) fetchedMaliciousBundle = true
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        return mockJson({ yaml: TEST_YAML })
+      }
+      if (url.includes('/v1/stream')) {
+        sseCallCount++
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: '../../evil', version: 2 }) },
+        ])
+      }
+      if (url.includes('evil')) {
+        fetchedMaliciousRuleset = true
+      }
       return mockJson({ error: 'not found' }, 404)
     })
 
-    let sseCallCount = 0
-    const origImpl = mockFetch.getMockImplementation()!
-    mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = extractUrl(input)
-      if (url.includes('/api/v1/stream')) sseCallCount++
-      return origImpl(input, init)
-    })
-
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
-    await vi.waitFor(
-      () => {
-        expect(sseCallCount).toBeGreaterThanOrEqual(1)
-      },
-      { timeout: 2000 },
-    )
-    expect(fetchedMaliciousBundle).toBe(false)
+    await vi.waitFor(() => {
+      expect(sseCallCount).toBeGreaterThanOrEqual(1)
+    })
+    expect(fetchedMaliciousRuleset).toBe(false)
     expect(sg.client.bundleName).toBe('test-bundle')
     await sg.close()
   })
 
-  it('assignment_changed SSE event triggers new bundle fetch and reload', async () => {
-    const assignmentEvent = JSON.stringify({ bundle_name: 'new-bundle' })
-    const newYamlB64 = Buffer.from(TEST_YAML.replace('no-rm', 'no-rm-v2')).toString('base64')
+  it('ruleset_updated events refetch the current ruleset and reload the guard', async () => {
+    const updatedYaml = TEST_YAML.replace('no-rm', 'no-rm-v2')
+    let currentFetchCount = 0
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/test-bundle/current'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/bundles/new-bundle/current'))
-        return mockJson({ yaml_bytes: newYamlB64 })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'assignment_changed', data: assignmentEvent }])
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        return mockJson({ yaml: currentFetchCount === 1 ? TEST_YAML : updatedYaml })
+      }
+      if (url.includes('/v1/stream')) {
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
+        ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
 
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
     const initialVersion = sg.guard.policyVersion
-    await vi.waitFor(
-      () => {
-        expect(sg.guard.policyVersion).not.toBe(initialVersion)
-      },
-      { timeout: 2000 },
-    )
-    expect(sg.client.bundleName).toBe('new-bundle')
+
+    await vi.waitFor(() => {
+      expect(sg.guard.policyVersion).not.toBe(initialVersion)
+    })
+
+    expect(currentFetchCount).toBeGreaterThanOrEqual(2)
+    expect(sg.client.bundleName).toBe('test-bundle')
     await sg.close()
   })
 })
 
-// ---------------------------------------------------------------------------
-// Server-assignment path (bundleName=null)
-// ---------------------------------------------------------------------------
-
-describe('server-assignment path (bundleName=null)', () => {
-  it('throws EdictumConfigError when assignment times out', async () => {
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input)
-      if (url.includes('/api/v1/stream')) return mockSse([])
-      return mockJson({ error: 'not found' }, 404)
-    })
+describe('unsupported assignment flow', () => {
+  it('rejects bundleName=null because /v1 API requires an explicit ruleset', async () => {
     await expect(
       createServerGuard({
         ...BASE_OPTS,
         bundleName: null,
         autoWatch: true,
-        assignmentTimeout: 200,
       }),
     ).rejects.toThrow(EdictumConfigError)
   })
-
-  it('succeeds when SSE delivers assignment before timeout', async () => {
-    const assignmentEvent = JSON.stringify({ bundle_name: 'assigned-bundle' })
-    const assignedYamlB64 = Buffer.from(TEST_YAML.replace('no-rm', 'assigned-rule')).toString(
-      'base64',
-    )
-
-    mockFetch.mockImplementation(async (input: string | URL | Request) => {
-      const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/assigned-bundle/current'))
-        return mockJson({ yaml_bytes: assignedYamlB64 })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'assignment_changed', data: assignmentEvent }])
-      return mockJson({ error: 'not found' }, 404)
-    })
-
-    const sg = await createServerGuard({
-      ...BASE_OPTS,
-      bundleName: null,
-      autoWatch: true,
-      assignmentTimeout: 5000,
-    })
-    expect(sg.guard).toBeInstanceOf(Edictum)
-    expect(sg.guard.policyVersion).toBeTruthy()
-    expect(sg.client.bundleName).toBe('assigned-bundle')
-    await sg.close()
-  })
 })
 
-// ---------------------------------------------------------------------------
-// SSE watcher error handling
-// ---------------------------------------------------------------------------
-
 describe('SSE watcher errors', () => {
-  it('onWatchError receives parse_error for missing yaml_bytes in SSE', async () => {
+  it('onWatchError receives parse_error when updated ruleset response is missing yaml', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
+    let currentFetchCount = 0
+
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/')) return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/stream'))
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        return currentFetchCount === 1 ? mockJson({ yaml: TEST_YAML }) : mockJson({ version: 2 })
+      }
+      if (url.includes('/v1/stream')) {
         return mockSse([
-          { event: 'contract_update', data: JSON.stringify({ revision_hash: 'abc' }) },
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
         ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
+
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', onWatchError })
-    await vi.waitFor(
-      () => {
-        expect(onWatchError).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'parse_error',
-            message: expect.stringContaining('yaml_bytes'),
-          }),
-        )
-      },
-      { timeout: 2000 },
-    )
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'parse_error',
+          message: expect.stringContaining('yaml'),
+          bundleName: 'test-bundle',
+        }),
+      )
+    })
     await sg.close()
   })
 
-  it('onWatchError receives fetch_error when assignment bundle fetch fails', async () => {
+  it('onWatchError receives fetch_error when updated ruleset fetch fails', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
-    const assignmentEvent = JSON.stringify({ bundle_name: 'missing-bundle' })
+    let currentFetchCount = 0
+
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/test-bundle'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/bundles/missing-bundle'))
-        return mockJson({ error: 'not found' }, 404)
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'assignment_changed', data: assignmentEvent }])
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        return currentFetchCount === 1
+          ? mockJson({ yaml: TEST_YAML })
+          : mockJson({ error: 'not found' }, 404)
+      }
+      if (url.includes('/v1/stream')) {
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
+        ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
+
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', onWatchError })
-    await vi.waitFor(
-      () => {
-        expect(onWatchError).toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'fetch_error', bundleName: 'missing-bundle' }),
-        )
-      },
-      { timeout: 2000 },
-    )
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fetch_error', bundleName: 'test-bundle' }),
+      )
+    })
     await sg.close()
   })
 
-  it('onWatchError receives reload_error when assignment bundle has invalid YAML', async () => {
+  it('onWatchError receives reload_error when updated ruleset YAML is invalid', async () => {
     const onWatchError = vi.fn<WatchErrorHandler>()
-    const badYamlB64 = Buffer.from('not: valid: yaml: bundle').toString('base64')
-    const assignmentEvent = JSON.stringify({ bundle_name: 'bad-bundle' })
+    let currentFetchCount = 0
+
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/test-bundle/current'))
-        return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/bundles/bad-bundle/current'))
-        return mockJson({ yaml_bytes: badYamlB64 })
-      if (url.includes('/api/v1/stream'))
-        return mockSse([{ event: 'assignment_changed', data: assignmentEvent }])
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        return currentFetchCount === 1
+          ? mockJson({ yaml: TEST_YAML })
+          : mockJson({ yaml: 'not: valid: yaml: bundle' })
+      }
+      if (url.includes('/v1/stream')) {
+        return mockSse([
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
+        ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
+
     const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle', onWatchError })
     const initialVersion = sg.guard.policyVersion
-    await vi.waitFor(
-      () => {
-        expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: 'reload_error' }))
-      },
-      { timeout: 2000 },
-    )
+
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: 'reload_error' }))
+    })
+
     expect(sg.guard.policyVersion).toBe(initialVersion)
-    expect(sg.client.bundleName).toBe('test-bundle')
     await sg.close()
   })
 
-  it('watcher survives onWatchError callback that throws', async () => {
+  it('watcher survives an onWatchError callback that throws', async () => {
     const throwingHandler = vi.fn(() => {
       throw new Error('callback error')
     })
+    let currentFetchCount = 0
+
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
-      if (url.includes('/api/v1/bundles/')) return mockJson({ yaml_bytes: TEST_YAML_B64 })
-      if (url.includes('/api/v1/stream'))
+      if (url.includes('/v1/rulesets/test-bundle/current')) {
+        currentFetchCount++
+        return currentFetchCount === 1 ? mockJson({ yaml: TEST_YAML }) : mockJson({ version: 2 })
+      }
+      if (url.includes('/v1/stream')) {
         return mockSse([
-          { event: 'contract_update', data: JSON.stringify({ revision_hash: 'abc' }) },
+          { event: 'ruleset_updated', data: JSON.stringify({ name: 'test-bundle', version: 2 }) },
         ])
+      }
       return mockJson({ error: 'not found' }, 404)
     })
+
     const sg = await createServerGuard({
       ...BASE_OPTS,
       bundleName: 'test-bundle',
       onWatchError: throwingHandler,
     })
-    await vi.waitFor(
-      () => {
-        expect(throwingHandler).toHaveBeenCalledTimes(1)
-      },
-      { timeout: 2000 },
-    )
-    expect(sg.guard).toBeInstanceOf(Edictum)
+
+    await vi.waitFor(() => {
+      expect(throwingHandler).toHaveBeenCalledTimes(1)
+    })
+
+    expect(sg.guard.policyVersion).toBeTruthy()
     await sg.close()
   })
 })

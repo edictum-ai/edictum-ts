@@ -1,5 +1,5 @@
 /**
- * Server guard factory — connects an Edictum guard to edictum-console.
+ * Server guard factory — connects an Edictum guard to edictum-api.
  *
  * This is the TypeScript equivalent of Python's Edictum.from_server().
  * It lives in @edictum/server (not @edictum/core) because core does not
@@ -13,7 +13,7 @@
 import { Edictum, EdictumConfigError, compileContracts, loadBundleString } from '@edictum/core'
 import type { AuditSink, ApprovalBackend, StorageBackend, Principal, ToolCall } from '@edictum/core'
 
-import { EdictumServerClient, SAFE_IDENTIFIER_RE, _setClientBundleName } from './client.js'
+import { EdictumServerClient, SAFE_IDENTIFIER_RE } from './client.js'
 import type { EdictumServerClientOptions } from './client.js'
 import { ServerAuditSink } from './audit-sink.js'
 import { ServerApprovalBackend } from './approval-backend.js'
@@ -34,7 +34,7 @@ export type WatchErrorHandler = (error: {
 
 /** Options for createServerGuard(). */
 export interface CreateServerGuardOptions {
-  /** Base URL of the edictum-console server. */
+  /** Base URL of the edictum-api server. */
   readonly url: string
   /** API key for authentication. */
   readonly apiKey: string
@@ -42,7 +42,7 @@ export interface CreateServerGuardOptions {
   readonly agentId: string
   /** Environment name (default: "production"). */
   readonly environment?: string
-  /** Named bundle to fetch. If null, waits for server assignment. */
+  /** Ruleset name to fetch. Required for the canonical /v1 API. */
   readonly bundleName?: string | null
   /** Tags for server-side filtering. */
   readonly tags?: Record<string, string> | null
@@ -76,7 +76,7 @@ export interface CreateServerGuardOptions {
   readonly timeout?: number
   /** HTTP max retries (default: 3). */
   readonly maxRetries?: number
-  /** Timeout for waiting for server assignment in ms (default: 30_000). */
+  /** Unsupported in the canonical /v1 API. Providing it throws. */
   readonly assignmentTimeout?: number
   /** Callback for SSE watcher errors (signature rejections, parse failures). */
   readonly onWatchError?: WatchErrorHandler
@@ -107,8 +107,6 @@ export interface ServerGuard {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_ASSIGNMENT_TIMEOUT_MS = 30_000
-
 /**
  * Max base64-encoded bundle size (682 KB ≈ 512 KB decoded).
  * Guards against unbounded memory allocation from a malicious server.
@@ -116,6 +114,7 @@ const DEFAULT_ASSIGNMENT_TIMEOUT_MS = 30_000
  * YAML, but we reject oversized base64 before allocating the decode buffer.
  */
 const MAX_BUNDLE_B64_LENGTH = Math.ceil((512 * 1024 * 4) / 3)
+const MAX_RULESET_YAML_BYTES = 512 * 1024
 
 /** Max base64 signature length. Ed25519 sigs are 64 bytes = 88 chars base64. */
 const MAX_SIGNATURE_LENGTH = 512
@@ -125,7 +124,7 @@ const MAX_SIGNATURE_LENGTH = 512
 // ---------------------------------------------------------------------------
 
 /**
- * Create an Edictum guard connected to edictum-console.
+ * Create an Edictum guard connected to edictum-api.
  *
  * This is the TypeScript equivalent of Python's `Edictum.from_server()`.
  * It creates an HTTP client, fetches initial rules, starts an SSE
@@ -134,7 +133,7 @@ const MAX_SIGNATURE_LENGTH = 512
  * @example
  * ```ts
  * const { guard, close } = await createServerGuard({
- *   url: "https://console.edictum.ai",
+ *   url: "https://api.edictum.ai",
  *   apiKey: "ed_live_...",
  *   agentId: "my-agent",
  *   bundleName: "production-rules",
@@ -158,7 +157,6 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     autoWatch = true,
     verifySignatures = false,
     signingPublicKey = null,
-    assignmentTimeout = DEFAULT_ASSIGNMENT_TIMEOUT_MS,
     onWatchError,
   } = options
 
@@ -173,10 +171,10 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
   // are validated here first for clearer error messages on common misconfigurations.
   // -----------------------------------------------------------------------
 
-  if (bundleName == null && !autoWatch) {
+  if (bundleName == null) {
     throw new EdictumConfigError(
-      'bundleName is required when autoWatch is false. ' +
-        'Without a named bundle and no SSE watcher, the guard has no rules.',
+      'bundleName is required for the canonical /v1 API. ' +
+        'Server-assigned bundles are not supported by edictum-api.',
     )
   }
 
@@ -184,9 +182,10 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     throw new EdictumConfigError('signingPublicKey is required when verifySignatures is true')
   }
 
-  if (!Number.isFinite(assignmentTimeout) || assignmentTimeout <= 0) {
+  if (options.assignmentTimeout !== undefined) {
     throw new EdictumConfigError(
-      `assignmentTimeout must be a positive finite number, got ${assignmentTimeout}`,
+      'assignmentTimeout is not supported for the canonical /v1 API. ' +
+        'Provide bundleName explicitly instead.',
     )
   }
 
@@ -225,42 +224,24 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
   let watchPromise: Promise<void> | null = null
 
   // -----------------------------------------------------------------------
-  // Build guard — two paths based on bundleName
+  // Build guard
   // -----------------------------------------------------------------------
 
   let guard: Edictum
 
   try {
-    if (bundleName != null) {
-      // Path A: Named bundle — fetch initial rules from server
-      guard = await _fetchAndBuildGuard(
-        client,
-        bundleName,
-        environment,
-        explicitMode,
-        verifySignatures,
-        signingPublicKey,
-        auditSink,
-        approvalBackend,
-        storageBackend,
-        options,
-      )
-    } else {
-      // Path B: Server-assigned — create empty guard, wait for assignment
-      guard = new Edictum({
-        environment,
-        mode: explicitMode ?? 'enforce',
-        rules: [],
-        auditSink,
-        approvalBackend,
-        backend: storageBackend,
-        onDeny: options.onDeny,
-        onAllow: options.onAllow,
-        successCheck: options.successCheck,
-        principal: options.principal,
-        principalResolver: options.principalResolver,
-      })
-    }
+    guard = await _fetchAndBuildGuard(
+      client,
+      bundleName,
+      environment,
+      explicitMode,
+      verifySignatures,
+      signingPublicKey,
+      auditSink,
+      approvalBackend,
+      storageBackend,
+      options,
+    )
 
     // -------------------------------------------------------------------
     // Start SSE watcher for hot-reload
@@ -278,20 +259,6 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
         watchAbort.signal,
         onWatchError ?? null,
       )
-    }
-
-    // -------------------------------------------------------------------
-    // Wait for server assignment if no bundle name
-    // -------------------------------------------------------------------
-
-    if (bundleName == null) {
-      const assigned = await _waitForAssignment(guard, assignmentTimeout, watchPromise)
-      if (!assigned) {
-        throw new EdictumConfigError(
-          `Timed out waiting for server assignment after ${assignmentTimeout}ms. ` +
-            'Ensure the server has an active assignment for this agent.',
-        )
-      }
     }
   } catch (err) {
     await _cleanupResources(watchAbort, watchPromise, contractSource, auditSink, client)
@@ -339,6 +306,40 @@ function _decodeYamlB64(yamlB64: string): Uint8Array {
   return decoded
 }
 
+function _encodeYamlString(yamlContent: string, sourceLabel: string): Uint8Array {
+  const yamlBytes = new TextEncoder().encode(yamlContent)
+  if (yamlBytes.length > MAX_RULESET_YAML_BYTES) {
+    throw new EdictumConfigError(
+      `${sourceLabel} yaml exceeds maximum size (${yamlBytes.length} > ${MAX_RULESET_YAML_BYTES})`,
+    )
+  }
+  return yamlBytes
+}
+
+function _extractYamlContent(
+  payload: Record<string, unknown>,
+  sourceLabel: string,
+): { yamlContent: string; yamlBytes: Uint8Array } {
+  const yaml = payload['yaml']
+  if (typeof yaml === 'string') {
+    return {
+      yamlContent: yaml,
+      yamlBytes: _encodeYamlString(yaml, sourceLabel),
+    }
+  }
+
+  const yamlB64 = payload['yaml_bytes']
+  if (typeof yamlB64 === 'string') {
+    const yamlBytes = _decodeYamlB64(yamlB64)
+    return {
+      yamlContent: new TextDecoder().decode(yamlBytes),
+      yamlBytes,
+    }
+  }
+
+  throw new EdictumConfigError(`${sourceLabel} missing 'yaml' field`)
+}
+
 // ---------------------------------------------------------------------------
 // Internal: fetch bundle and build guard
 // ---------------------------------------------------------------------------
@@ -355,18 +356,8 @@ async function _fetchAndBuildGuard(
   storageBackend: StorageBackend,
   options: CreateServerGuardOptions,
 ): Promise<Edictum> {
-  const params: Record<string, string> = { env: environment }
-  const response = await client.get(
-    `/api/v1/bundles/${encodeURIComponent(bundleName)}/current`,
-    params,
-  )
-
-  const yamlB64 = response['yaml_bytes']
-  if (typeof yamlB64 !== 'string') {
-    throw new EdictumConfigError("Server response missing 'yaml_bytes' field")
-  }
-
-  const yamlBytes = _decodeYamlB64(yamlB64)
+  const response = await client.get(`/v1/rulesets/${encodeURIComponent(bundleName)}/current`)
+  const { yamlContent, yamlBytes } = _extractYamlContent(response, 'Server response')
 
   // Verify signature if required
   if (verifySignatures) {
@@ -383,7 +374,6 @@ async function _fetchAndBuildGuard(
   }
 
   // Compile rules
-  const yamlContent = new TextDecoder().decode(yamlBytes)
   const [bundleData, bundleHash] = loadBundleString(yamlContent)
   const compiled = compileContracts(bundleData)
 
@@ -456,159 +446,94 @@ async function _startSseWatcher(
   if (verifySignatures && signingPublicKey === null) {
     throw new EdictumConfigError('signingPublicKey is required when verifySignatures is true')
   }
+  if (client.bundleName === null) {
+    throw new EdictumConfigError(
+      'bundleName is required for SSE hot-reload with the canonical /v1 API',
+    )
+  }
 
   try {
     await source.connect()
     for await (const bundle of source.watch()) {
       if (signal.aborted) return
 
-      let newBundleName: string | null = null
+      const rawName = bundle['name']
+      if (
+        typeof rawName !== 'string' ||
+        rawName.length > 128 ||
+        !SAFE_IDENTIFIER_RE.test(rawName)
+      ) {
+        safeNotify({
+          type: 'parse_error',
+          message: 'Invalid ruleset name in ruleset_updated event',
+        })
+        continue
+      }
+      if (rawName !== client.bundleName) {
+        continue
+      }
+
       try {
+        let response: Record<string, unknown>
+        try {
+          response = await client.get(
+            `/v1/rulesets/${encodeURIComponent(rawName)}/current`,
+            undefined,
+            {
+              signal,
+            },
+          )
+        } catch (err) {
+          safeNotify({
+            type: 'fetch_error',
+            message: err instanceof Error ? err.message : String(err),
+            bundleName: rawName,
+          })
+          continue
+        }
+        if (signal.aborted) return
+
         let yamlContent: string
+        let yamlBytes: Uint8Array
+        try {
+          ;({ yamlContent, yamlBytes } = _extractYamlContent(response, 'Ruleset response'))
+        } catch (err) {
+          safeNotify({
+            type: 'parse_error',
+            message: err instanceof Error ? err.message : 'Ruleset payload parse failed',
+            bundleName: rawName,
+          })
+          continue
+        }
 
-        if (bundle['_assignment_changed'] === true) {
-          // Assignment changed — fetch the new bundle.
-          // Belt-and-suspenders: ServerRuleSource._processEvent is the
-          // authoritative validation. This guard protects against alternative
-          // ContractSource implementations that skip validation.
-          const rawName = bundle['bundle_name']
-          if (
-            typeof rawName !== 'string' ||
-            rawName.length > 128 ||
-            !SAFE_IDENTIFIER_RE.test(rawName)
-          ) {
+        if (verifySignatures) {
+          const signature = response['signature']
+          if (typeof signature !== 'string' || signature.length === 0) {
             safeNotify({
-              type: 'parse_error',
-              message: 'Invalid bundle_name in assignment_changed event',
+              type: 'signature_rejected',
+              message: 'Bundle signature missing but verifySignatures is enabled',
+              bundleName: rawName,
             })
             continue
           }
-          newBundleName = rawName
-
-          // Early exit if close() was called during validation
-          if (signal.aborted) return
-
-          // Fetch new bundle — pass abort signal so close() cancels in-flight requests
-          let response: Record<string, unknown>
+          if (signature.length > MAX_SIGNATURE_LENGTH) {
+            safeNotify({
+              type: 'signature_rejected',
+              message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
+              bundleName: rawName,
+            })
+            continue
+          }
           try {
-            response = await client.get(
-              `/api/v1/bundles/${encodeURIComponent(newBundleName)}/current`,
-              { env: client.env },
-              { signal },
-            )
+            verifyBundleSignature(yamlBytes, signature, signingPublicKey as string)
           } catch (err) {
             safeNotify({
-              type: 'fetch_error',
+              type: 'signature_rejected',
               message: err instanceof Error ? err.message : String(err),
-              bundleName: newBundleName,
+              bundleName: rawName,
             })
             continue
           }
-          if (signal.aborted) return
-
-          const yamlB64 = response['yaml_bytes']
-          if (typeof yamlB64 !== 'string') {
-            safeNotify({
-              type: 'parse_error',
-              message: "Bundle response missing 'yaml_bytes' field",
-              bundleName: newBundleName,
-            })
-            continue
-          }
-
-          let yamlBytes: Uint8Array
-          try {
-            yamlBytes = _decodeYamlB64(yamlB64)
-          } catch (err) {
-            safeNotify({
-              type: 'parse_error',
-              message: err instanceof Error ? err.message : 'Base64 decode failed',
-              bundleName: newBundleName,
-            })
-            continue
-          }
-
-          if (verifySignatures) {
-            const signature = response['signature']
-            if (typeof signature !== 'string' || signature.length === 0) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: 'Bundle signature missing but verifySignatures is enabled',
-                bundleName: newBundleName,
-              })
-              continue
-            }
-            if (signature.length > MAX_SIGNATURE_LENGTH) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
-                bundleName: newBundleName,
-              })
-              continue
-            }
-            try {
-              verifyBundleSignature(yamlBytes, signature, signingPublicKey as string)
-            } catch (err) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: err instanceof Error ? err.message : String(err),
-                bundleName: newBundleName,
-              })
-              continue
-            }
-          }
-
-          yamlContent = new TextDecoder().decode(yamlBytes)
-        } else {
-          // Rule update — extract YAML from SSE payload
-          const yamlB64 = bundle['yaml_bytes']
-          if (typeof yamlB64 !== 'string') {
-            safeNotify({
-              type: 'parse_error',
-              message: "SSE bundle payload missing 'yaml_bytes' field",
-            })
-            continue
-          }
-
-          let yamlBytes: Uint8Array
-          try {
-            yamlBytes = _decodeYamlB64(yamlB64)
-          } catch (err) {
-            safeNotify({
-              type: 'parse_error',
-              message: err instanceof Error ? err.message : 'Base64 decode failed',
-            })
-            continue
-          }
-
-          if (verifySignatures) {
-            const signature = bundle['signature']
-            if (typeof signature !== 'string' || signature.length === 0) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: 'Bundle signature missing but verifySignatures is enabled',
-              })
-              continue
-            }
-            if (signature.length > MAX_SIGNATURE_LENGTH) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
-              })
-              continue
-            }
-            try {
-              verifyBundleSignature(yamlBytes, signature, signingPublicKey as string)
-            } catch (err) {
-              safeNotify({
-                type: 'signature_rejected',
-                message: err instanceof Error ? err.message : String(err),
-              })
-              continue
-            }
-          }
-
-          yamlContent = new TextDecoder().decode(yamlBytes)
         }
 
         // reload() is synchronous (returns void) — atomic state swap
@@ -620,11 +545,6 @@ async function _startSseWatcher(
         })
         continue
       }
-
-      // Update bundle name after successful reload to maintain consistency.
-      if (newBundleName !== null) {
-        _setClientBundleName(client, newBundleName)
-      }
     }
   } catch (err) {
     if (!signal.aborted) {
@@ -634,45 +554,6 @@ async function _startSseWatcher(
       })
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Internal: wait for server assignment
-// ---------------------------------------------------------------------------
-
-async function _waitForAssignment(
-  guard: Edictum,
-  timeoutMs: number,
-  watchPromise: Promise<void> | null,
-): Promise<boolean> {
-  const start = Date.now()
-  const pollInterval = 100
-  let watcherDied = false
-
-  // Detect early watcher exit so we fail fast instead of waiting full timeout
-  if (watchPromise) {
-    watchPromise.then(
-      () => {
-        watcherDied = true
-      },
-      () => {
-        watcherDied = true
-      },
-    )
-  }
-
-  while (Date.now() - start < timeoutMs) {
-    if (watcherDied) {
-      return false // Watcher exited — no point waiting further
-    }
-    if (guard.policyVersion != null) {
-      return true
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollInterval))
-  }
-
-  // Final check: assignment may have arrived during the last sleep
-  return guard.policyVersion != null
 }
 
 // ---------------------------------------------------------------------------

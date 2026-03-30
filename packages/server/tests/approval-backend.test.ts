@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ApprovalStatus, EdictumConfigError } from '@edictum/core'
 
-import { EdictumServerClient } from '../src/client.js'
+import { EdictumServerClient, EdictumServerError } from '../src/client.js'
 import { ServerApprovalBackend } from '../src/approval-backend.js'
 
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       'Dangerous command detected',
     )
 
-    expect(client.post).toHaveBeenCalledWith('/api/v1/approvals', {
+    expect(client.post).toHaveBeenCalledWith('/v1/approvals', {
       agent_id: 'test-agent',
       tool_name: 'Bash',
       tool_args: { command: 'rm -rf /' },
@@ -133,11 +133,11 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     expect(decision.status).toBe(ApprovalStatus.APPROVED)
   })
 
-  it('returns denied decision', async () => {
+  it('returns rejected decision', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
     vi.mocked(client.get).mockResolvedValue({
-      status: 'denied',
+      status: 'rejected',
       decided_by: 'reviewer',
       decision_reason: 'Too risky',
     })
@@ -152,10 +152,10 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     expect(decision.reason).toBe('Too risky')
   })
 
-  it('returns timeout decision from server', async () => {
+  it('returns timeout decision from timed_out status', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
-    vi.mocked(client.get).mockResolvedValue({ status: 'timeout' })
+    vi.mocked(client.get).mockResolvedValue({ status: 'timed_out' })
 
     const backend = new ServerApprovalBackend(client)
     await backend.requestApproval('Tool', {}, 'msg')
@@ -169,7 +169,7 @@ describe('ServerApprovalBackend.waitForDecision', () => {
   it('respects timeout_effect=allow on server timeout', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
-    vi.mocked(client.get).mockResolvedValue({ status: 'timeout' })
+    vi.mocked(client.get).mockResolvedValue({ status: 'timed_out' })
 
     const backend = new ServerApprovalBackend(client)
     await backend.requestApproval('Tool', {}, 'msg', { timeoutEffect: 'allow' })
@@ -177,6 +177,20 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     const decision = await backend.waitForDecision('a1')
 
     expect(decision.approved).toBe(true)
+    expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
+  })
+
+  it('returns timeout decision on HTTP 408 from server', async () => {
+    const client = mockClient()
+    vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
+    vi.mocked(client.get).mockRejectedValue(new EdictumServerError(408, 'approval timed out'))
+
+    const backend = new ServerApprovalBackend(client)
+    await backend.requestApproval('Tool', {}, 'msg')
+
+    const decision = await backend.waitForDecision('a1')
+
+    expect(decision.approved).toBe(false)
     expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
   })
 

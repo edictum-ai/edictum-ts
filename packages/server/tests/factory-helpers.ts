@@ -82,14 +82,14 @@ export function setupFullMock(
   mockFetch: ReturnType<typeof vi.fn<FetchFn>>,
   bundleResponse?: Record<string, unknown>,
 ): void {
-  const bundle = bundleResponse ?? { yaml_bytes: TEST_YAML_B64 }
+  const bundle = bundleResponse ?? { yaml: TEST_YAML }
   mockFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
     const url = extractUrl(input)
-    if (url.includes('/api/v1/bundles/')) return mockJson(bundle)
-    if (url.includes('/api/v1/stream')) return mockSse([])
-    if (url.includes('/api/v1/sessions/') && init?.method === 'POST') return mockJson({ value: 1 })
-    if (url.includes('/api/v1/sessions/')) return mockJson({ value: null })
-    if (url.includes('/api/v1/events')) return mockJson({ ok: true })
+    if (url.includes('/v1/rulesets/')) return mockJson(bundle)
+    if (url.includes('/v1/stream')) return mockSse([])
+    if (url.includes('/v1/sessions/') && init?.method === 'POST') return mockJson({ value: 1 })
+    if (url.includes('/v1/sessions/')) return mockJson({ value: null })
+    if (url.includes('/v1/events')) return mockJson({ ok: true })
     return mockJson({ error: 'not found' }, 404)
   })
 }

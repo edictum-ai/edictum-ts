@@ -33,7 +33,7 @@ describe('SSE connection timeout isolation', () => {
     // If a future refactor re-introduces AbortSignal.timeout(), this test
     // would still pass. See edictum-ai/edictum#133 for the original bug.
     // Tracked: https://github.com/edictum-ai/edictum-ts/issues/113
-    const bundle = { survived: true, revision_hash: 't1' }
+    const bundle = { name: 'default', version: 1, survived: true }
     const connectionTimeout = 100 // ms — short timeout for testing
 
     let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
@@ -73,7 +73,7 @@ describe('SSE connection timeout isolation', () => {
     expect(source.connected).toBe(true)
     if (!streamController) throw new Error('streamController must not be null')
     const encoder = new TextEncoder()
-    const sseData = `event: contract_update\ndata: ${JSON.stringify(bundle)}\n\n`
+    const sseData = `event: ruleset_updated\ndata: ${JSON.stringify(bundle)}\n\n`
     streamController.enqueue(encoder.encode(sseData))
 
     // Let the event loop process the enqueued chunk
@@ -110,7 +110,7 @@ describe('SSE connection timeout isolation', () => {
       timeout: connectionTimeout,
     })
 
-    const fetchPromise = client.rawFetch('/api/v1/stream', {}, {})
+    const fetchPromise = client.rawFetch('/v1/stream', undefined, {})
 
     // Register the rejection handler BEFORE advancing timers to prevent
     // Node from flagging the rejection as unhandled during timer execution.
