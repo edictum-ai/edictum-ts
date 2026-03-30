@@ -53,6 +53,9 @@ function toCanonicalAction(action: string): string {
       return 'call_would_block'
     case 'call_approval_denied':
       return 'call_approval_blocked'
+    case 'call_approval_timeout':
+      // Spec 007 keeps call_approval_timeout as the canonical /v1 value.
+      return 'call_approval_timeout'
     default:
       return action
   }
@@ -144,6 +147,8 @@ export class ServerAuditSink implements AuditSink {
       decision_name: event.decisionName,
       reason: event.reason,
       hooks_evaluated: safeClone(event.hooksEvaluated),
+      // contractsEvaluated is the internal field name; rules_evaluated is the
+      // canonical /v1 wire name from spec 007.
       rules_evaluated: safeClone(event.contractsEvaluated),
       mode: event.mode,
       policy_version: event.policyVersion,

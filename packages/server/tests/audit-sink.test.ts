@@ -240,6 +240,18 @@ describe('ServerAuditSink event mapping', () => {
     expect(mapped.rules_evaluated).toEqual([{ id: 'no-rm', type: 'pre', passed: false }])
   })
 
+  it('preserves the canonical call_approval_timeout action', async () => {
+    const client = mockClient()
+    const sink = new ServerAuditSink(client, { batchSize: 1 })
+
+    await sink.emit(makeEvent({ action: AuditAction.CALL_APPROVAL_TIMEOUT }))
+
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{ action: string }>
+    }
+    expect(body.events[0]!.action).toBe('call_approval_timeout')
+  })
+
   it('deep-copies tool_args so caller mutations do not affect stored events', async () => {
     const client = mockClient()
     const sink = new ServerAuditSink(client, { batchSize: 1 })
