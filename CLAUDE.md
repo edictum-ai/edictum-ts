@@ -6,7 +6,7 @@
 
 Runtime rule enforcement for AI agent tool calls. Deterministic pipeline: checks before execution, output checks after execution, session rules, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
 
-Current version: 0.2.0 (npm: `@edictum/core`)
+Current version: 0.3.0 (npm: `@edictum/core`)
 
 ## THE ONE RULE
 
@@ -21,7 +21,7 @@ packages/
 ├── core/              # @edictum/core — pipeline, rules, audit, session, YAML engine
 ├── vercel-ai/         # @edictum/vercel-ai — Vercel AI SDK adapter
 ├── openai-agents/     # @edictum/openai-agents — OpenAI Agents SDK adapter
-├── openclaw/          # @edictum/edictum — OpenClaw adapter
+├── openclaw/          # @edictum/openclaw — OpenClaw adapter
 ├── claude-sdk/        # @edictum/claude-sdk — Claude Agent SDK adapter
 ├── langchain/         # @edictum/langchain — LangChain.js adapter
 └── server/            # @edictum/server — Server SDK (HTTP client, SSE, audit sink)
@@ -202,6 +202,7 @@ The ruleset schema lives in the `edictum-schemas` repo — single source of trut
 - Conditions: `when:` with boolean AST (`all/any/not`) and leaves (`selector: {operator: value}`)
 - 15 operators: exists, equals, not_equals, in, not_in, contains, contains_any, starts_with, ends_with, matches, matches_any, gt, gte, lt, lte
 - Missing fields evaluate to `false`. Type mismatches yield block/warn + `policyError: true`
+- `apiVersion: edictum/v1`, `kind: Workflow` — multi-stage gate definition with `stages`, `entry`/`exit` gates, `tools`, `checks`, and optional `approval` per stage
 
 ## Ecosystem Context
 

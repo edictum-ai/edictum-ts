@@ -32,7 +32,7 @@ await close()
 
 - `createServerGuard(options)` — factory returning `{ guard, close }` with server-backed rules, audit, sessions, and approvals
 - `EdictumServerClient` — low-level HTTP client for the console API
-- `ServerContractSource` — SSE-based rules hot-reload
+- `ServerRuleSource` — SSE-based rules hot-reload
 - `ServerAuditSink` — streams audit events to the server
 - `ServerBackend` — server-backed session storage
 - `ServerApprovalBackend` — server-backed HITL approval workflows
