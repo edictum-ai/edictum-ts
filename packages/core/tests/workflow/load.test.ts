@@ -66,6 +66,20 @@ stages:
     expect(fileReadCondition.arg).toBe('specs\\n008.md')
   })
 
+  test('rejects vacuous non-terminal stages', () => {
+    expect(() =>
+      loadWorkflowString(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: vacuous-stage
+stages:
+  - id: drift
+  - id: review
+    tools: [Read]
+`),
+    ).toThrow(/non-terminal stage "drift" must define tools, checks, exit gates, or approval/i)
+  })
+
   test('resolves workflow file paths through realpath', () => {
     const dir = mkdtempSync(join(tmpdir(), 'edictum-workflow-'))
     const targetPath = join(dir, 'workflow.yaml')

@@ -62,15 +62,18 @@ export function validateWorkflowDefinition(definition: WorkflowDefinition): Work
   }
 
   const index = new Map<string, number>()
-  for (const [stageIndex, stage] of definition.stages.entries()) {
-    validateWorkflowStage(stage)
+  const stages = definition.stages.map((stage, stageIndex) => {
+    const validatedStage = validateWorkflowStage(stage, stageIndex < definition.stages.length - 1)
     if (index.has(stage.id)) {
       throw new EdictumConfigError(`workflow: duplicate stage id ${JSON.stringify(stage.id)}`)
     }
     index.set(stage.id, stageIndex)
-  }
-  workflowStageIndex.set(definition, index)
-  return definition
+    return validatedStage
+  })
+
+  const validatedDefinition = { ...definition, stages }
+  workflowStageIndex.set(validatedDefinition, index)
+  return validatedDefinition
 }
 
 export function getWorkflowStageIndex(
@@ -89,7 +92,7 @@ export function getWorkflowStageById(
   return index == null ? null : (definition.stages[index] ?? null)
 }
 
-function validateWorkflowStage(stage: WorkflowStage): void {
+function validateWorkflowStage(stage: WorkflowStage, isNonTerminal: boolean): WorkflowStage {
   if (!WORKFLOW_NAME_RE.test(stage.id)) {
     throw new EdictumConfigError(
       `workflow: stage.id ${JSON.stringify(stage.id)} must match ${JSON.stringify(WORKFLOW_NAME_RE.source)}`,
@@ -121,38 +124,62 @@ function validateWorkflowStage(stage: WorkflowStage): void {
     }
   }
 
-  for (const check of stage.checks) {
-    const hasMatches = check.commandMatches !== ''
-    const hasNotMatches = check.commandNotMatches !== ''
-    if (hasMatches === hasNotMatches) {
-      throw new EdictumConfigError(
-        `workflow: stage ${JSON.stringify(stage.id)} checks must set exactly one of command_matches or command_not_matches`,
-      )
-    }
-    if (check.message === '') {
-      throw new EdictumConfigError(
-        `workflow: stage ${JSON.stringify(stage.id)} checks require message`,
-      )
-    }
-    try {
-      if (check.commandMatches !== '') {
-        compileWorkflowRegex(check.commandMatches, check.commandMatches)
-      }
-      if (check.commandNotMatches !== '') {
-        compileWorkflowRegex(check.commandNotMatches, check.commandNotMatches)
-      }
-    } catch (exc) {
-      const fieldName = check.commandMatches !== '' ? 'command_matches' : 'command_not_matches'
-      const value = check.commandMatches !== '' ? check.commandMatches : check.commandNotMatches
-      throw new EdictumConfigError(
-        `workflow: stage ${JSON.stringify(stage.id)} invalid ${fieldName} regex ${JSON.stringify(value)}: ${exc}`,
-      )
-    }
+  const checks = stage.checks.map((check) => validateWorkflowCheck(stage.id, check))
+
+  if (
+    isNonTerminal &&
+    stage.tools.length === 0 &&
+    checks.length === 0 &&
+    stage.exit.length === 0 &&
+    stage.approval == null
+  ) {
+    throw new EdictumConfigError(
+      `workflow: non-terminal stage ${JSON.stringify(stage.id)} must define tools, checks, exit gates, or approval`,
+    )
   }
 
   if (stage.approval != null && stage.approval.message === '') {
     throw new EdictumConfigError(
       `workflow: stage ${JSON.stringify(stage.id)} approval.message is required`,
+    )
+  }
+
+  return {
+    ...stage,
+    checks,
+  }
+}
+
+function validateWorkflowCheck(stageId: string, check: WorkflowCheck): WorkflowCheck {
+  const hasMatches = check.commandMatches !== ''
+  const hasNotMatches = check.commandNotMatches !== ''
+  if (hasMatches === hasNotMatches) {
+    throw new EdictumConfigError(
+      `workflow: stage ${JSON.stringify(stageId)} checks must set exactly one of command_matches or command_not_matches`,
+    )
+  }
+  if (check.message === '') {
+    throw new EdictumConfigError(
+      `workflow: stage ${JSON.stringify(stageId)} checks require message`,
+    )
+  }
+  try {
+    return {
+      ...check,
+      commandMatchesRegex:
+        check.commandMatches === ''
+          ? null
+          : compileWorkflowRegex(check.commandMatches, check.commandMatches),
+      commandNotRegex:
+        check.commandNotMatches === ''
+          ? null
+          : compileWorkflowRegex(check.commandNotMatches, check.commandNotMatches),
+    }
+  } catch (exc) {
+    const fieldName = check.commandMatches !== '' ? 'command_matches' : 'command_not_matches'
+    const value = check.commandMatches !== '' ? check.commandMatches : check.commandNotMatches
+    throw new EdictumConfigError(
+      `workflow: stage ${JSON.stringify(stageId)} invalid ${fieldName} regex ${JSON.stringify(value)}: ${exc}`,
     )
   }
 }

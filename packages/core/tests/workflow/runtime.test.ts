@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { Edictum, EdictumDenied, MemoryBackend, Session } from '../../src/index.js'
+import { Edictum, EdictumDenied, MemoryBackend, Session, WorkflowRuntime } from '../../src/index.js'
 import { MAX_WORKFLOW_EVIDENCE_ITEMS, workflowStateKey } from '../../src/workflow/state.js'
 import {
   makeCall,
@@ -87,6 +87,40 @@ stages:
     expect(state.activeStage).toBe('implement')
     expect(state.completedStages).toEqual([])
     expect(state.approvals).toEqual({})
+  })
+
+  test('programmatic definitions re-derive compiled check regexes', async () => {
+    const runtime = new WorkflowRuntime({
+      apiVersion: 'edictum/v1',
+      kind: 'Workflow',
+      metadata: { name: 'programmatic-checks' },
+      stages: [
+        {
+          id: 'commit-push',
+          entry: [],
+          tools: ['Bash'],
+          checks: [
+            {
+              commandMatches: '',
+              commandNotMatches: '^git push origin main$',
+              message: 'Push to a branch, not main',
+              commandMatchesRegex: null,
+              commandNotRegex: null,
+            },
+          ],
+          exit: [],
+          approval: null,
+        },
+      ],
+    })
+    const session = makeWorkflowSession('wf-programmatic-checks')
+
+    const decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin main' }),
+    )
+    expect(decision.action).toBe('block')
+    expect(decision.reason).toBe('Push to a branch, not main')
   })
 
   describe('security', () => {

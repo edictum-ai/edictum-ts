@@ -33,7 +33,6 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
       let exitCode = 0
       let outputTruncated = false
       let timedOut = false
-      let terminatedByTimeout = false
 
       child.stdout.on('data', (chunk: Buffer) => {
         const capture = captureExecOutputChunk(chunk, bufferedBytes)
@@ -59,7 +58,7 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
             return
           }
           timedOut = true
-          terminatedByTimeout = terminateExecChild(child)
+          terminateExecChild(child)
         }, options.timeoutMs)
 
         const settle = (fn: () => void) => {
@@ -82,7 +81,7 @@ export function createExecEvaluator(options: ExecEvaluatorOptions): FactEvaluato
         })
         child.once('close', (code) => {
           settle(() => {
-            if (timedOut && terminatedByTimeout) {
+            if (timedOut) {
               reject(
                 new Error(
                   `workflow: exec evaluator ${JSON.stringify(request.parsed.arg)} timed out after ${options.timeoutMs}ms`,

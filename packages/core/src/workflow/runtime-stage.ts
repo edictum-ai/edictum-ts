@@ -63,10 +63,13 @@ export function evaluateCurrentWorkflowStage(
   }
 
   for (const check of stage.checks) {
+    const command = envelope.bashCommand ?? ''
     const passed =
       check.commandMatches !== ''
-        ? (check.commandMatchesRegex?.test(envelope.bashCommand ?? '') ?? false)
-        : !(check.commandNotRegex?.test(envelope.bashCommand ?? '') ?? false)
+        ? (check.commandMatchesRegex?.test(command) ?? false)
+        : check.commandNotRegex == null
+          ? false
+          : !check.commandNotRegex.test(command)
 
     if (!passed) {
       const condition = check.commandMatches !== '' ? check.commandMatches : check.commandNotMatches
@@ -88,7 +91,7 @@ export function evaluateCurrentWorkflowStage(
           workflowGateRecord(
             {
               passed: false,
-              evidence: envelope.bashCommand ?? '',
+              evidence: command,
               kind: 'check',
               condition,
               message: check.message,

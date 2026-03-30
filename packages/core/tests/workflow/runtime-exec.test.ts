@@ -1,3 +1,5 @@
+import { ChildProcess } from 'node:child_process'
+
 import { describe, expect, test } from 'vitest'
 
 import { WorkflowRuntime, loadWorkflowString } from '../../src/index.js'
@@ -64,6 +66,30 @@ stages:
     )
   })
 
+  test('rejects non-positive or non-integer execEvaluatorTimeoutMs', () => {
+    const definition = loadWorkflowString(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-timeout-options
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("node --version", exit_code=0)
+        message: Node must be installed
+`)
+
+    for (const timeout of [0, -1, 1.5]) {
+      expect(
+        () =>
+          new WorkflowRuntime(definition, {
+            execEvaluatorEnabled: true,
+            execEvaluatorTimeoutMs: timeout,
+          }),
+      ).toThrow(/must be a positive integer/)
+    }
+  })
+
   test('exec evaluator times out hung commands', async () => {
     const hangingCommand = 'node -e "setTimeout(() => {}, 5000)"'
     const runtime = makeWorkflowRuntime(
@@ -88,6 +114,46 @@ stages:
     await expect(runtime.recordResult(session, decision.stageId, call)).rejects.toThrow(
       /timed out/i,
     )
+  }, 10_000)
+
+  test('exec evaluator fails closed when a timed-out child cannot be terminated immediately', async () => {
+    const originalKill = ChildProcess.prototype.kill
+    const originalProcessKill = process.kill
+    ChildProcess.prototype.kill = function (): boolean {
+      return false
+    }
+    process.kill = (() => {
+      throw new Error('kill failed')
+    }) as typeof process.kill
+
+    try {
+      const hangingCommand = 'node -e "setTimeout(() => {}, 5000)"'
+      const runtime = makeWorkflowRuntime(
+        `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-timeout-kill-failure
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("node -e \\"setTimeout(() => {}, 5000)\\"", exit_code=0)
+        message: Command must finish
+`,
+        { execEvaluatorEnabled: true, execEvaluatorTimeoutMs: 25 },
+      )
+      const session = makeWorkflowSession('wf-exec-timeout-kill-failure')
+      const call = makeCall('Bash', { command: hangingCommand })
+      const decision = await runtime.evaluate(session, call)
+
+      expect(decision.action).toBe('allow')
+      await expect(runtime.recordResult(session, decision.stageId, call)).rejects.toThrow(
+        /timed out/i,
+      )
+    } finally {
+      ChildProcess.prototype.kill = originalKill
+      process.kill = originalProcessKill
+    }
   }, 10_000)
 
   test('exec evaluator rejects signal-killed commands', async () => {
