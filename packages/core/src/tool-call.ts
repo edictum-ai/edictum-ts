@@ -95,6 +95,8 @@ export function _validateToolName(toolName: string): void {
   }
 }
 
+export const validateToolName = _validateToolName
+
 // ---------------------------------------------------------------------------
 // ToolCall
 // ---------------------------------------------------------------------------

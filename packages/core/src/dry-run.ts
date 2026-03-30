@@ -51,6 +51,7 @@ export async function evaluate(
   args: Record<string, unknown>,
   options?: EvaluateOptions,
 ): Promise<EvaluationResult> {
+  const workflowRuntime = guard.getWorkflowRuntime()
   const env = options?.environment ?? guard.environment
   const toolCall = createEnvelope(toolName, args, {
     environment: env,
@@ -214,6 +215,11 @@ export async function evaluate(
     warnReasons,
     contractsEvaluated: rules.length,
     policyError: rules.some((r) => r.policyError),
+    workflowSkipped: workflowRuntime != null,
+    workflowReason:
+      workflowRuntime != null
+        ? 'workflow evaluation requires runtime session state; use run() to enforce workflow gates'
+        : null,
   })
 }
 

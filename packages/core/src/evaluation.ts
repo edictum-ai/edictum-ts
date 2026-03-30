@@ -46,6 +46,8 @@ export interface EvaluationResult {
   readonly warnReasons: readonly string[]
   readonly contractsEvaluated: number
   readonly policyError: boolean
+  readonly workflowSkipped: boolean
+  readonly workflowReason: string | null
 }
 
 /** Create a frozen EvaluationResult with defaults matching the Python dataclass. */
@@ -61,5 +63,7 @@ export function createEvaluationResult(
     warnReasons: Object.freeze([...(fields.warnReasons ?? [])]),
     contractsEvaluated: fields.contractsEvaluated ?? 0,
     policyError: fields.policyError ?? false,
+    workflowSkipped: fields.workflowSkipped ?? false,
+    workflowReason: fields.workflowReason ?? null,
   })
 }

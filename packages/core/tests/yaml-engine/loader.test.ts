@@ -157,6 +157,12 @@ describe('validateSchema', () => {
     )
   })
 
+  test('legacy contract bundle kind includes migration hint', () => {
+    expect(() =>
+      validateSchema({ apiVersion: 'edictum/v1', kind: 'ContractBundle', rules: [] }),
+    ).toThrow(/migrate.*Ruleset/i)
+  })
+
   test('rules must be array', () => {
     expect(() =>
       validateSchema({ apiVersion: 'edictum/v1', kind: 'Ruleset', rules: 'bad' }),

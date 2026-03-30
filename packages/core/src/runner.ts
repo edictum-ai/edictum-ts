@@ -21,6 +21,8 @@ import { EdictumDenied, EdictumToolError } from './errors.js'
 import { CheckPipeline } from './pipeline.js'
 import { Session as SessionClass } from './session.js'
 
+const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
+
 // ---------------------------------------------------------------------------
 // defaultSuccessCheck
 // ---------------------------------------------------------------------------
@@ -153,10 +155,11 @@ export async function run(
     // }
 
     // Pre-execute
-    const pre = await pipeline.preExecute(toolCall, session)
+    let pre = await pipeline.preExecute(toolCall, session)
+    let skipStandardPreAudit = false
 
     // Handle pending_approval: request approval from backend
-    if (pre.action === 'pending_approval') {
+    for (let approvalRound = 0; pre.action === 'pending_approval'; approvalRound += 1) {
       if (guard._approvalBackend == null) {
         // TODO: Phase 3 — span.setError(...)
         throw new EdictumDenied(
@@ -202,19 +205,7 @@ export async function run(
         await _emitRunPreAudit(guard, toolCall, session, AA.CALL_APPROVAL_GRANTED, pre)
       }
 
-      if (approved) {
-        // TODO: Phase 3 — guard.telemetry.recordAllowed(toolCall)
-        if (guard._onAllow) {
-          try {
-            guard._onAllow(toolCall)
-          } catch {
-            // on_allow callback raised — swallow
-          }
-        }
-        // TODO: Phase 3 — span.setAttribute("governance.action", "approved")
-        // Skip the normal pre-execution audit/callback logic below —
-        // approval-granted path handles its own audit and callbacks.
-      } else {
+      if (!approved) {
         const denyReason = decision.reason ?? pre.reason ?? ''
         // TODO: Phase 3 — guard.telemetry.recordDenial(toolCall, denyReason)
         if (guard._onDeny) {
@@ -231,13 +222,46 @@ export async function run(
           pre.decisionName,
         )
       }
+
+      if (
+        pre.decisionSource === 'workflow' &&
+        pre.workflowStageId != null &&
+        pre.workflowStageId !== ''
+      ) {
+        const workflowRuntime = guard.getWorkflowRuntime()
+        if (workflowRuntime == null) {
+          throw new Error(
+            `workflow approval requested for ${JSON.stringify(pre.workflowStageId)} but no workflow runtime configured`,
+          )
+        }
+        if (approvalRound >= MAX_WORKFLOW_APPROVAL_ROUNDS) {
+          throw new Error(
+            `workflow: exceeded maximum approval rounds (${MAX_WORKFLOW_APPROVAL_ROUNDS})`,
+          )
+        }
+        await workflowRuntime.recordApproval(session, pre.workflowStageId)
+        pre = await pipeline.preExecute(toolCall, session)
+        continue
+      }
+
+      // TODO: Phase 3 — guard.telemetry.recordAllowed(toolCall)
+      if (guard._onAllow) {
+        try {
+          guard._onAllow(toolCall)
+        } catch {
+          // on_allow callback raised — swallow
+        }
+      }
+      // TODO: Phase 3 — span.setAttribute("governance.action", "approved")
+      skipStandardPreAudit = true
+      break
     }
 
     // Determine if this is a real deny or just per-rule observed denials
     const realDeny = pre.action === 'deny' && !pre.observed
 
     // Skip pre-execution audit for approval-granted path (already handled above)
-    if (pre.action === 'pending_approval') {
+    if (skipStandardPreAudit) {
       // Fall through directly to tool execution
     } else if (realDeny) {
       const auditAction = guard.mode === 'observe' ? AA.CALL_WOULD_DENY : AA.CALL_DENIED
@@ -347,6 +371,12 @@ export async function run(
 
     // Post-execute
     const post = await pipeline.postExecute(toolCall, result, toolSuccess)
+    if (toolSuccess && pre.workflowInvolved && pre.workflowStageId != null) {
+      const workflowRuntime = guard.getWorkflowRuntime()
+      if (workflowRuntime != null) {
+        await workflowRuntime.recordResult(session, pre.workflowStageId, toolCall)
+      }
+    }
     await session.recordExecution(toolName, toolSuccess)
 
     // Emit post-execute audit

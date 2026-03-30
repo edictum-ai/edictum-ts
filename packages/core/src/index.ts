@@ -13,8 +13,8 @@ export {
   deepFreeze,
   SideEffect,
   ToolRegistry,
-  _validateToolName,
 } from './tool-call.js'
+export { validateToolName } from './tool-call.js'
 export type { CreateEnvelopeOptions, Principal, ToolCall } from './tool-call.js'
 
 // Contracts
@@ -91,6 +91,26 @@ export type { PreDecision, PostDecision } from './pipeline.js'
 // Guard
 export { Edictum } from './guard.js'
 export type { EdictumOptions } from './guard.js'
+
+// Workflow Gates
+export {
+  WorkflowAction,
+  WorkflowRuntime,
+  loadWorkflow,
+  loadWorkflowString,
+} from './workflow/index.js'
+export type {
+  WorkflowApproval,
+  WorkflowCheck,
+  WorkflowDefinition,
+  WorkflowEvaluation,
+  WorkflowEvidence,
+  WorkflowGate,
+  WorkflowMetadata,
+  WorkflowRuntimeOptions,
+  WorkflowStage,
+  WorkflowState,
+} from './workflow/index.js'
 
 // Runner (framework-agnostic tool execution)
 export { defaultSuccessCheck, run } from './runner.js'

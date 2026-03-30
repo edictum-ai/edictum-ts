@@ -62,12 +62,33 @@ export class Session {
 
   constructor(sessionId: string, backend: StorageBackend) {
     _validateStorageKeyComponent(sessionId, 'session_id')
+    if (sessionId.includes(':')) {
+      throw new EdictumConfigError('Invalid session_id: colon is not allowed in session_id')
+    }
     this._sid = sessionId
     this._backend = backend
   }
 
   get sessionId(): string {
     return this._sid
+  }
+
+  /** Return a namespaced session-scoped value. */
+  async getValue(name: string): Promise<string | null> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    return await this._backend.get(`s:${this._sid}:${name}`)
+  }
+
+  /** Store a namespaced session-scoped value. */
+  async setValue(name: string, value: string): Promise<void> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    await this._backend.set(`s:${this._sid}:${name}`, value)
+  }
+
+  /** Delete a namespaced session-scoped value. */
+  async deleteValue(name: string): Promise<void> {
+    _validateStorageKeyComponent(name, 'session_value_name')
+    await this._backend.delete(`s:${this._sid}:${name}`)
   }
 
   /** Increment attempt counter. Called in PreToolUse (before governance). */

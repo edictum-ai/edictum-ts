@@ -13,6 +13,7 @@ import { HookDecision, HookResult } from './hooks.js'
 import { RedactionPolicy } from './redaction.js'
 import type { Session } from './session.js'
 import type { GuardLike } from './internal-rules.js'
+import { WorkflowAction } from './workflow/index.js'
 
 // ---------------------------------------------------------------------------
 // PreDecision
@@ -32,6 +33,8 @@ export interface PreDecision {
   readonly approvalTimeout: number
   readonly approvalTimeoutEffect: string
   readonly approvalMessage: string | null
+  readonly workflowStageId: string | null
+  readonly workflowInvolved: boolean
 }
 
 /** Create a PreDecision with defaults for omitted fields. */
@@ -51,6 +54,8 @@ export function createPreDecision(
     approvalTimeout: partial.approvalTimeout ?? 300,
     approvalTimeoutEffect: partial.approvalTimeoutEffect ?? 'deny',
     approvalMessage: partial.approvalMessage ?? null,
+    workflowStageId: partial.workflowStageId ?? null,
+    workflowInvolved: partial.workflowInvolved ?? false,
   }
 }
 
@@ -335,7 +340,70 @@ export class CheckPipeline {
       }
     }
 
-    // 5. Execution limits (use pre-fetched counters)
+    // 5. Workflow gates
+    let workflowStageId: string | null = null
+    let workflowInvolved = false
+    const workflowRuntime = this._guard.getWorkflowRuntime()
+    if (workflowRuntime != null) {
+      try {
+        const wf = await workflowRuntime.evaluate(session, toolCall)
+        if (wf.records.length > 0) {
+          contractsEvaluated.push(...wf.records)
+        }
+        workflowStageId = wf.stageId || null
+        workflowInvolved = wf.records.length > 0 || wf.stageId !== ''
+
+        if (wf.action === WorkflowAction.BLOCK) {
+          return createPreDecision({
+            action: 'deny',
+            reason: wf.reason,
+            decisionSource: 'workflow',
+            decisionName: wf.stageId || 'workflow',
+            hooksEvaluated,
+            contractsEvaluated,
+            policyError: hasPolicyError(contractsEvaluated),
+            workflowStageId,
+            workflowInvolved,
+          })
+        }
+
+        if (wf.action === WorkflowAction.PENDING_APPROVAL) {
+          return createPreDecision({
+            action: 'pending_approval',
+            reason: wf.reason,
+            decisionSource: 'workflow',
+            decisionName: wf.stageId || 'workflow',
+            hooksEvaluated,
+            contractsEvaluated,
+            policyError: hasPolicyError(contractsEvaluated),
+            approvalMessage: wf.reason,
+            workflowStageId,
+            workflowInvolved,
+          })
+        }
+      } catch (exc) {
+        contractsEvaluated.push({
+          name: 'workflow:error',
+          type: 'workflow_gate',
+          passed: false,
+          message: `Workflow evaluation error: ${exc}`,
+          metadata: { policy_error: true },
+        })
+        return createPreDecision({
+          action: 'deny',
+          reason: `Workflow evaluation error: ${exc}`,
+          decisionSource: 'workflow',
+          decisionName: 'workflow_error',
+          hooksEvaluated,
+          contractsEvaluated,
+          policyError: true,
+          workflowStageId,
+          workflowInvolved: true,
+        })
+      }
+    }
+
+    // 6. Execution limits (use pre-fetched counters)
     const execCount = counters['execs'] ?? 0
     if (execCount >= this._guard.limits.maxToolCalls) {
       return createPreDecision({
@@ -347,6 +415,8 @@ export class CheckPipeline {
         decisionName: 'max_tool_calls',
         hooksEvaluated,
         contractsEvaluated,
+        workflowStageId,
+        workflowInvolved,
       })
     }
 
@@ -363,14 +433,16 @@ export class CheckPipeline {
           decisionName: `max_calls_per_tool:${toolCall.toolName}`,
           hooksEvaluated,
           contractsEvaluated,
+          workflowStageId,
+          workflowInvolved,
         })
       }
     }
 
-    // 6. All checks passed
+    // 7. All checks passed
     const pe = hasPolicyError(contractsEvaluated)
 
-    // 7. Observe-mode rule evaluation (never affects the decision)
+    // 8. Observe-mode rule evaluation (never affects the decision)
     const observeResults = await this._evaluateObserveContracts(toolCall, session)
 
     return createPreDecision({
@@ -380,6 +452,8 @@ export class CheckPipeline {
       observed: hasObservedDeny,
       policyError: pe,
       observeResults,
+      workflowStageId,
+      workflowInvolved,
     })
   }
 
