@@ -119,6 +119,35 @@ stages:
     )
   })
 
+  test('exec evaluator preserves literal backslash escapes instead of decoding newlines', async () => {
+    if (process.platform === 'win32') {
+      return
+    }
+
+    const runtime = makeWorkflowRuntime(
+      `apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: exec-literal-escapes
+stages:
+  - id: verify
+    tools: [Bash]
+    exit:
+      - condition: exec("printf safe\\\\nfalse", exit_code=0)
+        message: command must succeed
+`,
+      { execEvaluatorEnabled: true },
+    )
+    const session = makeWorkflowSession('wf-exec-literal-escapes')
+    const call = makeCall('Bash', { command: 'node --version' })
+    const decision = await runtime.evaluate(session, call)
+
+    expect(decision.action).toBe('allow')
+    await expect(runtime.recordResult(session, decision.stageId, call)).resolves.toEqual([
+      expect.objectContaining({ action: 'workflow_completed' }),
+    ])
+  })
+
   test('exec evaluator caps buffered output evidence', async () => {
     const runtime = makeWorkflowRuntime(
       `apiVersion: edictum/v1

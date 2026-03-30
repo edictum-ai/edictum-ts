@@ -58,10 +58,7 @@ export async function saveWorkflowState(
   ensureWorkflowState(state)
   const key = workflowStateKey(definition.metadata.name)
   await session.setValue(key, JSON.stringify(state))
-  const legacyKey = legacyWorkflowStateKey(definition.metadata.name)
-  if (legacyKey !== key) {
-    await session.deleteValue(legacyKey)
-  }
+  await session.deleteValue(legacyWorkflowStateKey(definition.metadata.name))
 }
 
 export function recordWorkflowApproval(state: MutableWorkflowState, stageId: string): void {

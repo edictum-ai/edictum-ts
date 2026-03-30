@@ -85,7 +85,7 @@ export function parseCondition(raw: string): ParsedCondition {
     if (match == null) {
       throw new EdictumConfigError(`workflow: unsupported exec condition ${JSON.stringify(raw)}`)
     }
-    const command = JSON.parse(`"${match[1] ?? ''}"`) as string
+    const command = unescapeConditionString(match[1] ?? '')
     const exitCode = match[2] != null && match[2] !== '' ? Number.parseInt(match[2], 10) : 0
     return {
       kind: 'exec',
@@ -149,7 +149,7 @@ function parseSingleStringArg(raw: string, fn: string): string {
   if (match == null || match[1] !== fn) {
     throw new EdictumConfigError(`workflow: unsupported ${fn} condition ${JSON.stringify(raw)}`)
   }
-  return JSON.parse(`"${match[2] ?? ''}"`) as string
+  return unescapeConditionString(match[2] ?? '')
 }
 
 function parseOptionalStringArg(raw: string, fn: string): string {
@@ -160,5 +160,20 @@ function parseOptionalStringArg(raw: string, fn: string): string {
   if (!match[1]) {
     return ''
   }
-  return JSON.parse(`"${match[1]}"`) as string
+  return unescapeConditionString(match[1])
+}
+
+function unescapeConditionString(raw: string): string {
+  let value = ''
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index]
+    const next = raw[index + 1]
+    if (char === '\\' && (next === '"' || next === '\\')) {
+      value += next
+      index += 1
+      continue
+    }
+    value += char
+  }
+  return value
 }

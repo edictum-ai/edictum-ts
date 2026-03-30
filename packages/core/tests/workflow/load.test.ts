@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, test } from 'vitest'
 
 import { loadWorkflow, loadWorkflowString } from '../../src/index.js'
+import { parseCondition } from '../../src/workflow/evaluator.js'
 
 describe('WorkflowLoad', () => {
   test('parses workflow document', () => {
@@ -54,6 +55,15 @@ stages:
         message: broken gate
 `),
     ).toThrow(/invalid regex/)
+  })
+
+  test('preserves non-quote escapes in condition strings as literals', () => {
+    const execCondition = parseCondition('exec("printf safe\\\\nfalse", exit_code=0)')
+    expect(execCondition.kind).toBe('exec')
+    expect(execCondition.arg).toBe('printf safe\\nfalse')
+
+    const fileReadCondition = parseCondition('file_read("specs\\\\n008.md")')
+    expect(fileReadCondition.arg).toBe('specs\\n008.md')
   })
 
   test('resolves workflow file paths through realpath', () => {
