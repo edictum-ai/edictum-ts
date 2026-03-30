@@ -37,7 +37,7 @@ try {
 - `RedactionPolicy` — sensitive field redaction for audit events
 - `CollectingAuditSink`, `StdoutAuditSink`, `FileAuditSink`, `CompositeSink` — audit sinks
 - `createEnvelope`, `ToolCall`, `SideEffect` — tool-call construction and metadata
-- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString` — stateful workflow gates and YAML loaders
+- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString` — stateful multi-stage gate evaluation and YAML loaders
 - `composeBundles`, `loadBundle`, `compileContracts` — YAML engine helpers
 - `createViolation`, `buildViolations`, `Violation` — output-check violation helpers
 

@@ -115,7 +115,7 @@ Adapters are thin wrappers. All rule enforcement logic lives in the pipeline.
 
 > **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. See adapter docs for per-SDK details.
 
-**Workflow gates** — stateful gate evaluation and approvals are available in core:
+**Multi-stage gates** — stateful gate evaluation and approvals are available in core:
 
 ```typescript
 import { Edictum, WorkflowRuntime, loadWorkflowString } from '@edictum/core'
@@ -126,7 +126,9 @@ apiVersion: edictum/v1
 kind: Workflow
 metadata:
   name: my-workflow
-stages: []
+stages:
+  - id: read-context
+    tools: [Read]
 `),
 )
 
