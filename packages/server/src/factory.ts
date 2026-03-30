@@ -76,8 +76,8 @@ export interface CreateServerGuardOptions {
   readonly timeout?: number
   /** HTTP max retries (default: 3). */
   readonly maxRetries?: number
-  /** Unsupported in the canonical /v1 API. Providing it throws. */
-  readonly assignmentTimeout?: number
+  /** Unsupported in the canonical /v1 API. TS callers get a type error; JS callers still throw. */
+  readonly assignmentTimeout?: never
   /** Callback for SSE watcher errors (signature rejections, parse failures). */
   readonly onWatchError?: WatchErrorHandler
 }
@@ -182,7 +182,8 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     throw new EdictumConfigError('signingPublicKey is required when verifySignatures is true')
   }
 
-  if (options.assignmentTimeout !== undefined) {
+  const assignmentTimeout = (options as { assignmentTimeout?: unknown }).assignmentTimeout
+  if (assignmentTimeout !== undefined) {
     throw new EdictumConfigError(
       'assignmentTimeout is not supported for the canonical /v1 API. ' +
         'Provide bundleName explicitly instead.',
@@ -320,6 +321,7 @@ function _extractYamlContent(
   payload: Record<string, unknown>,
   sourceLabel: string,
 ): { yamlContent: string; yamlBytes: Uint8Array } {
+  // Prefer plain yaml over legacy yaml_bytes when both are present.
   const yaml = payload['yaml']
   if (typeof yaml === 'string') {
     return {
@@ -542,6 +544,7 @@ async function _startSseWatcher(
         safeNotify({
           type: 'reload_error',
           message: err instanceof Error ? err.message : String(err),
+          bundleName: rawName,
         })
         continue
       }

@@ -266,7 +266,9 @@ describe('SSE watcher errors', () => {
     const initialVersion = sg.guard.policyVersion
 
     await vi.waitFor(() => {
-      expect(onWatchError).toHaveBeenCalledWith(expect.objectContaining({ type: 'reload_error' }))
+      expect(onWatchError).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'reload_error', bundleName: 'test-bundle' }),
+      )
     })
 
     expect(sg.guard.policyVersion).toBe(initialVersion)
