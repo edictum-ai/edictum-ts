@@ -365,11 +365,11 @@ async function _fetchAndBuildGuard(
   if (verifySignatures) {
     const signature = response['signature']
     if (typeof signature !== 'string' || signature.length === 0) {
-      throw new EdictumConfigError('Bundle signature missing but verifySignatures is enabled')
+      throw new EdictumConfigError('Ruleset signature missing but verifySignatures is enabled')
     }
     if (signature.length > MAX_SIGNATURE_LENGTH) {
       throw new EdictumConfigError(
-        `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
+        `Ruleset signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
       )
     }
     verifyBundleSignature(yamlBytes, signature, signingPublicKey as string)
@@ -471,6 +471,8 @@ async function _startSseWatcher(
         })
         continue
       }
+      // ServerRuleSource already filters by client.bundleName, but keep the
+      // guard here as a defensive check in case source semantics widen later.
       if (rawName !== client.bundleName) {
         continue
       }
@@ -513,7 +515,7 @@ async function _startSseWatcher(
           if (typeof signature !== 'string' || signature.length === 0) {
             safeNotify({
               type: 'signature_rejected',
-              message: 'Bundle signature missing but verifySignatures is enabled',
+              message: 'Ruleset signature missing but verifySignatures is enabled',
               bundleName: rawName,
             })
             continue
@@ -521,7 +523,7 @@ async function _startSseWatcher(
           if (signature.length > MAX_SIGNATURE_LENGTH) {
             safeNotify({
               type: 'signature_rejected',
-              message: `Bundle signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
+              message: `Ruleset signature exceeds maximum length (${signature.length} > ${MAX_SIGNATURE_LENGTH})`,
               bundleName: rawName,
             })
             continue
