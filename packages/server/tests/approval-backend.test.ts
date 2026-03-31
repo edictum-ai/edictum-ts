@@ -185,6 +185,20 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
   })
 
+  it('returns timeout decision from legacy timeout status', async () => {
+    const client = mockClient()
+    vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
+    vi.mocked(client.get).mockResolvedValue({ status: 'timeout' })
+
+    const backend = new ServerApprovalBackend(client)
+    await backend.requestApproval('Tool', {}, 'msg')
+
+    const decision = await backend.waitForDecision('a1')
+
+    expect(decision.approved).toBe(false)
+    expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
+  })
+
   it('respects timeout_effect=allow on server timeout', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })

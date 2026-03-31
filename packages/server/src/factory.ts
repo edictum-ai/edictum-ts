@@ -220,7 +220,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
   // SSE watcher state
   // -----------------------------------------------------------------------
 
-  let contractSource: ServerRuleSource | null = null
+  let ruleSource: ServerRuleSource | null = null
   let watchAbort: AbortController | null = null
   let watchPromise: Promise<void> | null = null
 
@@ -249,7 +249,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     // -------------------------------------------------------------------
 
     if (autoWatch) {
-      contractSource = new ServerRuleSource(client, {
+      ruleSource = new ServerRuleSource(client, {
         onParseError: (error) => {
           onWatchError?.(error)
         },
@@ -258,7 +258,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
       watchPromise = _startSseWatcher(
         guard,
         client,
-        contractSource,
+        ruleSource,
         verifySignatures,
         signingPublicKey,
         watchAbort.signal,
@@ -266,7 +266,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
       )
     }
   } catch (err) {
-    await _cleanupResources(watchAbort, watchPromise, contractSource, auditSink, client)
+    await _cleanupResources(watchAbort, watchPromise, ruleSource, auditSink, client)
     throw err
   }
 
@@ -281,7 +281,7 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     async close(): Promise<void> {
       if (closed) return
       closed = true
-      await _cleanupResources(watchAbort, watchPromise, contractSource, auditSink, client)
+      await _cleanupResources(watchAbort, watchPromise, ruleSource, auditSink, client)
     },
   }
 }
@@ -565,15 +565,15 @@ async function _startSseWatcher(
 async function _cleanupResources(
   watchAbort: AbortController | null,
   watchPromise: Promise<void> | null,
-  contractSource: ServerRuleSource | null,
+  ruleSource: ServerRuleSource | null,
   auditSink: AuditSink,
   client: EdictumServerClient,
 ): Promise<void> {
   if (watchAbort) {
     watchAbort.abort()
   }
-  if (contractSource) {
-    await contractSource.close()
+  if (ruleSource) {
+    await ruleSource.close()
   }
 
   if (watchPromise) {
