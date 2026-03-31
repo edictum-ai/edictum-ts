@@ -108,9 +108,10 @@ describe('security', () => {
     await sg.close()
   })
 
-  it('does not fetch a malicious ruleset path from stream data', async () => {
+  it('does not fetch a malicious ruleset path from stream data and reports parse_error', async () => {
     let fetchedMaliciousRuleset = false
     let sseCallCount = 0
+    const onWatchError = vi.fn<WatchErrorHandler>()
 
     mockFetch.mockImplementation(async (input: string | URL | Request) => {
       const url = extractUrl(input)
@@ -129,9 +130,19 @@ describe('security', () => {
       return mockJson({ error: 'not found' }, 404)
     })
 
-    const sg = await createServerGuard({ ...BASE_OPTS, bundleName: 'test-bundle' })
+    const sg = await createServerGuard({
+      ...BASE_OPTS,
+      bundleName: 'test-bundle',
+      onWatchError,
+    })
     await vi.waitFor(() => {
       expect(sseCallCount).toBeGreaterThanOrEqual(1)
+    })
+    await vi.waitFor(() => {
+      expect(onWatchError).toHaveBeenCalledWith({
+        type: 'parse_error',
+        message: 'Invalid ruleset name in ruleset_updated event',
+      })
     })
     expect(fetchedMaliciousRuleset).toBe(false)
     expect(sg.client.bundleName).toBe('test-bundle')

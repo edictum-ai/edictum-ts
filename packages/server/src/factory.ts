@@ -13,7 +13,7 @@
 import { Edictum, EdictumConfigError, compileContracts, loadBundleString } from '@edictum/core'
 import type { AuditSink, ApprovalBackend, StorageBackend, Principal, ToolCall } from '@edictum/core'
 
-import { EdictumServerClient, SAFE_IDENTIFIER_RE } from './client.js'
+import { EdictumServerClient } from './client.js'
 import type { EdictumServerClientOptions } from './client.js'
 import { ServerAuditSink } from './audit-sink.js'
 import { ServerApprovalBackend } from './approval-backend.js'
@@ -249,7 +249,11 @@ export async function createServerGuard(options: CreateServerGuardOptions): Prom
     // -------------------------------------------------------------------
 
     if (autoWatch) {
-      contractSource = new ServerRuleSource(client)
+      contractSource = new ServerRuleSource(client, {
+        onParseError: (error) => {
+          onWatchError?.(error)
+        },
+      })
       watchAbort = new AbortController()
       watchPromise = _startSseWatcher(
         guard,
@@ -460,19 +464,12 @@ async function _startSseWatcher(
       if (signal.aborted) return
 
       const rawName = bundle['name']
-      if (
-        typeof rawName !== 'string' ||
-        rawName.length > 128 ||
-        !SAFE_IDENTIFIER_RE.test(rawName)
-      ) {
-        safeNotify({
-          type: 'parse_error',
-          message: 'Invalid ruleset name in ruleset_updated event',
-        })
+      if (typeof rawName !== 'string') {
         continue
       }
-      // ServerRuleSource already filters by client.bundleName, but keep the
-      // guard here as a defensive check in case source semantics widen later.
+      // ServerRuleSource already validates event payloads and reports malformed
+      // ruleset_updated frames via onWatchError. Keep this as a defensive
+      // bundle-name check in case source semantics widen later.
       if (rawName !== client.bundleName) {
         continue
       }

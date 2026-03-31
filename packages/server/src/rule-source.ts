@@ -14,6 +14,11 @@ const STABLE_CONNECTION_MS = 30_000
 const MAX_SSE_BUFFER = 1_048_576 // 1 MB
 const SSE_IDLE_TIMEOUT_MS = 120_000 // 2 minutes
 
+type RuleSourceParseError = Readonly<{
+  type: 'parse_error'
+  message: string
+}>
+
 /**
  * Receives ruleset update notifications from edictum-api via SSE.
  *
@@ -24,6 +29,7 @@ export class ServerRuleSource {
   private readonly _client: EdictumServerClient
   private readonly _reconnectDelay: number
   private readonly _maxReconnectDelay: number
+  private readonly _onParseError: ((error: RuleSourceParseError) => void) | null
   private _connected: boolean = false
   private _closed: boolean = false
   private _abortController: AbortController | null = null
@@ -33,11 +39,13 @@ export class ServerRuleSource {
     options?: {
       reconnectDelay?: number
       maxReconnectDelay?: number
+      onParseError?: (error: RuleSourceParseError) => void
     },
   ) {
     this._client = client
     const reconnectDelay = options?.reconnectDelay ?? 1_000
     const maxReconnectDelay = options?.maxReconnectDelay ?? 60_000
+    this._onParseError = options?.onParseError ?? null
     if (!Number.isFinite(reconnectDelay) || reconnectDelay <= 0) {
       throw new EdictumConfigError(
         `reconnectDelay must be a positive finite number, got ${reconnectDelay}`,
@@ -95,7 +103,6 @@ export class ServerRuleSource {
         let currentEvent = ''
         let currentData = ''
 
-        // Idle timeout: abort if no data received for 2 minutes
         // Idle timeout: if no data for 2 minutes, abort the connection.
         // This kills the fetch/reader and triggers the reconnect logic.
         let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -193,20 +200,31 @@ export class ServerRuleSource {
     }
   }
 
+  private _notifyParseError(message: string): void {
+    try {
+      this._onParseError?.({ type: 'parse_error', message })
+    } catch {
+      /* user callback error swallowed */
+    }
+  }
+
   private _processEvent(eventType: string, data: string): Record<string, unknown> | null {
     if (eventType === 'ruleset_updated') {
       let ruleset: unknown
       try {
         ruleset = JSON.parse(data)
       } catch {
-        return null // Invalid JSON
+        this._notifyParseError('Invalid JSON in ruleset_updated event')
+        return null
       }
       if (typeof ruleset !== 'object' || ruleset === null || Array.isArray(ruleset)) {
-        return null // Not an object
+        this._notifyParseError('ruleset_updated event payload must be an object')
+        return null
       }
       const rulesetObj = ruleset as Record<string, unknown>
       const name = rulesetObj['name']
       if (typeof name !== 'string' || name.length > 128 || !SAFE_IDENTIFIER_RE.test(name)) {
+        this._notifyParseError('Invalid ruleset name in ruleset_updated event')
         return null
       }
       if (this._client.bundleName !== null && name !== this._client.bundleName) {
@@ -217,6 +235,7 @@ export class ServerRuleSource {
         version !== undefined &&
         (typeof version !== 'number' || !Number.isInteger(version) || version < 1)
       ) {
+        this._notifyParseError('Invalid ruleset version in ruleset_updated event')
         return null
       }
       return rulesetObj

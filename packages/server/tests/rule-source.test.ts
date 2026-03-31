@@ -101,6 +101,51 @@ describe('ServerRuleSource.watch', () => {
     expect(results).toEqual([validRuleset])
   })
 
+  it('reports malformed ruleset_updated payloads via onParseError', async () => {
+    const validRuleset = { name: 'default', version: 2 }
+    const onParseError = vi.fn()
+    const client = mockClient()
+    vi.mocked(client.rawFetch).mockResolvedValueOnce(
+      sseResponse([
+        `event: ruleset_updated`,
+        `data: not-json`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: '../../evil', version: 1 })}`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: 'default', version: 0 })}`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(validRuleset)}`,
+        ``,
+      ]),
+    )
+
+    const source = new ServerRuleSource(client, { onParseError })
+    const results: Record<string, unknown>[] = []
+
+    for await (const item of source.watch()) {
+      results.push(item)
+      await source.close()
+    }
+
+    expect(results).toEqual([validRuleset])
+    expect(onParseError).toHaveBeenCalledTimes(3)
+    expect(onParseError).toHaveBeenNthCalledWith(1, {
+      type: 'parse_error',
+      message: 'Invalid JSON in ruleset_updated event',
+    })
+    expect(onParseError).toHaveBeenNthCalledWith(2, {
+      type: 'parse_error',
+      message: 'Invalid ruleset name in ruleset_updated event',
+    })
+    expect(onParseError).toHaveBeenNthCalledWith(3, {
+      type: 'parse_error',
+      message: 'Invalid ruleset version in ruleset_updated event',
+    })
+  })
+
   it('skips non-object payloads', async () => {
     const validRuleset = { name: 'default', version: 4 }
     const client = mockClient()
