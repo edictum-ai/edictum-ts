@@ -3,10 +3,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { EdictumServerClient } from '../src/client.js'
 import { ServerRuleSource } from '../src/rule-source.js'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function mockClient(overrides?: Partial<EdictumServerClient>): EdictumServerClient {
   return {
     rawFetch: vi.fn(),
@@ -18,7 +14,6 @@ function mockClient(overrides?: Partial<EdictumServerClient>): EdictumServerClie
   } as unknown as EdictumServerClient
 }
 
-/** Create a ReadableStream from SSE text lines. */
 function sseStream(lines: string[]): ReadableStream<Uint8Array> {
   const text = lines.join('\n') + '\n'
   const encoder = new TextEncoder()
@@ -30,7 +25,6 @@ function sseStream(lines: string[]): ReadableStream<Uint8Array> {
   })
 }
 
-/** Create a Response with an SSE body. */
 function sseResponse(lines: string[]): Response {
   return new Response(sseStream(lines), {
     status: 200,
@@ -38,16 +32,12 @@ function sseResponse(lines: string[]): Response {
   })
 }
 
-// ---------------------------------------------------------------------------
-// SSE parsing
-// ---------------------------------------------------------------------------
-
 describe('ServerRuleSource.watch', () => {
-  it('yields contract_update events', async () => {
-    const bundle = { apiVersion: 'edictum/v1', revision_hash: 'abc123' }
+  it('yields ruleset_updated events', async () => {
+    const ruleset = { name: 'default', version: 2 }
     const client = mockClient()
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
-      sseResponse([`event: contract_update`, `data: ${JSON.stringify(bundle)}`, ``]),
+      sseResponse([`event: ruleset_updated`, `data: ${JSON.stringify(ruleset)}`, ``]),
     )
 
     const source = new ServerRuleSource(client)
@@ -55,20 +45,22 @@ describe('ServerRuleSource.watch', () => {
 
     for await (const item of source.watch()) {
       results.push(item)
-      // Close after first event to stop the loop
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual(bundle)
+    expect(results).toEqual([ruleset])
   })
 
-  it('yields assignment_changed events', async () => {
+  it('ignores decision events from the combined stream', async () => {
+    const ruleset = { name: 'default', version: 3 }
     const client = mockClient()
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
       sseResponse([
-        `event: assignment_changed`,
-        `data: ${JSON.stringify({ bundle_name: 'new-bundle' })}`,
+        `event: decision`,
+        `data: ${JSON.stringify({ agent_id: 'mimi', call_id: 'c1' })}`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(ruleset)}`,
         ``,
       ]),
     )
@@ -81,23 +73,19 @@ describe('ServerRuleSource.watch', () => {
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual({
-      _assignment_changed: true,
-      bundle_name: 'new-bundle',
-    })
+    expect(results).toEqual([ruleset])
   })
 
-  it('skips invalid JSON in contract_update', async () => {
-    const validBundle = { valid: true, revision_hash: 'r1' }
+  it('skips invalid JSON in ruleset_updated', async () => {
+    const validRuleset = { name: 'default', version: 1 }
     const client = mockClient()
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
       sseResponse([
-        `event: contract_update`,
+        `event: ruleset_updated`,
         `data: not-json`,
         ``,
-        `event: contract_update`,
-        `data: ${JSON.stringify(validBundle)}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(validRuleset)}`,
         ``,
       ]),
     )
@@ -110,23 +98,67 @@ describe('ServerRuleSource.watch', () => {
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual(validBundle)
+    expect(results).toEqual([validRuleset])
+  })
+
+  it('reports malformed ruleset_updated payloads via onParseError', async () => {
+    const validRuleset = { name: 'default', version: 2 }
+    const onParseError = vi.fn()
+    const client = mockClient()
+    vi.mocked(client.rawFetch).mockResolvedValueOnce(
+      sseResponse([
+        `event: ruleset_updated`,
+        `data: not-json`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: '../../evil', version: 1 })}`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: 'default', version: 0 })}`,
+        ``,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(validRuleset)}`,
+        ``,
+      ]),
+    )
+
+    const source = new ServerRuleSource(client, { onParseError })
+    const results: Record<string, unknown>[] = []
+
+    for await (const item of source.watch()) {
+      results.push(item)
+      await source.close()
+    }
+
+    expect(results).toEqual([validRuleset])
+    expect(onParseError).toHaveBeenCalledTimes(3)
+    expect(onParseError).toHaveBeenNthCalledWith(1, {
+      type: 'parse_error',
+      message: 'Invalid JSON in ruleset_updated event',
+    })
+    expect(onParseError).toHaveBeenNthCalledWith(2, {
+      type: 'parse_error',
+      message: 'Invalid ruleset name in ruleset_updated event',
+    })
+    expect(onParseError).toHaveBeenNthCalledWith(3, {
+      type: 'parse_error',
+      message: 'Invalid ruleset version in ruleset_updated event',
+    })
   })
 
   it('skips non-object payloads', async () => {
-    const validBundle = { ok: true }
+    const validRuleset = { name: 'default', version: 4 }
     const client = mockClient()
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
       sseResponse([
-        `event: contract_update`,
+        `event: ruleset_updated`,
         `data: "just a string"`,
         ``,
-        `event: contract_update`,
+        `event: ruleset_updated`,
         `data: [1, 2, 3]`,
         ``,
-        `event: contract_update`,
-        `data: ${JSON.stringify(validBundle)}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(validRuleset)}`,
         ``,
       ]),
     )
@@ -139,19 +171,19 @@ describe('ServerRuleSource.watch', () => {
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual(validBundle)
+    expect(results).toEqual([validRuleset])
   })
 
-  it('skips assignment_changed with invalid bundle_name', async () => {
+  it('skips events with invalid ruleset names', async () => {
+    const validRuleset = { name: 'valid-name', version: 5 }
     const client = mockClient()
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
       sseResponse([
-        `event: assignment_changed`,
-        `data: ${JSON.stringify({ bundle_name: '../escape' })}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: '../escape', version: 1 })}`,
         ``,
-        `event: assignment_changed`,
-        `data: ${JSON.stringify({ bundle_name: 'valid-name' })}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify(validRuleset)}`,
         ``,
       ]),
     )
@@ -164,20 +196,18 @@ describe('ServerRuleSource.watch', () => {
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]!['bundle_name']).toBe('valid-name')
+    expect(results).toEqual([validRuleset])
   })
 
-  it('ignores unknown event types', async () => {
-    const bundle = { data: true }
-    const client = mockClient()
+  it('filters updates to the configured ruleset name', async () => {
+    const client = mockClient({ bundleName: 'target-ruleset' })
     vi.mocked(client.rawFetch).mockResolvedValueOnce(
       sseResponse([
-        `event: heartbeat`,
-        `data: {}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: 'other-ruleset', version: 1 })}`,
         ``,
-        `event: contract_update`,
-        `data: ${JSON.stringify(bundle)}`,
+        `event: ruleset_updated`,
+        `data: ${JSON.stringify({ name: 'target-ruleset', version: 2 })}`,
         ``,
       ]),
     )
@@ -190,40 +220,11 @@ describe('ServerRuleSource.watch', () => {
       await source.close()
     }
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual(bundle)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Query params
-// ---------------------------------------------------------------------------
-
-describe('ServerRuleSource query params', () => {
-  it('passes env to rawFetch', async () => {
-    const client = mockClient({ env: 'production' })
-    const source = new ServerRuleSource(client)
-
-    // Close after first fetch attempt to prevent reconnect loop
-    vi.mocked(client.rawFetch).mockImplementation(async () => {
-      await source.close()
-      return sseResponse([])
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of source.watch()) {
-      // Should not yield anything
-    }
-
-    expect(client.rawFetch).toHaveBeenCalledWith(
-      '/api/v1/stream',
-      { env: 'production' },
-      { signal: expect.any(AbortSignal) },
-    )
+    expect(results).toEqual([{ name: 'target-ruleset', version: 2 }])
   })
 
-  it('passes bundle_name when set', async () => {
-    const client = mockClient({ bundleName: 'my-bundle' })
+  it('passes the canonical stream path to rawFetch', async () => {
+    const client = mockClient()
     const source = new ServerRuleSource(client)
 
     vi.mocked(client.rawFetch).mockImplementation(async () => {
@@ -231,37 +232,15 @@ describe('ServerRuleSource query params', () => {
       return sseResponse([])
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ of source.watch()) {
       // noop
     }
 
-    const params = vi.mocked(client.rawFetch).mock.calls[0]![1]
-    expect(params).toHaveProperty('bundle_name', 'my-bundle')
-  })
-
-  it('passes tags as JSON when set', async () => {
-    const client = mockClient({ tags: { team: 'platform' } })
-    const source = new ServerRuleSource(client)
-
-    vi.mocked(client.rawFetch).mockImplementation(async () => {
-      await source.close()
-      return sseResponse([])
+    expect(client.rawFetch).toHaveBeenCalledWith('/v1/stream', undefined, {
+      signal: expect.any(AbortSignal),
     })
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of source.watch()) {
-      // noop
-    }
-
-    const params = vi.mocked(client.rawFetch).mock.calls[0]![1]
-    expect(params).toHaveProperty('tags', JSON.stringify({ team: 'platform' }))
   })
 })
-
-// ---------------------------------------------------------------------------
-// close()
-// ---------------------------------------------------------------------------
 
 describe('ServerRuleSource.close', () => {
   it('sets connected to false', async () => {
@@ -269,17 +248,12 @@ describe('ServerRuleSource.close', () => {
     const source = new ServerRuleSource(client)
 
     await source.connect()
-    // connected stays false until watch() establishes HTTP connection
     expect(source.connected).toBe(false)
 
     await source.close()
     expect(source.connected).toBe(false)
   })
 })
-
-// ---------------------------------------------------------------------------
-// Reconnect (unit-level)
-// ---------------------------------------------------------------------------
 
 describe('ServerRuleSource reconnect', () => {
   beforeEach(() => {
@@ -292,12 +266,12 @@ describe('ServerRuleSource reconnect', () => {
 
   it('reconnects on HTTP error', async () => {
     const client = mockClient()
-    const bundle = { reconnected: true }
+    const ruleset = { name: 'default', version: 6 }
 
     vi.mocked(client.rawFetch)
       .mockResolvedValueOnce(new Response('Server Error', { status: 500 }))
       .mockResolvedValueOnce(
-        sseResponse([`event: contract_update`, `data: ${JSON.stringify(bundle)}`, ``]),
+        sseResponse([`event: ruleset_updated`, `data: ${JSON.stringify(ruleset)}`, ``]),
       )
 
     const source = new ServerRuleSource(client, { reconnectDelay: 100 })
@@ -310,19 +284,13 @@ describe('ServerRuleSource reconnect', () => {
       }
     })()
 
-    // Advance past reconnect delay
     await vi.advanceTimersByTimeAsync(200)
     await watchPromise
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toEqual(bundle)
+    expect(results).toEqual([ruleset])
     expect(client.rawFetch).toHaveBeenCalledTimes(2)
   })
 })
-
-// ---------------------------------------------------------------------------
-// Constructor validation
-// ---------------------------------------------------------------------------
 
 describe('constructor validation', () => {
   it('rejects reconnectDelay = 0', () => {
@@ -378,7 +346,7 @@ describe('constructor validation', () => {
   it('reconnectDelay is used as initial delay value', () => {
     const client = mockClient()
     const source = new ServerRuleSource(client, { reconnectDelay: 200 })
-    expect((source as any)._reconnectDelay).toBe(200)
+    expect((source as { _reconnectDelay: number })._reconnectDelay).toBe(200)
   })
 
   it('maxReconnectDelay caps backoff', () => {
@@ -387,18 +355,13 @@ describe('constructor validation', () => {
       reconnectDelay: 500,
       maxReconnectDelay: 2000,
     })
-    expect((source as any)._maxReconnectDelay).toBe(2000)
+    expect((source as { _maxReconnectDelay: number })._maxReconnectDelay).toBe(2000)
   })
 })
-
-// ---------------------------------------------------------------------------
-// Security — SSE buffer overflow
-// ---------------------------------------------------------------------------
 
 describe('security', () => {
   it('resets buffer when SSE data exceeds 1 MB without crashing', async () => {
     const client = mockClient()
-    // 1 MB+ of garbage with no newlines, then stream closes
     const garbage = 'x'.repeat(1_100_000) + '\n'
 
     const encoder = new TextEncoder()
@@ -413,25 +376,21 @@ describe('security', () => {
       },
     })
 
-    // First call: oversized stream. Second call: never (close before reconnect).
     client.rawFetch = vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 }))
 
     const source = new ServerRuleSource(client)
     await source.connect()
 
-    // Start watch, close immediately after first stream ends
     const watchPromise = (async () => {
-      for await (const _bundle of source.watch()) {
-        // Should not yield anything from garbage
+      for await (const _ruleset of source.watch()) {
+        // Should not yield anything from garbage.
       }
     })()
 
-    // Give stream time to process, then close
-    await new Promise((r) => setTimeout(r, 100))
+    await new Promise((resolve) => setTimeout(resolve, 100))
     await source.close()
     await watchPromise
 
-    // Watcher survived the oversized buffer — did not crash
     expect(source.connected).toBe(false)
   })
 })

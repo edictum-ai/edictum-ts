@@ -15,22 +15,49 @@ function safeClone<T>(value: T): T {
 }
 
 interface ServerEventPayload {
+  schema_version: string
   call_id: string
   agent_id: string
   tool_name: string
-  decision: string
+  tool_args: Record<string, unknown>
+  side_effect: string
+  environment: string
+  principal: Record<string, unknown> | null
+  action: string
+  decision_source: string | null
+  decision_name: string | null
+  reason: string | null
+  hooks_evaluated: Record<string, unknown>[]
+  rules_evaluated: Record<string, unknown>[]
   mode: string
+  policy_version: string | null
   timestamp: string
-  payload: {
-    tool_args: Record<string, unknown>
-    side_effect: string
-    environment: string
-    principal: Record<string, unknown> | null
-    decision_source: string | null
-    decision_name: string | null
-    reason: string | null
-    policy_version: string | null
-    bundle_name: string | null
+  run_id: string
+  call_index: number
+  parent_call_id: string | null
+  tool_success: boolean | null
+  postconditions_passed: boolean | null
+  duration_ms: number
+  error: string | null
+  result_summary: string | null
+  session_attempt_count: number
+  session_execution_count: number
+  policy_error: boolean
+}
+
+function toCanonicalAction(action: string): string {
+  switch (action) {
+    case 'call_denied':
+      return 'call_blocked'
+    case 'call_would_deny':
+      return 'call_would_block'
+    case 'call_approval_denied':
+      return 'call_approval_blocked'
+    case 'call_approval_timeout':
+      // Spec 007 keeps call_approval_timeout as the canonical /v1 value.
+      return 'call_approval_timeout'
+    default:
+      return action
   }
 }
 
@@ -107,23 +134,36 @@ export class ServerAuditSink implements AuditSink {
   /** Map an AuditEvent to the server EventPayload format. */
   private _mapEvent(event: AuditEvent): ServerEventPayload {
     return {
+      schema_version: event.schemaVersion,
       call_id: event.callId,
       agent_id: this._client.agentId,
       tool_name: event.toolName,
-      decision: event.action,
+      tool_args: safeClone(event.toolArgs),
+      side_effect: event.sideEffect,
+      environment: event.environment || this._client.env,
+      principal: event.principal !== null ? safeClone(event.principal) : null,
+      action: toCanonicalAction(event.action),
+      decision_source: event.decisionSource,
+      decision_name: event.decisionName,
+      reason: event.reason,
+      hooks_evaluated: safeClone(event.hooksEvaluated),
+      // contractsEvaluated is the internal field name; rules_evaluated is the
+      // canonical /v1 wire name from spec 007.
+      rules_evaluated: safeClone(event.contractsEvaluated),
       mode: event.mode,
+      policy_version: event.policyVersion,
       timestamp: event.timestamp.toISOString(),
-      payload: {
-        tool_args: safeClone(event.toolArgs),
-        side_effect: event.sideEffect,
-        environment: event.environment || this._client.env,
-        principal: event.principal !== null ? safeClone(event.principal) : null,
-        decision_source: event.decisionSource,
-        decision_name: event.decisionName,
-        reason: event.reason,
-        policy_version: event.policyVersion,
-        bundle_name: this._client.bundleName,
-      },
+      run_id: event.runId,
+      call_index: event.callIndex,
+      parent_call_id: event.parentCallId,
+      tool_success: event.toolSuccess,
+      postconditions_passed: event.postconditionsPassed,
+      duration_ms: event.durationMs,
+      error: event.error,
+      result_summary: event.resultSummary,
+      session_attempt_count: event.sessionAttemptCount,
+      session_execution_count: event.sessionExecutionCount,
+      policy_error: event.policyError,
     }
   }
 
@@ -141,7 +181,7 @@ export class ServerAuditSink implements AuditSink {
     this._buffer = []
 
     try {
-      await this._client.post('/api/v1/events', { events })
+      await this._client.post('/v1/events', { events })
     } catch (error) {
       this._restoreEvents(events)
       // Rethrow non-Error throwables and client auth errors (4xx except 429)

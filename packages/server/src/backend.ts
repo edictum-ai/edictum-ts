@@ -54,7 +54,7 @@ export class ServerBackend implements StorageBackend {
   async get(key: string): Promise<string | null> {
     validateKey(key)
     try {
-      const response = await this._client.get(`/api/v1/sessions/${encodeURIComponent(key)}`)
+      const response = await this._client.get(`/v1/sessions/${encodeURIComponent(key)}`)
       return (response['value'] as string) ?? null
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
@@ -67,14 +67,14 @@ export class ServerBackend implements StorageBackend {
   /** Set a value in the server session store. */
   async set(key: string, value: string): Promise<void> {
     validateKey(key)
-    await this._client.put(`/api/v1/sessions/${encodeURIComponent(key)}`, { value })
+    await this._client.put(`/v1/sessions/${encodeURIComponent(key)}`, { value })
   }
 
   /** Delete a key from the server session store. */
   async delete(key: string): Promise<void> {
     validateKey(key)
     try {
-      await this._client.delete(`/api/v1/sessions/${encodeURIComponent(key)}`)
+      await this._client.delete(`/v1/sessions/${encodeURIComponent(key)}`)
     } catch (error) {
       if (error instanceof EdictumServerError && error.statusCode === 404) {
         return
@@ -91,10 +91,9 @@ export class ServerBackend implements StorageBackend {
         `Invalid increment amount: ${JSON.stringify(amount)}. Must be a finite number.`,
       )
     }
-    const response = await this._client.post(
-      `/api/v1/sessions/${encodeURIComponent(key)}/increment`,
-      { amount },
-    )
+    const response = await this._client.post(`/v1/sessions/${encodeURIComponent(key)}/increment`, {
+      amount,
+    })
     const value = response['value']
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new Error(`Server returned invalid value for increment: ${JSON.stringify(value)}`)
@@ -120,7 +119,7 @@ export class ServerBackend implements StorageBackend {
     }
 
     try {
-      const response = await this._client.post('/api/v1/sessions/batch', {
+      const response = await this._client.post('/v1/sessions/batch', {
         keys: [...keys],
       })
       const values = (response['values'] as Record<string, string>) ?? {}

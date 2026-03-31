@@ -57,9 +57,6 @@ export class EdictumServerClient {
     return this._bundleName
   }
 
-  // No public setter — bundleName is mutated only via the package-internal
-  // _setClientBundleName() function which validates before calling this.
-
   constructor(options: EdictumServerClientOptions) {
     const {
       baseUrl,
@@ -316,29 +313,6 @@ export class EdictumServerClient {
   async close(): Promise<void> {
     // Native fetch() doesn't require explicit connection cleanup.
   }
-}
-
-/**
- * Update a client's effective bundle name. Internal to the server package —
- * only used by the factory's SSE watcher after a successful rule reload.
- * Not exported from index.ts. Accessible via subpath import but validated —
- * callers who bypass the public API do so at their own risk.
- *
- * Only accepts non-null strings — once a bundle is assigned, it can only
- * transition to another named bundle. Resetting to null (assignment revocation)
- * is not supported; the watcher would need to be restarted for that case.
- *
- * @internal
- */
-export function _setClientBundleName(client: EdictumServerClient, name: string): void {
-  if (name.length > 128 || !SAFE_IDENTIFIER_RE.test(name)) {
-    throw new EdictumConfigError(
-      `Invalid bundleName: ${JSON.stringify(name)}. Must be 1-128 alphanumeric chars, hyphens, underscores, or dots.`,
-    )
-  }
-  // Access private field — safe because this is a package-internal function
-  // co-located with the class definition. Validation is the single owner above.
-  ;(client as unknown as { _bundleName: string | null })._bundleName = name
 }
 
 function sleep(ms: number): Promise<void> {

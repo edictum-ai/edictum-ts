@@ -1,5 +1,5 @@
 /**
- * SSE client for receiving rule bundle updates from edictum-server.
+ * SSE client for receiving ruleset updates from edictum-api.
  *
  * SIZE APPROVAL: This file exceeds 200 lines. SSE parsing, reconnect
  * logic, and event handling form a cohesive streaming client.
@@ -14,19 +14,24 @@ const STABLE_CONNECTION_MS = 30_000
 const MAX_SSE_BUFFER = 1_048_576 // 1 MB
 const SSE_IDLE_TIMEOUT_MS = 120_000 // 2 minutes
 
+type RuleSourceParseError = Readonly<{
+  type: 'parse_error'
+  message: string
+}>
+
 /**
- * Receives rule bundle updates from edictum-server via SSE.
+ * Receives ruleset update notifications from edictum-api via SSE.
  *
- * Subscribes to /api/v1/stream and yields updated bundles.
+ * Subscribes to /v1/stream and yields matching ruleset update events.
  * Implements auto-reconnect with exponential backoff.
  */
 export class ServerRuleSource {
   private readonly _client: EdictumServerClient
   private readonly _reconnectDelay: number
   private readonly _maxReconnectDelay: number
+  private readonly _onParseError: ((error: RuleSourceParseError) => void) | null
   private _connected: boolean = false
   private _closed: boolean = false
-  private _currentRevision: string | null = null
   private _abortController: AbortController | null = null
 
   constructor(
@@ -34,11 +39,13 @@ export class ServerRuleSource {
     options?: {
       reconnectDelay?: number
       maxReconnectDelay?: number
+      onParseError?: (error: RuleSourceParseError) => void
     },
   ) {
     this._client = client
     const reconnectDelay = options?.reconnectDelay ?? 1_000
     const maxReconnectDelay = options?.maxReconnectDelay ?? 60_000
+    this._onParseError = options?.onParseError ?? null
     if (!Number.isFinite(reconnectDelay) || reconnectDelay <= 0) {
       throw new EdictumConfigError(
         `reconnectDelay must be a positive finite number, got ${reconnectDelay}`,
@@ -60,10 +67,9 @@ export class ServerRuleSource {
   }
 
   /**
-   * Yield rule bundles as they arrive via SSE.
+   * Yield matching ruleset update events as they arrive via SSE.
    *
-   * Passes env, bundle_name, and policy_version as query params
-   * so the server can filter events and detect drift.
+   * Ignores non-ruleset stream events such as live decision updates.
    * Auto-reconnects on disconnect with exponential backoff.
    */
   async *watch(): AsyncGenerator<Record<string, unknown>> {
@@ -73,20 +79,9 @@ export class ServerRuleSource {
 
     while (!this._closed) {
       try {
-        const params: Record<string, string> = { env: this._client.env }
-        if (this._client.bundleName) {
-          params['bundle_name'] = this._client.bundleName
-        }
-        if (this._currentRevision) {
-          params['policy_version'] = this._currentRevision
-        }
-        if (this._client.tags) {
-          params['tags'] = JSON.stringify(this._client.tags)
-        }
-
         this._abortController = new AbortController()
 
-        const response = await this._client.rawFetch('/api/v1/stream', params, {
+        const response = await this._client.rawFetch('/v1/stream', undefined, {
           signal: this._abortController.signal,
         })
 
@@ -108,7 +103,6 @@ export class ServerRuleSource {
         let currentEvent = ''
         let currentData = ''
 
-        // Idle timeout: abort if no data received for 2 minutes
         // Idle timeout: if no data for 2 minutes, abort the connection.
         // This kills the fetch/reader and triggers the reconnect logic.
         let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -206,50 +200,45 @@ export class ServerRuleSource {
     }
   }
 
-  private _processEvent(eventType: string, data: string): Record<string, unknown> | null {
-    if (eventType === 'contract_update') {
-      let bundle: unknown
-      try {
-        bundle = JSON.parse(data)
-      } catch {
-        return null // Invalid JSON
-      }
-      if (typeof bundle !== 'object' || bundle === null || Array.isArray(bundle)) {
-        return null // Not an object
-      }
-      const bundleObj = bundle as Record<string, unknown>
-      if ('revision_hash' in bundleObj && typeof bundleObj['revision_hash'] === 'string') {
-        const hash = bundleObj['revision_hash'].slice(0, 128)
-        // Accept any printable string (opaque to the client)
-        if (hash.length > 0 && !/[\x00-\x1f\x7f]/.test(hash)) {
-          this._currentRevision = hash
-        }
-      }
-      return bundleObj
+  private _notifyParseError(message: string): void {
+    try {
+      this._onParseError?.({ type: 'parse_error', message })
+    } catch {
+      /* user callback error swallowed */
     }
+  }
 
-    if (eventType === 'assignment_changed') {
-      let data_obj: unknown
+  private _processEvent(eventType: string, data: string): Record<string, unknown> | null {
+    if (eventType === 'ruleset_updated') {
+      let ruleset: unknown
       try {
-        data_obj = JSON.parse(data)
+        ruleset = JSON.parse(data)
       } catch {
+        this._notifyParseError('Invalid JSON in ruleset_updated event')
         return null
       }
-      if (typeof data_obj !== 'object' || data_obj === null || Array.isArray(data_obj)) {
+      if (typeof ruleset !== 'object' || ruleset === null || Array.isArray(ruleset)) {
+        this._notifyParseError('ruleset_updated event payload must be an object')
         return null
       }
-      const obj = data_obj as Record<string, unknown>
-      const newBundle = obj['bundle_name']
+      const rulesetObj = ruleset as Record<string, unknown>
+      const name = rulesetObj['name']
+      if (typeof name !== 'string' || name.length > 128 || !SAFE_IDENTIFIER_RE.test(name)) {
+        this._notifyParseError('Invalid ruleset name in ruleset_updated event')
+        return null
+      }
+      if (this._client.bundleName !== null && name !== this._client.bundleName) {
+        return null
+      }
+      const version = rulesetObj['version']
       if (
-        typeof newBundle !== 'string' ||
-        newBundle.length > 128 ||
-        !SAFE_IDENTIFIER_RE.test(newBundle)
+        version !== undefined &&
+        (typeof version !== 'number' || !Number.isInteger(version) || version < 1)
       ) {
+        this._notifyParseError('Invalid ruleset version in ruleset_updated event')
         return null
       }
-      // Do NOT update _client.bundleName here.
-      // The watcher updates it after a successful reload.
-      return { _assignment_changed: true, bundle_name: newBundle }
+      return rulesetObj
     }
 
     return null

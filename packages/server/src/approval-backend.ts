@@ -99,7 +99,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       timeout_action: timeoutEffect,
     }
 
-    const response = await this._client.post('/api/v1/approvals', body)
+    const response = await this._client.post('/v1/approvals', body)
     const approvalId = response['id']
 
     // Validate server-returned approvalId — this is a local validation
@@ -174,7 +174,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
     this._pending.delete(approvalId)
 
     while (true) {
-      const response = await this._client.get(`/api/v1/approvals/${approvalId}`)
+      const response = await this._client.get(`/v1/approvals/${approvalId}`)
       const status = response['status'] as string
 
       if (status === 'approved') {
@@ -187,7 +187,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
         })
       }
 
-      if (status === 'denied') {
+      if (status === 'rejected' || status === 'denied') {
         return deepFreeze({
           approved: false,
           approver: (response['decided_by'] as string) ?? null,
@@ -197,7 +197,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
         })
       }
 
-      if (status === 'timeout') {
+      if (status === 'timed_out' || status === 'timeout') {
         return deepFreeze({
           approved: timeoutEffect === 'allow',
           approver: null,
