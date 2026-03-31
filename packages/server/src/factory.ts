@@ -97,7 +97,7 @@ export interface ServerGuardClient {
 export interface ServerGuard {
   /** The configured Edictum guard. */
   readonly guard: Edictum
-  /** Read-only view of the server client (updateBundleName not exposed). */
+  /** Read-only view of the server client. */
   readonly client: ServerGuardClient
   /** Stop SSE watcher, flush audit events, close connections. */
   close(): Promise<void>

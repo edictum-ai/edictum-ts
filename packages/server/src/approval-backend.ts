@@ -6,7 +6,7 @@ import { ApprovalStatus, deepFreeze } from '@edictum/core'
 import { EdictumConfigError } from '@edictum/core'
 
 import type { EdictumServerClient } from './client.js'
-import { EdictumServerError, SAFE_IDENTIFIER_RE } from './client.js'
+import { SAFE_IDENTIFIER_RE } from './client.js'
 
 /**
  * Approval backend that delegates to the edictum-server approval queue.
@@ -174,21 +174,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
     this._pending.delete(approvalId)
 
     while (true) {
-      let response: Record<string, unknown>
-      try {
-        response = await this._client.get(`/v1/approvals/${approvalId}`)
-      } catch (error) {
-        if (error instanceof EdictumServerError && error.statusCode === 408) {
-          return deepFreeze({
-            approved: timeoutEffect === 'allow',
-            approver: null,
-            reason: null,
-            status: ApprovalStatus.TIMEOUT,
-            timestamp: new Date(),
-          })
-        }
-        throw error
-      }
+      const response = await this._client.get(`/v1/approvals/${approvalId}`)
       const status = response['status'] as string
 
       if (status === 'approved') {

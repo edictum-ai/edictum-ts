@@ -199,7 +199,7 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
   })
 
-  it('returns timeout decision on HTTP 408 from server', async () => {
+  it('rethrows HTTP 408 instead of treating it as approval timeout', async () => {
     const client = mockClient()
     vi.mocked(client.post).mockResolvedValue({ id: 'a1' })
     vi.mocked(client.get).mockRejectedValue(new EdictumServerError(408, 'approval timed out'))
@@ -207,10 +207,7 @@ describe('ServerApprovalBackend.waitForDecision', () => {
     const backend = new ServerApprovalBackend(client)
     await backend.requestApproval('Tool', {}, 'msg')
 
-    const decision = await backend.waitForDecision('a1')
-
-    expect(decision.approved).toBe(false)
-    expect(decision.status).toBe(ApprovalStatus.TIMEOUT)
+    await expect(backend.waitForDecision('a1')).rejects.toThrow('HTTP 408: approval timed out')
   })
 
   it('returns timeout on local deadline exceeded', async () => {
