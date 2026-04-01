@@ -96,7 +96,10 @@ export class ServerApprovalBackend implements ApprovalBackend {
       tool_args: toolArgs,
       message,
       timeout,
-      timeout_action: timeoutEffect,
+      // edictum-api expects timeout_action values of "block" | "allow",
+      // while the SDK-facing approval contract uses timeoutEffect of
+      // "deny" | "allow". Map the public SDK value to the server wire value.
+      timeout_action: timeoutEffect === 'deny' ? 'block' : 'allow',
     }
 
     const response = await this._client.post('/v1/approvals', body)

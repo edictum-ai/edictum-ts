@@ -40,7 +40,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       tool_args: { command: 'rm -rf /' },
       message: 'Dangerous command detected',
       timeout: 300,
-      timeout_action: 'deny',
+      timeout_action: 'block',
     })
 
     expect(request.approvalId).toBe('approval-123')
@@ -93,6 +93,14 @@ describe('ServerApprovalBackend.requestApproval', () => {
       metadata: { key: 'value' },
     })
 
+    expect(client.post).toHaveBeenCalledWith('/v1/approvals', {
+      agent_id: 'test-agent',
+      tool_name: 'Tool',
+      tool_args: {},
+      message: 'msg',
+      timeout: 60,
+      timeout_action: 'allow',
+    })
     expect(request.timeout).toBe(60)
     expect(request.timeoutEffect).toBe('allow')
     expect(request.principal).toEqual({ sub: 'user-1' })
