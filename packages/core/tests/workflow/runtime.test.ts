@@ -123,6 +123,61 @@ stages:
     expect(decision.reason).toBe('Push to a branch, not main')
   })
 
+  test('stage check failure wins over generic completion failure when next stage exists', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: push-reason-precedence
+stages:
+  - id: implement
+    tools: [Edit]
+  - id: review
+    entry:
+      - condition: stage_complete("implement")
+    approval:
+      message: Approval required before push
+  - id: commit-push
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+    checks:
+      - command_matches: '^git\\s+(status|diff|add|commit|push)\\b'
+        message: Only git status/diff/add/commit/push are allowed in commit-push
+      - command_not_matches: '^git\\s+push\\b.*\\bmain\\b'
+        message: Push to a branch, not main
+    exit:
+      - condition: 'command_matches("^git\\s+push\\b")'
+        message: A successful git push is required before leaving commit-push
+      - condition: 'command_not_matches("^git\\s+push\\b.*\\bmain\\b")'
+        message: Push to a branch, not main
+  - id: done
+    entry:
+      - condition: stage_complete("commit-push")
+`)
+    const session = makeWorkflowSession('wf-push-reason-precedence')
+
+    let decision = await runtime.evaluate(session, makeCall('Edit', { path: 'src/app.ts' }))
+    expect(decision.action).toBe('allow')
+    await runtime.recordResult(session, decision.stageId, makeCall('Edit', { path: 'src/app.ts' }))
+
+    decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin main --dry-run' }),
+    )
+    expect(decision.action).toBe('pending_approval')
+    expect(decision.stageId).toBe('review')
+
+    await runtime.recordApproval(session, 'review')
+
+    decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin main --dry-run' }),
+    )
+    expect(decision.action).toBe('block')
+    expect(decision.stageId).toBe('commit-push')
+    expect(decision.reason).toBe('Push to a branch, not main')
+  })
+
   describe('security', () => {
     test('rejects corrupted persisted workflow state', async () => {
       const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1

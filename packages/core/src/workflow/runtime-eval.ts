@@ -58,6 +58,9 @@ export async function evaluateWorkflowRuntime(
 
     const completion = await evaluateWorkflowCompletion(runtime, stage, state, envelope, hasNext)
     if (!completion.completed) {
+      if (currentStage.invalidEvaluation != null && currentStage.invalidKind === 'check') {
+        return currentStage.invalidEvaluation
+      }
       if (
         completion.evaluation.action !== WorkflowAction.ALLOW ||
         completion.evaluation.reason !== ''

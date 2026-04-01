@@ -14,6 +14,7 @@ export interface WorkflowStageDecision {
   readonly allowed: boolean
   readonly evaluation: WorkflowEvaluation
   readonly invalidEvaluation: WorkflowEvaluation | null
+  readonly invalidKind: 'tool' | 'check' | null
 }
 
 export function evaluateCurrentWorkflowStage(
@@ -26,6 +27,7 @@ export function evaluateCurrentWorkflowStage(
       allowed: false,
       evaluation: createWorkflowEvaluation(),
       invalidEvaluation: null,
+      invalidKind: null,
     }
   }
 
@@ -59,6 +61,7 @@ export function evaluateCurrentWorkflowStage(
           false,
         ),
       ),
+      invalidKind: 'tool',
     }
   }
 
@@ -101,6 +104,7 @@ export function evaluateCurrentWorkflowStage(
             false,
           ),
         ),
+        invalidKind: 'check',
       }
     }
   }
@@ -134,5 +138,6 @@ export function evaluateCurrentWorkflowStage(
       ),
     ),
     invalidEvaluation: null,
+    invalidKind: null,
   }
 }
