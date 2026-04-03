@@ -24,6 +24,52 @@ import { Session as SessionClass } from './session.js'
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
 
 // ---------------------------------------------------------------------------
+// _emitWorkflowEvents
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit audit events for workflow progress (stage advance, completion).
+ *
+ * Mirrors Python's _emit_workflow_events: iterates over event records
+ * produced by workflow evaluation or recordResult, and emits a proper
+ * AuditEvent for each with the correct action type.
+ */
+async function _emitWorkflowEvents(
+  guard: Edictum,
+  toolCall: Readonly<ToolCall>,
+  events: Record<string, unknown>[],
+): Promise<void> {
+  for (const record of events) {
+    const workflow = record['workflow']
+    const actionName = record['action']
+    if (typeof workflow !== 'object' || workflow == null || typeof actionName !== 'string') {
+      continue
+    }
+    let action: AuditAction = AA.WORKFLOW_STAGE_ADVANCED
+    if (actionName === AA.WORKFLOW_COMPLETED) {
+      action = AA.WORKFLOW_COMPLETED
+    } else if (actionName === AA.WORKFLOW_STATE_UPDATED) {
+      action = AA.WORKFLOW_STATE_UPDATED
+    }
+    const event = createAuditEvent({
+      action,
+      runId: toolCall.runId,
+      callId: toolCall.callId,
+      toolName: toolCall.toolName,
+      toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+      sideEffect: toolCall.sideEffect,
+      environment: toolCall.environment,
+      principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
+      mode: guard.mode,
+      policyVersion: guard.policyVersion,
+      workflow: { ...(workflow as Record<string, unknown>) },
+    })
+    await guard.auditSink.emit(event)
+    // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, event)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // defaultSuccessCheck
 // ---------------------------------------------------------------------------
 
@@ -156,6 +202,7 @@ export async function run(
 
     // Pre-execute
     let pre = await pipeline.preExecute(toolCall, session)
+    await _emitWorkflowEvents(guard, toolCall, pre.workflowEvents)
     let skipStandardPreAudit = false
 
     // Handle pending_approval: request approval from backend
@@ -241,6 +288,7 @@ export async function run(
         }
         await workflowRuntime.recordApproval(session, pre.workflowStageId)
         pre = await pipeline.preExecute(toolCall, session)
+        await _emitWorkflowEvents(guard, toolCall, pre.workflowEvents)
         continue
       }
 
@@ -371,10 +419,15 @@ export async function run(
 
     // Post-execute
     const post = await pipeline.postExecute(toolCall, result, toolSuccess)
+    let postWorkflowEvents: Record<string, unknown>[] = []
     if (toolSuccess && pre.workflowInvolved && pre.workflowStageId != null) {
       const workflowRuntime = guard.getWorkflowRuntime()
       if (workflowRuntime != null) {
-        await workflowRuntime.recordResult(session, pre.workflowStageId, toolCall)
+        postWorkflowEvents = await workflowRuntime.recordResult(
+          session,
+          pre.workflowStageId,
+          toolCall,
+        )
       }
     }
     await session.recordExecution(toolName, toolSuccess)
@@ -398,9 +451,11 @@ export async function run(
       mode: guard.mode,
       policyVersion: guard.policyVersion,
       policyError: post.policyError,
+      workflow: pre.workflow,
     })
     await guard.auditSink.emit(postEvent)
     // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, postEvent)
+    await _emitWorkflowEvents(guard, toolCall, postWorkflowEvents)
 
     // TODO: Phase 3 — span tool_success / postconditions_passed attributes
     // TODO: Phase 3 — span OK/error status

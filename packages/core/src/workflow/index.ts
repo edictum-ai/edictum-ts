@@ -10,4 +10,10 @@ export type {
   WorkflowStage,
 } from './definition.js'
 export type { WorkflowRuntimeOptions } from './runtime.js'
-export type { WorkflowEvaluation, WorkflowEvidence, WorkflowState } from './result.js'
+export type {
+  BlockedAction,
+  PendingApproval,
+  WorkflowEvaluation,
+  WorkflowEvidence,
+  WorkflowState,
+} from './result.js'

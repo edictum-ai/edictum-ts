@@ -100,6 +100,8 @@ export {
   loadWorkflowString,
 } from './workflow/index.js'
 export type {
+  BlockedAction,
+  PendingApproval,
   WorkflowApproval,
   WorkflowCheck,
   WorkflowDefinition,

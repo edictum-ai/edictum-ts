@@ -1,7 +1,12 @@
 import type { ToolEnvelope } from '../envelope.js'
 import type { Session } from '../session.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
-import { ensureWorkflowState, type MutableWorkflowState } from './result.js'
+import {
+  ensureWorkflowState,
+  type BlockedAction,
+  type MutableWorkflowState,
+  type PendingApproval,
+} from './result.js'
 
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
@@ -57,7 +62,35 @@ export async function saveWorkflowState(
   state.sessionId = session.sessionId
   ensureWorkflowState(state)
   const key = workflowStateKey(definition.metadata.name)
-  await session.setValue(key, JSON.stringify(state))
+  const serializable = {
+    sessionId: state.sessionId,
+    activeStage: state.activeStage,
+    completedStages: state.completedStages,
+    approvals: state.approvals,
+    evidence: {
+      reads: state.evidence.reads,
+      stageCalls: state.evidence.stageCalls,
+    },
+    blockedReason: state.blockedReason,
+    pendingApproval:
+      state.pendingApproval != null
+        ? {
+            required: state.pendingApproval.required,
+            stageId: state.pendingApproval.stageId,
+            message: state.pendingApproval.message,
+          }
+        : null,
+    lastBlockedAction:
+      state.lastBlockedAction != null
+        ? {
+            tool: state.lastBlockedAction.tool,
+            summary: state.lastBlockedAction.summary,
+            message: state.lastBlockedAction.message,
+            timestamp: state.lastBlockedAction.timestamp,
+          }
+        : null,
+  }
+  await session.setValue(key, JSON.stringify(serializable))
   await session.deleteValue(legacyWorkflowStateKey(definition.metadata.name))
 }
 
@@ -107,6 +140,28 @@ function appendCapped(items: string[], item: string, limit: number): string[] {
   return [...items, item]
 }
 
+function parsePendingApproval(raw: unknown): PendingApproval | null {
+  if (typeof raw !== 'object' || raw == null || Array.isArray(raw)) return null
+  const v = raw as Record<string, unknown>
+  return {
+    required: Boolean(v.required ?? false),
+    stageId:
+      typeof v.stageId === 'string' ? v.stageId : typeof v.stage_id === 'string' ? v.stage_id : '',
+    message: typeof v.message === 'string' ? v.message : '',
+  }
+}
+
+function parseBlockedAction(raw: unknown): BlockedAction | null {
+  if (typeof raw !== 'object' || raw == null || Array.isArray(raw)) return null
+  const v = raw as Record<string, unknown>
+  return {
+    tool: typeof v.tool === 'string' ? v.tool : '',
+    summary: typeof v.summary === 'string' ? v.summary : '',
+    message: typeof v.message === 'string' ? v.message : '',
+    timestamp: typeof v.timestamp === 'string' ? v.timestamp : '',
+  }
+}
+
 function parseWorkflowState(raw: string): MutableWorkflowState {
   let parsed: unknown
   try {
@@ -133,6 +188,14 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
       reads: normalizeStringArray(evidence?.reads),
       stageCalls: normalizeStringArrayMap(stageCalls),
     },
+    blockedReason:
+      typeof value.blockedReason === 'string'
+        ? value.blockedReason
+        : typeof value.blocked_reason === 'string'
+          ? value.blocked_reason
+          : null,
+    pendingApproval: parsePendingApproval(value.pendingApproval ?? value.pending_approval),
+    lastBlockedAction: parseBlockedAction(value.lastBlockedAction ?? value.last_blocked_action),
   }
 }
 

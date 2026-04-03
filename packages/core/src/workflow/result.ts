@@ -17,12 +17,30 @@ export interface WorkflowEvaluation {
   readonly events: Record<string, unknown>[]
 }
 
+/** Structured pending approval context for workflow state snapshots. */
+export interface PendingApproval {
+  readonly required: boolean
+  readonly stageId: string
+  readonly message: string
+}
+
+/** Record of the last blocked tool call in a workflow. */
+export interface BlockedAction {
+  readonly tool: string
+  readonly summary: string
+  readonly message: string
+  readonly timestamp: string
+}
+
 export interface WorkflowState {
   readonly sessionId: string
   readonly activeStage: string
   readonly completedStages: readonly string[]
   readonly approvals: Readonly<Record<string, string>>
   readonly evidence: WorkflowEvidence
+  readonly blockedReason: string | null
+  readonly pendingApproval: PendingApproval | null
+  readonly lastBlockedAction: BlockedAction | null
 }
 
 export interface WorkflowEvidence {
@@ -36,6 +54,9 @@ export interface MutableWorkflowState {
   completedStages: string[]
   approvals: Record<string, string>
   evidence: MutableWorkflowEvidence
+  blockedReason: string | null
+  pendingApproval: PendingApproval | null
+  lastBlockedAction: BlockedAction | null
 }
 
 export interface MutableWorkflowEvidence {
@@ -69,6 +90,9 @@ export function ensureWorkflowState(state: Partial<MutableWorkflowState>): Mutab
   const evidence = (normalized.evidence ??= { reads: [], stageCalls: {} })
   evidence.reads ??= []
   evidence.stageCalls ??= {}
+  if (normalized.blockedReason === undefined) normalized.blockedReason = null
+  if (normalized.pendingApproval === undefined) normalized.pendingApproval = null
+  if (normalized.lastBlockedAction === undefined) normalized.lastBlockedAction = null
   return normalized
 }
 
@@ -87,5 +111,8 @@ export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState
         ]),
       ),
     },
+    blockedReason: state.blockedReason,
+    pendingApproval: state.pendingApproval ? { ...state.pendingApproval } : null,
+    lastBlockedAction: state.lastBlockedAction ? { ...state.lastBlockedAction } : null,
   }
 }

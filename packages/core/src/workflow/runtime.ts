@@ -26,7 +26,7 @@ import {
 } from './result.js'
 import { advanceWorkflowAfterSuccess } from './runtime-post.js'
 import { evaluateWorkflowRuntime } from './runtime-eval.js'
-import { workflowMetadata, workflowStageIds } from './runtime-helpers.js'
+import { workflowMetadata, workflowProgressEvent, workflowStageIds } from './runtime-helpers.js'
 import {
   loadWorkflowState,
   recordWorkflowApproval,
@@ -89,8 +89,8 @@ export class WorkflowRuntime {
     )
   }
 
-  async reset(session: Session, stageId: string): Promise<void> {
-    await this.withLock(async () => {
+  async reset(session: Session, stageId: string): Promise<Record<string, unknown>[]> {
+    return await this.withLock(async () => {
       const index = getWorkflowStageIndex(this.definition, stageId)
       if (index == null) {
         throw new Error(`workflow: unknown reset stage ${JSON.stringify(stageId)}`)
@@ -112,7 +112,14 @@ export class WorkflowRuntime {
       if (index === 0) {
         state.evidence.reads = []
       }
+      // Clear enrichment fields on reset — they reflect pre-reset state
+      state.blockedReason = null
+      state.pendingApproval = null
+      state.lastBlockedAction = null
       await saveWorkflowState(session, this.definition, state)
+      return [
+        workflowProgressEvent('workflow_state_updated', this.definition.metadata.name, stageId, ''),
+      ]
     })
   }
 

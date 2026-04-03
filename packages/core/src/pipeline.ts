@@ -35,6 +35,8 @@ export interface PreDecision {
   readonly approvalMessage: string | null
   readonly workflowStageId: string | null
   readonly workflowInvolved: boolean
+  readonly workflow: Record<string, unknown> | null
+  readonly workflowEvents: Record<string, unknown>[]
 }
 
 /** Create a PreDecision with defaults for omitted fields. */
@@ -56,6 +58,8 @@ export function createPreDecision(
     approvalMessage: partial.approvalMessage ?? null,
     workflowStageId: partial.workflowStageId ?? null,
     workflowInvolved: partial.workflowInvolved ?? false,
+    workflow: partial.workflow ?? null,
+    workflowEvents: partial.workflowEvents ?? [],
   }
 }
 
@@ -343,15 +347,21 @@ export class CheckPipeline {
     // 5. Workflow gates
     let workflowStageId: string | null = null
     let workflowInvolved = false
+    let workflowMeta: Record<string, unknown> | null = null
+    let workflowEvents: Record<string, unknown>[] = []
     const workflowRuntime = this._guard.getWorkflowRuntime()
     if (workflowRuntime != null) {
       try {
         const wf = await workflowRuntime.evaluate(session, toolCall)
         if (wf.records.length > 0) {
           contractsEvaluated.push(...wf.records)
+          workflowMeta = wf.audit
+          workflowStageId = wf.stageId || null
         }
-        workflowStageId = wf.stageId || null
-        workflowInvolved = wf.records.length > 0 || wf.stageId !== ''
+        if (wf.records.length > 0 || wf.events.length > 0 || wf.stageId !== '') {
+          workflowInvolved = true
+        }
+        workflowEvents = [...wf.events]
 
         if (wf.action === WorkflowAction.BLOCK) {
           return createPreDecision({
@@ -364,6 +374,8 @@ export class CheckPipeline {
             policyError: hasPolicyError(contractsEvaluated),
             workflowStageId,
             workflowInvolved,
+            workflow: workflowMeta,
+            workflowEvents,
           })
         }
 
@@ -379,6 +391,8 @@ export class CheckPipeline {
             approvalMessage: wf.reason,
             workflowStageId,
             workflowInvolved,
+            workflow: workflowMeta,
+            workflowEvents,
           })
         }
       } catch (exc) {
@@ -399,6 +413,8 @@ export class CheckPipeline {
           policyError: true,
           workflowStageId,
           workflowInvolved: true,
+          workflow: workflowMeta,
+          workflowEvents,
         })
       }
     }
@@ -417,6 +433,8 @@ export class CheckPipeline {
         contractsEvaluated,
         workflowStageId,
         workflowInvolved,
+        workflow: workflowMeta,
+        workflowEvents,
       })
     }
 
@@ -435,6 +453,8 @@ export class CheckPipeline {
           contractsEvaluated,
           workflowStageId,
           workflowInvolved,
+          workflow: workflowMeta,
+          workflowEvents,
         })
       }
     }
@@ -454,6 +474,8 @@ export class CheckPipeline {
       observeResults,
       workflowStageId,
       workflowInvolved,
+      workflow: workflowMeta,
+      workflowEvents,
     })
   }
 

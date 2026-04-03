@@ -37,6 +37,7 @@ export interface ApprovalRequest {
   readonly timeoutEffect: string // "deny" | "allow"
   readonly principal: Readonly<Record<string, unknown>> | null
   readonly metadata: Readonly<Record<string, unknown>>
+  readonly sessionId: string | null
   readonly createdAt: Date
 }
 
@@ -52,6 +53,7 @@ function createApprovalRequest(
     timeoutEffect: fields.timeoutEffect,
     principal: fields.principal !== null ? Object.freeze({ ...fields.principal }) : null,
     metadata: Object.freeze({ ...fields.metadata }),
+    sessionId: fields.sessionId ?? null,
     createdAt: fields.createdAt ?? new Date(),
   }
   return Object.freeze(request)
@@ -98,6 +100,7 @@ export interface ApprovalBackend {
       timeoutEffect?: string
       principal?: Record<string, unknown> | null
       metadata?: Record<string, unknown> | null
+      sessionId?: string | null
     },
   ): Promise<ApprovalRequest>
 
@@ -125,6 +128,7 @@ export class LocalApprovalBackend implements ApprovalBackend {
       timeoutEffect?: string
       principal?: Record<string, unknown> | null
       metadata?: Record<string, unknown> | null
+      sessionId?: string | null
     },
   ): Promise<ApprovalRequest> {
     const approvalId = randomUUID()
@@ -137,6 +141,7 @@ export class LocalApprovalBackend implements ApprovalBackend {
       timeoutEffect: options?.timeoutEffect ?? 'deny',
       principal: options?.principal ?? null,
       metadata: options?.metadata ?? {},
+      sessionId: options?.sessionId ?? null,
     })
     this._pending.set(approvalId, request)
 

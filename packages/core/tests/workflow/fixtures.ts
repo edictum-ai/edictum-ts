@@ -33,6 +33,7 @@ export class AutoApprovalBackend implements ApprovalBackend {
       timeoutEffect: 'deny',
       principal: null,
       metadata: {},
+      sessionId: null,
       createdAt: new Date(),
     }
   }

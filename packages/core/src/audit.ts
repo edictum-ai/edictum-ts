@@ -12,6 +12,9 @@ export const AuditAction = {
   CALL_ALLOWED: 'call_allowed',
   CALL_EXECUTED: 'call_executed',
   CALL_FAILED: 'call_failed',
+  WORKFLOW_STAGE_ADVANCED: 'workflow_stage_advanced',
+  WORKFLOW_COMPLETED: 'workflow_completed',
+  WORKFLOW_STATE_UPDATED: 'workflow_state_updated',
   POSTCONDITION_WARNING: 'postcondition_warning',
   CALL_APPROVAL_REQUESTED: 'call_approval_requested',
   CALL_APPROVAL_GRANTED: 'call_approval_granted',
@@ -30,6 +33,8 @@ export interface AuditEvent {
   callId: string
   callIndex: number
   parentCallId: string | null
+  sessionId: string | null
+  parentSessionId: string | null
   toolName: string
   toolArgs: Record<string, unknown>
   sideEffect: string
@@ -41,6 +46,7 @@ export interface AuditEvent {
   reason: string | null
   hooksEvaluated: Record<string, unknown>[]
   contractsEvaluated: Record<string, unknown>[]
+  workflow: Record<string, unknown> | null
   toolSuccess: boolean | null
   postconditionsPassed: boolean | null
   durationMs: number
@@ -62,6 +68,8 @@ export function createAuditEvent(f: Partial<AuditEvent> = {}): AuditEvent {
     callId: f.callId ?? '',
     callIndex: f.callIndex ?? 0,
     parentCallId: f.parentCallId ?? null,
+    sessionId: f.sessionId ?? null,
+    parentSessionId: f.parentSessionId ?? null,
     toolName: f.toolName ?? '',
     toolArgs: f.toolArgs ?? {},
     sideEffect: f.sideEffect ?? '',
@@ -73,6 +81,7 @@ export function createAuditEvent(f: Partial<AuditEvent> = {}): AuditEvent {
     reason: f.reason ?? null,
     hooksEvaluated: f.hooksEvaluated ?? [],
     contractsEvaluated: f.contractsEvaluated ?? [],
+    workflow: f.workflow ?? null,
     toolSuccess: f.toolSuccess ?? null,
     postconditionsPassed: f.postconditionsPassed ?? null,
     durationMs: f.durationMs ?? 0,
