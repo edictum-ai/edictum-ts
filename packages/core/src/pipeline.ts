@@ -356,8 +356,8 @@ export class CheckPipeline {
         if (wf.records.length > 0) {
           contractsEvaluated.push(...wf.records)
           workflowMeta = wf.audit
-          workflowStageId = wf.stageId || null
         }
+        workflowStageId = wf.stageId || null
         if (wf.records.length > 0 || wf.events.length > 0 || wf.stageId !== '') {
           workflowInvolved = true
         }
