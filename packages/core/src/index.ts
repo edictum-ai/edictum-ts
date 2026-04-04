@@ -1,6 +1,6 @@
 /** Edictum — Runtime rule enforcement for AI agent tool calls. */
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.3.2'
 
 // Errors
 export { EdictumConfigError, EdictumDenied, EdictumToolError } from './errors.js'

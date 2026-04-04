@@ -137,6 +137,24 @@ export class WorkflowRuntime {
     })
   }
 
+  async setStage(session: Session, stageId: string): Promise<Record<string, unknown>[]> {
+    return await this.withLock(async () => {
+      const index = getWorkflowStageIndex(this.definition, stageId)
+      if (index == null) {
+        throw new Error(`workflow: unknown stage ${JSON.stringify(stageId)}`)
+      }
+      const state = await loadWorkflowState(session, this.definition)
+      state.activeStage = stageId
+      state.completedStages = workflowStageIds(this.definition.stages.slice(0, index))
+      clearWorkflowRuntimeStatus(state)
+      state.lastBlockedAction = null
+      await saveWorkflowState(session, this.definition, state)
+      return [
+        buildWorkflowEvent('workflow_state_updated', buildWorkflowSnapshot(this.definition, state)),
+      ]
+    })
+  }
+
   async recordApproval(session: Session, stageId: string): Promise<void> {
     await this.withLock(async () => {
       if (getWorkflowStageById(this.definition, stageId) == null) {
