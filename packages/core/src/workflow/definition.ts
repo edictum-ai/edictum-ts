@@ -16,6 +16,7 @@ export interface WorkflowDefinition {
 export interface WorkflowMetadata {
   readonly name: string
   readonly description?: string
+  readonly version?: string
 }
 
 export interface WorkflowStage {

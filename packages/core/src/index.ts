@@ -96,17 +96,21 @@ export type { EdictumOptions } from './guard.js'
 export {
   WorkflowAction,
   WorkflowRuntime,
+  defaultWorkflowPendingApproval,
   loadWorkflow,
   loadWorkflowString,
 } from './workflow/index.js'
 export type {
+  WorkflowBlockedAction,
   WorkflowApproval,
   WorkflowCheck,
+  WorkflowContext,
   WorkflowDefinition,
   WorkflowEvaluation,
   WorkflowEvidence,
   WorkflowGate,
   WorkflowMetadata,
+  WorkflowPendingApproval,
   WorkflowRuntimeOptions,
   WorkflowStage,
   WorkflowState,

@@ -1,10 +1,29 @@
 import type { ToolEnvelope } from '../envelope.js'
 import type { Session } from '../session.js'
+import { WorkflowAction } from './result.js'
+import {
+  defaultWorkflowPendingApproval,
+  type WorkflowBlockedAction,
+  type WorkflowContext,
+  type WorkflowPendingApproval,
+} from './context.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
-import { ensureWorkflowState, type MutableWorkflowState } from './result.js'
+import {
+  ensureWorkflowState,
+  type MutableWorkflowState,
+  type WorkflowEvaluation,
+} from './result.js'
+
+/**
+ * SIZE APPROVAL: This file exceeds 200 lines. It owns the workflow state
+ * storage layer end to end: persistence, migration, normalization, runtime
+ * status updates, and audit snapshot construction. Splitting those concerns
+ * would make the storage boundary harder to trace.
+ */
 
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
+const MAX_WORKFLOW_ACTION_SUMMARY_LENGTH = 4_096
 
 export function workflowStateKey(name: string): string {
   return `workflow_state__${name}`
@@ -29,6 +48,9 @@ export async function loadWorkflowState(
       completedStages: [],
       approvals: {},
       evidence: { reads: [], stageCalls: {} },
+      blockedReason: null,
+      pendingApproval: defaultWorkflowPendingApproval(),
+      lastBlockedAction: null,
     })
   }
 
@@ -57,13 +79,29 @@ export async function saveWorkflowState(
   state.sessionId = session.sessionId
   ensureWorkflowState(state)
   const key = workflowStateKey(definition.metadata.name)
-  await session.setValue(key, JSON.stringify(state))
+  await session.setValue(
+    key,
+    JSON.stringify({
+      sessionId: state.sessionId,
+      activeStage: state.activeStage,
+      completedStages: state.completedStages,
+      approvals: state.approvals,
+      evidence: {
+        reads: state.evidence.reads,
+        stageCalls: state.evidence.stageCalls,
+      },
+      blockedReason: state.blockedReason,
+      pendingApproval: state.pendingApproval,
+      lastBlockedAction: state.lastBlockedAction,
+    }),
+  )
   await session.deleteValue(legacyWorkflowStateKey(definition.metadata.name))
 }
 
 export function recordWorkflowApproval(state: MutableWorkflowState, stageId: string): void {
   ensureWorkflowState(state)
   state.approvals[stageId] = WORKFLOW_APPROVED_STATUS
+  clearWorkflowRuntimeStatus(state)
 }
 
 export function recordWorkflowResult(
@@ -96,6 +134,112 @@ export function recordWorkflowResult(
   }
 }
 
+export function clearWorkflowRuntimeStatus(state: MutableWorkflowState): void {
+  ensureWorkflowState(state)
+  state.blockedReason = null
+  state.pendingApproval = defaultWorkflowPendingApproval()
+}
+
+export function applyWorkflowEvaluationStatus(
+  state: MutableWorkflowState,
+  evaluation: WorkflowEvaluation,
+  envelope: ToolEnvelope,
+): boolean {
+  ensureWorkflowState(state)
+  let changed = false
+
+  if (evaluation.action === WorkflowAction.BLOCK) {
+    if (state.blockedReason !== evaluation.reason) {
+      state.blockedReason = evaluation.reason
+      changed = true
+    }
+    if (!workflowPendingApprovalEquals(state.pendingApproval, defaultWorkflowPendingApproval())) {
+      state.pendingApproval = defaultWorkflowPendingApproval()
+      changed = true
+    }
+    const blockedAction = buildLastBlockedAction(envelope, evaluation.reason)
+    if (!workflowBlockedActionEquals(state.lastBlockedAction, blockedAction)) {
+      state.lastBlockedAction = blockedAction
+      changed = true
+    }
+    return changed
+  }
+
+  if (evaluation.action === WorkflowAction.PENDING_APPROVAL) {
+    const pendingApproval: WorkflowPendingApproval = {
+      required: true,
+      stageId: evaluation.stageId,
+      message: evaluation.reason,
+    }
+    if (!workflowPendingApprovalEquals(state.pendingApproval, pendingApproval)) {
+      state.pendingApproval = pendingApproval
+      changed = true
+    }
+    if (state.blockedReason !== null) {
+      state.blockedReason = null
+      changed = true
+    }
+    return changed
+  }
+
+  if (
+    state.blockedReason !== null ||
+    !workflowPendingApprovalEquals(state.pendingApproval, defaultWorkflowPendingApproval())
+  ) {
+    clearWorkflowRuntimeStatus(state)
+    changed = true
+  }
+  return changed
+}
+
+export function buildWorkflowSnapshot(
+  definition: WorkflowDefinition,
+  state: MutableWorkflowState,
+): WorkflowContext {
+  ensureWorkflowState(state)
+  const snapshot: WorkflowContext = {
+    name: definition.metadata.name,
+    activeStage: state.activeStage,
+    completedStages: [...state.completedStages],
+    blockedReason: state.blockedReason,
+    pendingApproval: { ...state.pendingApproval },
+  }
+  const version = definition.metadata.version
+  if (typeof version === 'string' && version !== '') {
+    ;(snapshot as { version?: string }).version = version
+  }
+  if (state.lastBlockedAction != null) {
+    ;(snapshot as { lastBlockedAction?: WorkflowBlockedAction }).lastBlockedAction = {
+      ...state.lastBlockedAction,
+    }
+  }
+  return snapshot
+}
+
+export function buildWorkflowEvent(
+  action: string,
+  workflow: WorkflowContext,
+): Record<string, unknown> {
+  return { action, workflow }
+}
+
+export function hydrateWorkflowEvents(
+  definition: WorkflowDefinition,
+  state: MutableWorkflowState,
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  if (events.length === 0) {
+    return []
+  }
+  const workflow = buildWorkflowSnapshot(definition, state)
+  return events
+    .map((record) => {
+      const action = record['action']
+      return typeof action === 'string' ? buildWorkflowEvent(action, workflow) : null
+    })
+    .filter((record): record is Record<string, unknown> => record != null)
+}
+
 function appendUniqueCapped(items: string[], item: string, limit: number): string[] {
   return items.includes(item) ? items : appendCapped(items, item, limit)
 }
@@ -125,15 +269,66 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
   >
 
   return {
-    sessionId: typeof value.sessionId === 'string' ? value.sessionId : '',
-    activeStage: typeof value.activeStage === 'string' ? value.activeStage : '',
-    completedStages: normalizeStringArray(value.completedStages),
+    sessionId: normalizeString(value.sessionId ?? value.session_id),
+    activeStage: normalizeString(value.activeStage ?? value.active_stage),
+    completedStages: normalizeStringArray(value.completedStages ?? value.completed_stages),
     approvals: normalizeStringMap(value.approvals),
     evidence: {
       reads: normalizeStringArray(evidence?.reads),
       stageCalls: normalizeStringArrayMap(stageCalls),
     },
+    blockedReason: normalizeOptionalString(value.blockedReason ?? value.blocked_reason),
+    pendingApproval: normalizeWorkflowPendingApproval(
+      value.pendingApproval ?? value.pending_approval,
+    ),
+    lastBlockedAction: normalizeWorkflowBlockedAction(
+      value.lastBlockedAction ?? value.last_blocked_action,
+    ),
   }
+}
+
+function buildLastBlockedAction(envelope: ToolEnvelope, message: string): WorkflowBlockedAction {
+  return {
+    tool: envelope.toolName,
+    summary: summarizeToolCall(envelope),
+    message,
+    timestamp: new Date().toISOString(),
+  }
+}
+
+function summarizeToolCall(envelope: ToolEnvelope): string {
+  const summary = envelope.bashCommand ?? envelope.filePath ?? envelope.toolName
+  return summary.length > MAX_WORKFLOW_ACTION_SUMMARY_LENGTH
+    ? summary.slice(0, MAX_WORKFLOW_ACTION_SUMMARY_LENGTH - 1) + '…'
+    : summary
+}
+
+function workflowPendingApprovalEquals(
+  left: WorkflowPendingApproval,
+  right: WorkflowPendingApproval,
+): boolean {
+  return (
+    left.required === right.required &&
+    left.stageId === right.stageId &&
+    left.message === right.message
+  )
+}
+
+function workflowBlockedActionEquals(
+  left: WorkflowBlockedAction | null,
+  right: WorkflowBlockedAction,
+): boolean {
+  return (
+    left?.tool === right.tool && left?.summary === right.summary && left?.message === right.message
+  )
+}
+
+function normalizeString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -158,6 +353,41 @@ function normalizeStringMap(value: unknown): Record<string, string> {
     }
   }
   return result
+}
+
+function normalizeWorkflowPendingApproval(value: unknown): WorkflowPendingApproval {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return defaultWorkflowPendingApproval()
+  }
+  const pending = value as Record<string, unknown>
+  const stageId = pending.stageId ?? pending.stage_id
+  const message = pending.message
+  return {
+    required: pending.required === true,
+    ...(typeof stageId === 'string' ? { stageId } : {}),
+    ...(typeof message === 'string' ? { message } : {}),
+  }
+}
+
+function normalizeWorkflowBlockedAction(value: unknown): WorkflowBlockedAction | null {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return null
+  }
+  const action = value as Record<string, unknown>
+  if (
+    typeof action.tool !== 'string' ||
+    typeof action.summary !== 'string' ||
+    typeof action.message !== 'string' ||
+    typeof action.timestamp !== 'string'
+  ) {
+    return null
+  }
+  return {
+    tool: action.tool,
+    summary: action.summary,
+    message: action.message,
+    timestamp: action.timestamp,
+  }
 }
 
 function normalizeStringArrayMap(value: unknown): Record<string, string[]> {

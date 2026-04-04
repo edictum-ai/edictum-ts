@@ -71,10 +71,11 @@ function normalizeWorkflowDefinition(value: unknown): WorkflowDefinition {
 
 function normalizeWorkflowMetadata(value: unknown): WorkflowMetadata {
   const metadata = expectMapping(value, 'metadata')
-  assertAllowedKeys(metadata, ['name', 'description'], 'metadata')
+  assertAllowedKeys(metadata, ['name', 'description', 'version'], 'metadata')
   return {
     name: expectString(metadata.name, 'metadata.name'),
     description: expectOptionalString(metadata.description, 'metadata.description'),
+    version: expectOptionalString(metadata.version, 'metadata.version'),
   }
 }
 
