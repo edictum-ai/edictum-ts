@@ -54,12 +54,6 @@ interface ServerWorkflowPendingApprovalPayload {
   message?: string
 }
 
-interface ServerWorkflowRecordedEvidencePayload {
-  tool: string
-  summary: string
-  timestamp: string
-}
-
 interface ServerWorkflowBlockedActionPayload {
   tool: string
   summary: string
@@ -74,12 +68,7 @@ interface ServerWorkflowPayload {
   completed_stages: string[]
   blocked_reason?: string
   pending_approval: ServerWorkflowPendingApprovalPayload
-  last_recorded_evidence?: ServerWorkflowRecordedEvidencePayload
   last_blocked_action?: ServerWorkflowBlockedActionPayload
-}
-
-type AuditWorkflowContext = NonNullable<AuditEvent['workflow']> & {
-  readonly lastRecordedEvidence?: Readonly<ServerWorkflowRecordedEvidencePayload>
 }
 
 function toCanonicalAction(action: string): string {
@@ -125,11 +114,6 @@ function toServerWorkflowPayload(workflow: AuditEvent['workflow']): ServerWorkfl
   }
   if (workflow.blockedReason != null && workflow.blockedReason !== '') {
     payload.blocked_reason = workflow.blockedReason
-  }
-
-  const lastRecordedEvidence = (workflow as AuditWorkflowContext).lastRecordedEvidence
-  if (lastRecordedEvidence != null) {
-    payload.last_recorded_evidence = { ...lastRecordedEvidence }
   }
   if (workflow.lastBlockedAction != null) {
     payload.last_blocked_action = { ...workflow.lastBlockedAction }

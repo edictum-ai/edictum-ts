@@ -84,19 +84,18 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `timeoutEffect must be "deny" or "allow", got ${JSON.stringify(timeoutEffect)}`,
       )
     }
-    const sessionId = options?.sessionId ?? null
+    const rawSessionId: unknown = options?.sessionId ?? null
     if (
-      sessionId != null &&
-      (typeof sessionId !== 'string' ||
-        sessionId.length > 128 ||
-        !SAFE_IDENTIFIER_RE.test(sessionId))
+      rawSessionId != null &&
+      (typeof rawSessionId !== 'string' || !SAFE_IDENTIFIER_RE.test(rawSessionId))
     ) {
       const display =
-        typeof sessionId === 'string'
-          ? JSON.stringify(sessionId.slice(0, 64)) + (sessionId.length > 64 ? '…' : '')
-          : JSON.stringify(sessionId)
+        typeof rawSessionId === 'string'
+          ? JSON.stringify(rawSessionId.slice(0, 64)) + (rawSessionId.length > 64 ? '…' : '')
+          : JSON.stringify(rawSessionId)
       throw new EdictumConfigError(`Invalid sessionId: ${display}. Must match SAFE_IDENTIFIER_RE.`)
     }
+    const sessionId = rawSessionId as string | null
 
     if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
       throw new EdictumConfigError(
