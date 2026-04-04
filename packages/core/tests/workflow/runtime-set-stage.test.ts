@@ -184,4 +184,15 @@ describe('WorkflowRuntime.setStage', () => {
     expect(decision.action).toBe('allow')
     expect(decision.stageId).toBe('implement')
   })
+
+  describe('security', () => {
+    test.each([
+      ['wf-set-stage-null-byte', 'plan\x00'],
+      ['wf-set-stage-control-char', 'plan\nimplement'],
+    ])('rejects invalid stageId inputs', async (sessionId, stageId) => {
+      await expect(
+        makeSetStageRuntime().setStage(makeWorkflowSession(sessionId), stageId),
+      ).rejects.toThrow('workflow: unknown stage')
+    })
+  })
 })
