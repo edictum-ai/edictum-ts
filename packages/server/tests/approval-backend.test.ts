@@ -99,6 +99,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       tool_name: 'Tool',
       tool_args: {},
       message: 'msg',
+      session_id: 'session-123',
       timeout: 60,
       timeout_action: 'allow',
     })

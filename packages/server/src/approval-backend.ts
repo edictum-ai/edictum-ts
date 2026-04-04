@@ -84,6 +84,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
         `timeoutEffect must be "deny" or "allow", got ${JSON.stringify(timeoutEffect)}`,
       )
     }
+    const sessionId = options?.sessionId ?? null
 
     if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
       throw new EdictumConfigError(
@@ -97,8 +98,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       tool_args: toolArgs,
       message,
       timeout,
-      // sessionId is retained in the local ApprovalRequest for caller-side
-      // correlation. The current server approval API does not accept session_id.
+      ...(sessionId != null ? { session_id: sessionId } : {}),
       // edictum-api expects timeout_action values of "block" | "allow",
       // while the SDK-facing approval contract uses timeoutEffect of
       // "deny" | "allow". Map the public SDK value to the server wire value.
@@ -151,7 +151,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       timeoutEffect,
       principal: safePrincipal,
       metadata: safeMeta,
-      sessionId: options?.sessionId ?? null,
+      sessionId,
       createdAt: new Date(),
     })
 
