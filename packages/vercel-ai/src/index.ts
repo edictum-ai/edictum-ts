@@ -26,11 +26,13 @@ import {
   type PreDecision,
   type Principal,
   Session,
+  type WorkflowContext,
   buildViolations,
   defaultSuccessCheck,
 } from '@edictum/core'
 
 export const VERSION = '0.1.0' as const
+const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
 
 // ---------------------------------------------------------------------------
 // Vercel AI SDK event types (structural — no framework import needed)
@@ -64,6 +66,7 @@ export interface OnToolCallFinishEvent {
 
 export interface VercelAIAdapterOptions {
   readonly sessionId?: string
+  readonly parentSessionId?: string
   readonly principal?: Principal
   readonly principalResolver?: (toolName: string, toolInput: Record<string, unknown>) => Principal
 }
@@ -78,6 +81,8 @@ export interface AsCallbacksOptions {
 
 interface PendingCall {
   readonly toolCall: ReturnType<typeof createEnvelope>
+  readonly workflowStageId: string | null
+  readonly workflowInvolved: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +103,7 @@ export class VercelAIAdapter {
   private readonly _guard: Edictum
   private readonly _pipeline: CheckPipeline
   private readonly _sessionId: string
+  private readonly _parentSessionId: string | null
   private readonly _session: Session
   private _callIndex: number = 0
   private readonly _pending: Map<string, PendingCall> = new Map()
@@ -110,6 +116,7 @@ export class VercelAIAdapter {
     this._guard = guard
     this._pipeline = new CheckPipeline(guard)
     this._sessionId = options?.sessionId ?? randomUUID()
+    this._parentSessionId = options?.parentSessionId ?? null
     this._session = new Session(this._sessionId, guard.backend)
     this._principal = options?.principal ?? null
     this._principalResolver = options?.principalResolver ?? null
@@ -190,6 +197,7 @@ export class VercelAIAdapter {
               runId: toolCall.runId,
               callId: toolCall.callId,
               callIndex: toolCall.callIndex,
+              sessionId: this._session.sessionId,
               toolName: toolCall.toolName,
               toolArgs: {},
               sideEffect: toolCall.sideEffect,
@@ -197,6 +205,7 @@ export class VercelAIAdapter {
               principal: toolCall.principal
                 ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
+              parentSessionId: this._parentSessionId,
               decisionSource: 'adapter',
               reason,
               sessionAttemptCount: await this._session.attemptCount(),
@@ -267,11 +276,18 @@ export class VercelAIAdapter {
     // Increment attempts BEFORE governance
     await this._session.incrementAttempts()
 
-    // Run pipeline
-    const decision = await this._pipeline.preExecute(toolCall, this._session)
+    let decision = await this._pipeline.preExecute(toolCall, this._session)
+    let workflowSnapshot = decision.workflow
+    const initialWorkflowSnapshot = await this._emitWorkflowAuditEvents(
+      toolCall,
+      decision.workflowEvents,
+    )
+    if (initialWorkflowSnapshot != null) {
+      workflowSnapshot = initialWorkflowSnapshot
+      decision = { ...decision, workflow: initialWorkflowSnapshot }
+    }
 
-    // Note 1: Handle pending_approval
-    if (decision.action === 'pending_approval') {
+    for (let approvalRound = 0; decision.action === 'pending_approval'; approvalRound += 1) {
       if (this._guard._approvalBackend == null) {
         return `DENIED: Approval required but no approval backend configured: ${decision.reason}`
       }
@@ -291,7 +307,7 @@ export class VercelAIAdapter {
         },
       )
 
-      await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_REQUESTED)
+      await this._emitAuditPre(toolCall, decision, AA.CALL_ASKED)
 
       const approvalDecision = await this._guard._approvalBackend.waitForDecision(
         approvalRequest.approvalId,
@@ -305,44 +321,80 @@ export class VercelAIAdapter {
           approved = true
         }
       } else if (!approvalDecision.approved) {
-        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_DENIED)
+        await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_BLOCKED)
       } else {
         approved = true
         await this._emitAuditPre(toolCall, decision, AA.CALL_APPROVAL_GRANTED)
       }
 
-      if (approved) {
-        if (this._guard._onAllow) {
-          try {
-            this._guard._onAllow(toolCall)
-          } catch {
-            // on_allow callback raised — swallow
-          }
-        }
-        this._pending.set(callId, { toolCall })
-        return null
-      } else {
-        const denyReason = approvalDecision.reason ?? decision.reason ?? ''
+      if (!approved) {
+        const blockReason = approvalDecision.reason ?? decision.reason ?? ''
         if (this._guard._onDeny) {
           try {
-            this._guard._onDeny(toolCall, denyReason, decision.decisionName)
+            this._guard._onDeny(toolCall, blockReason, decision.decisionName)
           } catch {
             // on_deny callback raised — swallow
           }
         }
         this._pending.delete(callId)
-        return `DENIED: ${denyReason}`
+        return `DENIED: ${blockReason}`
       }
+
+      if (
+        decision.decisionSource === 'workflow' &&
+        decision.workflowStageId != null &&
+        decision.workflowStageId !== ''
+      ) {
+        const workflowRuntime = this._guard.getWorkflowRuntime()
+        if (workflowRuntime == null) {
+          throw new Error(
+            `workflow approval requested for ${JSON.stringify(decision.workflowStageId)} but no workflow runtime configured`,
+          )
+        }
+        if (approvalRound >= MAX_WORKFLOW_APPROVAL_ROUNDS) {
+          throw new Error(
+            `workflow: exceeded maximum approval rounds (${MAX_WORKFLOW_APPROVAL_ROUNDS})`,
+          )
+        }
+        await workflowRuntime.recordApproval(this._session, decision.workflowStageId)
+        decision = await this._pipeline.preExecute(toolCall, this._session)
+        workflowSnapshot = decision.workflow
+        const approvalWorkflowSnapshot = await this._emitWorkflowAuditEvents(
+          toolCall,
+          decision.workflowEvents,
+        )
+        if (approvalWorkflowSnapshot != null) {
+          workflowSnapshot = approvalWorkflowSnapshot
+          decision = { ...decision, workflow: approvalWorkflowSnapshot }
+        }
+        continue
+      }
+
+      if (this._guard._onAllow) {
+        try {
+          this._guard._onAllow(toolCall)
+        } catch {
+          // on_allow callback raised — swallow
+        }
+      }
+      this._pending.set(callId, {
+        toolCall,
+        workflowStageId: decision.workflowStageId,
+        workflowInvolved: decision.workflowInvolved,
+      })
+      return null
     }
 
-    // Handle observe mode: convert deny to allow with warning
     if (this._guard.mode === 'observe' && decision.action === 'deny') {
-      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_DENY)
-      this._pending.set(callId, { toolCall })
-      return null // allow through
+      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_BLOCK)
+      this._pending.set(callId, {
+        toolCall,
+        workflowStageId: decision.workflowStageId,
+        workflowInvolved: decision.workflowInvolved,
+      })
+      return null
     }
 
-    // Handle deny
     if (decision.action === 'deny') {
       await this._emitAuditPre(toolCall, decision)
       if (this._guard._onDeny) {
@@ -356,16 +408,16 @@ export class VercelAIAdapter {
       return `DENIED: ${decision.reason}`
     }
 
-    // Handle per-rule observed denials
     if (decision.observed) {
       for (const cr of decision.contractsEvaluated) {
         if (cr['observed'] && !cr['passed']) {
           await this._guard.auditSink.emit(
             createAuditEvent({
-              action: AA.CALL_WOULD_DENY,
+              action: AA.CALL_WOULD_BLOCK,
               runId: toolCall.runId,
               callId: toolCall.callId,
               callIndex: toolCall.callIndex,
+              sessionId: this._session.sessionId,
               toolName: toolCall.toolName,
               toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
               sideEffect: toolCall.sideEffect,
@@ -373,19 +425,20 @@ export class VercelAIAdapter {
               principal: toolCall.principal
                 ? ({ ...toolCall.principal } as Record<string, unknown>)
                 : null,
+              parentSessionId: this._parentSessionId,
               decisionSource: 'precondition',
               decisionName: cr['name'] as string,
               reason: cr['message'] as string | null,
               mode: 'observe',
               policyVersion: this._guard.policyVersion,
               policyError: decision.policyError,
+              workflow: workflowSnapshot,
             }),
           )
         }
       }
     }
 
-    // Handle allow
     await this._emitAuditPre(toolCall, decision)
     if (this._guard._onAllow) {
       try {
@@ -394,18 +447,22 @@ export class VercelAIAdapter {
         // on_allow callback raised — swallow
       }
     }
-    this._pending.set(callId, { toolCall })
+    this._pending.set(callId, {
+      toolCall,
+      workflowStageId: decision.workflowStageId,
+      workflowInvolved: decision.workflowInvolved,
+    })
 
-    // Observe-mode audits — errors swallowed (must not block execution)
     for (const sr of decision.observeResults) {
       try {
-        const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
+        const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_BLOCK
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
             runId: toolCall.runId,
             callId: toolCall.callId,
             callIndex: toolCall.callIndex,
+            sessionId: this._session.sessionId,
             toolName: toolCall.toolName,
             toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
             sideEffect: toolCall.sideEffect,
@@ -413,11 +470,13 @@ export class VercelAIAdapter {
             principal: toolCall.principal
               ? ({ ...toolCall.principal } as Record<string, unknown>)
               : null,
+            parentSessionId: this._parentSessionId,
             decisionSource: sr['source'] as string | null,
             decisionName: sr['name'] as string | null,
             reason: sr['message'] as string | null,
             mode: 'observe',
             policyVersion: this._guard.policyVersion,
+            workflow: workflowSnapshot,
           }),
         )
       } catch {
@@ -445,7 +504,7 @@ export class VercelAIAdapter {
       return createPostCallResult({ result: toolResponse })
     }
 
-    const { toolCall } = pending
+    const { toolCall, workflowStageId, workflowInvolved } = pending
 
     // Derive tool_success from response
     const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
@@ -456,8 +515,23 @@ export class VercelAIAdapter {
     const effectiveResponse =
       postDecision.redactedResponse != null ? postDecision.redactedResponse : toolResponse
 
-    // Record in session
+    let workflowEvents: Record<string, unknown>[] = []
+    if (toolSuccess && workflowInvolved && workflowStageId != null) {
+      const workflowRuntime = this._guard.getWorkflowRuntime()
+      if (workflowRuntime != null) {
+        workflowEvents = await workflowRuntime.recordResult(
+          this._session,
+          workflowStageId,
+          toolCall,
+        )
+      }
+    }
+
     await this._session.recordExecution(toolCall.toolName, toolSuccess)
+    let workflowSnapshot = await this._emitWorkflowAuditEvents(toolCall, workflowEvents)
+    if (workflowSnapshot == null) {
+      workflowSnapshot = await this._buildWorkflowContext()
+    }
 
     // Emit audit
     const action: AuditAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
@@ -467,6 +541,7 @@ export class VercelAIAdapter {
         runId: toolCall.runId,
         callId: toolCall.callId,
         callIndex: toolCall.callIndex,
+        sessionId: this._session.sessionId,
         toolName: toolCall.toolName,
         toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
         sideEffect: toolCall.sideEffect,
@@ -474,9 +549,11 @@ export class VercelAIAdapter {
         principal: toolCall.principal
           ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
+        parentSessionId: this._parentSessionId,
         toolSuccess,
         postconditionsPassed: postDecision.postconditionsPassed,
         contractsEvaluated: postDecision.contractsEvaluated,
+        workflow: workflowSnapshot,
         sessionAttemptCount: await this._session.attemptCount(),
         sessionExecutionCount: await this._session.executionCount(),
         mode: this._guard.mode,
@@ -504,7 +581,7 @@ export class VercelAIAdapter {
     auditAction?: AuditAction,
   ): Promise<void> {
     const action: AuditAction =
-      auditAction ?? (decision.action === 'deny' ? AA.CALL_DENIED : AA.CALL_ALLOWED)
+      auditAction ?? (decision.action === 'deny' ? AA.CALL_BLOCKED : AA.CALL_ALLOWED)
 
     await this._guard.auditSink.emit(
       createAuditEvent({
@@ -512,6 +589,7 @@ export class VercelAIAdapter {
         runId: toolCall.runId,
         callId: toolCall.callId,
         callIndex: toolCall.callIndex,
+        sessionId: this._session.sessionId,
         toolName: toolCall.toolName,
         toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
         sideEffect: toolCall.sideEffect,
@@ -519,17 +597,114 @@ export class VercelAIAdapter {
         principal: toolCall.principal
           ? ({ ...toolCall.principal } as Record<string, unknown>)
           : null,
+        parentSessionId: this._parentSessionId,
         decisionSource: decision.decisionSource,
         decisionName: decision.decisionName,
         reason: decision.reason,
         hooksEvaluated: decision.hooksEvaluated,
         contractsEvaluated: decision.contractsEvaluated,
+        workflow: decision.workflow,
         sessionAttemptCount: await this._session.attemptCount(),
         sessionExecutionCount: await this._session.executionCount(),
         mode: this._guard.mode,
         policyVersion: this._guard.policyVersion,
         policyError: decision.policyError,
       }),
+    )
+  }
+
+  private async _emitWorkflowAuditEvents(
+    toolCall: ReturnType<typeof createEnvelope>,
+    events: readonly Record<string, unknown>[],
+  ): Promise<WorkflowContext | null> {
+    let latest: WorkflowContext | null = null
+
+    for (const record of events) {
+      const action = record['action']
+      const workflow = record['workflow']
+      if (!this._isWorkflowAuditAction(action) || !this._isWorkflowContext(workflow)) {
+        continue
+      }
+
+      latest = workflow
+      await this._guard.auditSink.emit(
+        createAuditEvent({
+          action,
+          runId: toolCall.runId,
+          callId: toolCall.callId,
+          callIndex: toolCall.callIndex,
+          sessionId: this._session.sessionId,
+          toolName: toolCall.toolName,
+          toolArgs: this._guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+          sideEffect: toolCall.sideEffect,
+          environment: toolCall.environment,
+          principal: toolCall.principal
+            ? ({ ...toolCall.principal } as Record<string, unknown>)
+            : null,
+          parentSessionId: this._parentSessionId,
+          workflow,
+          sessionAttemptCount: await this._session.attemptCount(),
+          sessionExecutionCount: await this._session.executionCount(),
+          mode: this._guard.mode,
+          policyVersion: this._guard.policyVersion,
+        }),
+      )
+    }
+
+    return latest
+  }
+
+  private async _buildWorkflowContext(): Promise<WorkflowContext | null> {
+    const workflowRuntime = this._guard.getWorkflowRuntime()
+    if (workflowRuntime == null) {
+      return null
+    }
+
+    const state = await workflowRuntime.state(this._session)
+    const context: WorkflowContext = {
+      name: workflowRuntime.definition.metadata.name,
+      activeStage: state.activeStage,
+      completedStages: [...state.completedStages],
+      blockedReason: state.blockedReason,
+      pendingApproval: { ...state.pendingApproval },
+    }
+
+    if (typeof workflowRuntime.definition.metadata.version === 'string') {
+      ;(context as { version?: string }).version = workflowRuntime.definition.metadata.version
+    }
+    if (state.lastBlockedAction != null) {
+      ;(context as { lastBlockedAction?: WorkflowContext['lastBlockedAction'] }).lastBlockedAction =
+        { ...state.lastBlockedAction }
+    }
+    if (state.lastRecordedEvidence != null) {
+      ;(
+        context as { lastRecordedEvidence?: WorkflowContext['lastRecordedEvidence'] }
+      ).lastRecordedEvidence = { ...state.lastRecordedEvidence }
+    }
+
+    return context
+  }
+
+  private _isWorkflowAuditAction(action: unknown): action is AuditAction {
+    return (
+      action === AA.WORKFLOW_STAGE_ADVANCED ||
+      action === AA.WORKFLOW_COMPLETED ||
+      action === AA.WORKFLOW_STATE_UPDATED
+    )
+  }
+
+  private _isWorkflowContext(value: unknown): value is WorkflowContext {
+    if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+      return false
+    }
+    const workflow = value as Record<string, unknown>
+    return (
+      typeof workflow['name'] === 'string' &&
+      typeof workflow['activeStage'] === 'string' &&
+      Array.isArray(workflow['completedStages']) &&
+      (typeof workflow['blockedReason'] === 'string' || workflow['blockedReason'] === null) &&
+      typeof workflow['pendingApproval'] === 'object' &&
+      workflow['pendingApproval'] != null
     )
   }
 

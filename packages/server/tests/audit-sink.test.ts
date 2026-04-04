@@ -431,15 +431,7 @@ stages:
         pending_approval: { required: false },
       },
     })
-    expect(completed).toMatchObject({
-      session_id: 'wf-audit',
-      workflow: {
-        name: 'audit-process',
-        active_stage: '',
-        completed_stages: ['read-context', 'implement'],
-        pending_approval: { required: false },
-      },
-    })
+    expect(completed).toBeUndefined()
   })
 })
 

@@ -4,6 +4,7 @@ import {
   type WorkflowBlockedAction,
   type WorkflowContext,
   type WorkflowPendingApproval,
+  type WorkflowRecordedEvidence,
 } from './context.js'
 
 export const WorkflowAction = {
@@ -32,6 +33,7 @@ export interface WorkflowState {
   readonly blockedReason: string | null
   readonly pendingApproval: WorkflowPendingApproval
   readonly lastBlockedAction: WorkflowBlockedAction | null
+  readonly lastRecordedEvidence: WorkflowRecordedEvidence | null
 }
 
 export interface WorkflowEvidence {
@@ -48,6 +50,7 @@ export interface MutableWorkflowState {
   blockedReason: string | null
   pendingApproval: WorkflowPendingApproval
   lastBlockedAction: WorkflowBlockedAction | null
+  lastRecordedEvidence: WorkflowRecordedEvidence | null
 }
 
 export interface MutableWorkflowEvidence {
@@ -87,6 +90,7 @@ export function ensureWorkflowState(state: Partial<MutableWorkflowState>): Mutab
     normalized.pendingApproval = defaultWorkflowPendingApproval()
   }
   normalized.lastBlockedAction ??= null
+  normalized.lastRecordedEvidence ??= null
   return normalized
 }
 
@@ -108,5 +112,7 @@ export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState
     blockedReason: state.blockedReason,
     pendingApproval: { ...state.pendingApproval },
     lastBlockedAction: state.lastBlockedAction == null ? null : { ...state.lastBlockedAction },
+    lastRecordedEvidence:
+      state.lastRecordedEvidence == null ? null : { ...state.lastRecordedEvidence },
   }
 }

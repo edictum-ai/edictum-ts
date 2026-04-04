@@ -11,14 +11,23 @@ export interface WorkflowBlockedAction {
   readonly timestamp: string
 }
 
+export interface WorkflowRecordedEvidence {
+  readonly tool: string
+  readonly summary: string
+  readonly timestamp: string
+}
+
 export interface WorkflowContext {
   readonly name: string
   readonly version?: string
+  readonly stageId?: string
+  readonly toStageId?: string
   readonly activeStage: string
   readonly completedStages: readonly string[]
   readonly blockedReason: string | null
   readonly pendingApproval: WorkflowPendingApproval
   readonly lastBlockedAction?: WorkflowBlockedAction
+  readonly lastRecordedEvidence?: WorkflowRecordedEvidence
 }
 
 export function defaultWorkflowPendingApproval(): WorkflowPendingApproval {

@@ -6,6 +6,7 @@ import {
   type WorkflowBlockedAction,
   type WorkflowContext,
   type WorkflowPendingApproval,
+  type WorkflowRecordedEvidence,
 } from './context.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
 import {
@@ -51,6 +52,7 @@ export async function loadWorkflowState(
       blockedReason: null,
       pendingApproval: defaultWorkflowPendingApproval(),
       lastBlockedAction: null,
+      lastRecordedEvidence: null,
     })
   }
 
@@ -93,6 +95,7 @@ export async function saveWorkflowState(
       blockedReason: state.blockedReason,
       pendingApproval: state.pendingApproval,
       lastBlockedAction: state.lastBlockedAction,
+      lastRecordedEvidence: state.lastRecordedEvidence,
     }),
   )
   await session.deleteValue(legacyWorkflowStateKey(definition.metadata.name))
@@ -118,6 +121,7 @@ export function recordWorkflowResult(
           envelope.filePath,
           MAX_WORKFLOW_EVIDENCE_ITEMS,
         )
+        state.lastRecordedEvidence = buildLastRecordedEvidence(envelope)
       }
       break
     }
@@ -128,6 +132,7 @@ export function recordWorkflowResult(
           envelope.bashCommand,
           MAX_WORKFLOW_EVIDENCE_ITEMS,
         )
+        state.lastRecordedEvidence = buildLastRecordedEvidence(envelope)
       }
       break
     }
@@ -214,6 +219,11 @@ export function buildWorkflowSnapshot(
       ...state.lastBlockedAction,
     }
   }
+  if (state.lastRecordedEvidence != null) {
+    ;(snapshot as { lastRecordedEvidence?: WorkflowRecordedEvidence }).lastRecordedEvidence = {
+      ...state.lastRecordedEvidence,
+    }
+  }
   return snapshot
 }
 
@@ -236,9 +246,34 @@ export function hydrateWorkflowEvents(
   return events
     .map((record) => {
       const action = record['action']
-      return typeof action === 'string' ? buildWorkflowEvent(action, workflow) : null
+      if (typeof action !== 'string') {
+        return null
+      }
+
+      const eventWorkflow = applyWorkflowEventDetails(workflow, record['workflow'])
+      return buildWorkflowEvent(action, eventWorkflow)
     })
     .filter((record): record is Record<string, unknown> => record != null)
+}
+
+function applyWorkflowEventDetails(workflow: WorkflowContext, value: unknown): WorkflowContext {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return workflow
+  }
+
+  const eventWorkflow = value as Record<string, unknown>
+  const detailedWorkflow: WorkflowContext = {
+    ...workflow,
+  }
+
+  if (typeof eventWorkflow['stage_id'] === 'string') {
+    ;(detailedWorkflow as { stageId?: string }).stageId = eventWorkflow['stage_id']
+  }
+  if (typeof eventWorkflow['to_stage_id'] === 'string') {
+    ;(detailedWorkflow as { toStageId?: string }).toStageId = eventWorkflow['to_stage_id']
+  }
+
+  return detailedWorkflow
 }
 
 function appendUniqueCapped(items: string[], item: string, limit: number): string[] {
@@ -285,6 +320,9 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
     lastBlockedAction: normalizeWorkflowBlockedAction(
       value.lastBlockedAction ?? value.last_blocked_action,
     ),
+    lastRecordedEvidence: normalizeWorkflowRecordedEvidence(
+      value.lastRecordedEvidence ?? value.last_recorded_evidence,
+    ),
   }
 }
 
@@ -293,6 +331,18 @@ function buildLastBlockedAction(envelope: ToolEnvelope, message: string): Workfl
     tool: envelope.toolName,
     summary: summarizeToolCall(envelope),
     message,
+    timestamp: new Date().toISOString(),
+  }
+}
+
+function buildLastRecordedEvidence(envelope: ToolEnvelope): WorkflowRecordedEvidence | null {
+  if (envelope.toolName !== 'Read' && envelope.toolName !== 'Bash') {
+    return null
+  }
+
+  return {
+    tool: envelope.toolName,
+    summary: summarizeToolCall(envelope),
     timestamp: new Date().toISOString(),
   }
 }
@@ -322,6 +372,21 @@ function workflowBlockedActionEquals(
   return (
     left?.tool === right.tool && left?.summary === right.summary && left?.message === right.message
   )
+}
+
+function normalizeWorkflowRecordedEvidence(value: unknown): WorkflowRecordedEvidence | null {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return null
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.tool !== 'string' || typeof record.summary !== 'string') {
+    return null
+  }
+  return {
+    tool: record.tool,
+    summary: record.summary,
+    timestamp: typeof record.timestamp === 'string' ? record.timestamp : '',
+  }
 }
 
 function normalizeString(value: unknown): string {
@@ -378,8 +443,7 @@ function normalizeWorkflowBlockedAction(value: unknown): WorkflowBlockedAction |
   if (
     typeof action.tool !== 'string' ||
     typeof action.summary !== 'string' ||
-    typeof action.message !== 'string' ||
-    typeof action.timestamp !== 'string'
+    typeof action.message !== 'string'
   ) {
     return null
   }
@@ -387,7 +451,7 @@ function normalizeWorkflowBlockedAction(value: unknown): WorkflowBlockedAction |
     tool: action.tool,
     summary: action.summary,
     message: action.message,
-    timestamp: action.timestamp,
+    timestamp: typeof action.timestamp === 'string' ? action.timestamp : '',
   }
 }
 

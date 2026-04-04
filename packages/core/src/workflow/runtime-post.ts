@@ -25,6 +25,10 @@ export async function advanceWorkflowAfterSuccess(
     return []
   }
 
+  if (stage.exit.length === 0 && stage.approval == null) {
+    return []
+  }
+
   if (stage.exit.length > 0) {
     const exitEvaluation = await runtime.evaluateWorkflowGates(stage, state, envelope, stage.exit)
     if (exitEvaluation.blocked) {
