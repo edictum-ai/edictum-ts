@@ -12,6 +12,7 @@ import type { Edictum } from './guard.js'
 import type { AuditAction, AuditEvent } from './audit.js'
 import type { Principal, ToolCall } from './tool-call.js'
 import type { PreDecision } from './pipeline.js'
+import type { RedactionPolicy } from './redaction.js'
 import type { Session } from './session.js'
 import type { WorkflowContext } from './workflow/context.js'
 
@@ -23,6 +24,7 @@ import { CheckPipeline } from './pipeline.js'
 import { Session as SessionClass } from './session.js'
 
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
+const MAX_WORKFLOW_AUDIT_SUMMARY_LENGTH = 4_096
 
 // ---------------------------------------------------------------------------
 // defaultSuccessCheck
@@ -114,9 +116,35 @@ async function _createRunAuditEvent(
     sessionExecutionCount: await session.executionCount(),
     mode: fields.mode ?? guard.mode,
     policyVersion: fields.policyVersion ?? guard.policyVersion,
-    workflow: fields.workflow ?? null,
+    workflow: _redactWorkflowContext(guard.redaction, fields.workflow ?? null),
     policyError: fields.policyError ?? false,
   })
+}
+
+function _redactWorkflowContext(
+  redaction: RedactionPolicy,
+  workflow: WorkflowContext | null,
+): WorkflowContext | null {
+  if (workflow == null) {
+    return null
+  }
+
+  return {
+    ...workflow,
+    completedStages: [...workflow.completedStages],
+    pendingApproval: { ...workflow.pendingApproval },
+    ...(workflow.lastBlockedAction != null
+      ? {
+          lastBlockedAction: {
+            ...workflow.lastBlockedAction,
+            summary: redaction.redactResult(
+              workflow.lastBlockedAction.summary,
+              MAX_WORKFLOW_AUDIT_SUMMARY_LENGTH,
+            ),
+          },
+        }
+      : {}),
+  }
 }
 
 function _toWorkflowContext(value: unknown): WorkflowContext | null {

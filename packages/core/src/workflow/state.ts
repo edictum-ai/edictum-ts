@@ -14,8 +14,16 @@ import {
   type WorkflowEvaluation,
 } from './result.js'
 
+/**
+ * SIZE APPROVAL: This file exceeds 200 lines. It owns the workflow state
+ * storage layer end to end: persistence, migration, normalization, runtime
+ * status updates, and audit snapshot construction. Splitting those concerns
+ * would make the storage boundary harder to trace.
+ */
+
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
+const MAX_WORKFLOW_ACTION_SUMMARY_LENGTH = 4_096
 
 export function workflowStateKey(name: string): string {
   return `workflow_state__${name}`
@@ -289,13 +297,10 @@ function buildLastBlockedAction(envelope: ToolEnvelope, message: string): Workfl
 }
 
 function summarizeToolCall(envelope: ToolEnvelope): string {
-  if (envelope.bashCommand) {
-    return envelope.bashCommand
-  }
-  if (envelope.filePath) {
-    return envelope.filePath
-  }
-  return envelope.toolName
+  const summary = envelope.bashCommand ?? envelope.filePath ?? envelope.toolName
+  return summary.length > MAX_WORKFLOW_ACTION_SUMMARY_LENGTH
+    ? summary.slice(0, MAX_WORKFLOW_ACTION_SUMMARY_LENGTH - 1) + '…'
+    : summary
 }
 
 function workflowPendingApprovalEquals(
@@ -314,10 +319,7 @@ function workflowBlockedActionEquals(
   right: WorkflowBlockedAction,
 ): boolean {
   return (
-    left?.tool === right.tool &&
-    left?.summary === right.summary &&
-    left?.message === right.message &&
-    left?.timestamp === right.timestamp
+    left?.tool === right.tool && left?.summary === right.summary && left?.message === right.message
   )
 }
 

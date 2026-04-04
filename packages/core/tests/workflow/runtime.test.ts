@@ -5,6 +5,7 @@ import {
   Edictum,
   EdictumDenied,
   MemoryBackend,
+  RedactionPolicy,
   Session,
   WorkflowRuntime,
 } from '../../src/index.js'
@@ -556,5 +557,39 @@ stages:
       blockedReason: null,
       pendingApproval: { required: false },
     })
+  })
+
+  test('guard.run redacts workflow blocked action summaries in audit events', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: redacted-blocked-summary
+stages:
+  - id: implement
+    tools: [Edit]
+`)
+    const guard = new Edictum({
+      backend: new MemoryBackend(),
+      workflowRuntime: runtime,
+      redaction: new RedactionPolicy(),
+    })
+
+    await expect(
+      guard.run(
+        'Bash',
+        { command: 'export AWS_SECRET_KEY=abc123 && git push origin feature' },
+        async () => 'blocked',
+        { sessionId: 'wf-redacted-summary' },
+      ),
+    ).rejects.toBeInstanceOf(EdictumDenied)
+
+    const denied = guard.localSink.events.find((event) => event.action === AuditAction.CALL_DENIED)
+    expect(denied?.toolArgs).toEqual({
+      command: 'export AWS_SECRET_KEY=[REDACTED] && git push origin feature',
+    })
+    expect(denied?.workflow?.lastBlockedAction?.summary).toBe(
+      'export AWS_SECRET_KEY=[REDACTED] && git push origin feature',
+    )
+    expect(denied?.workflow?.lastBlockedAction?.summary).not.toContain('abc123')
   })
 })
