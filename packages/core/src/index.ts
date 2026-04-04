@@ -111,6 +111,7 @@ export type {
   WorkflowGate,
   WorkflowMetadata,
   WorkflowPendingApproval,
+  WorkflowRecordedEvidence,
   WorkflowRuntimeOptions,
   WorkflowStage,
   WorkflowState,

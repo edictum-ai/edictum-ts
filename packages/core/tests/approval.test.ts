@@ -194,7 +194,7 @@ describe('TestLocalApprovalBackendStdinResponse', () => {
 
 describe('TestAuditActionApprovalEvents', () => {
   test('approval_requested', () => {
-    expect(AuditAction.CALL_APPROVAL_REQUESTED).toBe('call_approval_requested')
+    expect(AuditAction.CALL_APPROVAL_REQUESTED).toBe('call_asked')
   })
 
   test('approval_granted', () => {
@@ -202,7 +202,7 @@ describe('TestAuditActionApprovalEvents', () => {
   })
 
   test('approval_denied', () => {
-    expect(AuditAction.CALL_APPROVAL_DENIED).toBe('call_approval_denied')
+    expect(AuditAction.CALL_APPROVAL_DENIED).toBe('call_approval_blocked')
   })
 
   test('approval_timeout', () => {

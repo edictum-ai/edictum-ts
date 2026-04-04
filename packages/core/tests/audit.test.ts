@@ -99,8 +99,8 @@ describe('TestAuditEvent', () => {
 
 describe('TestAuditAction', () => {
   test('values', () => {
-    expect(AuditAction.CALL_DENIED).toBe('call_denied')
-    expect(AuditAction.CALL_WOULD_DENY).toBe('call_would_deny')
+    expect(AuditAction.CALL_DENIED).toBe('call_blocked')
+    expect(AuditAction.CALL_WOULD_DENY).toBe('call_would_block')
     expect(AuditAction.CALL_ALLOWED).toBe('call_allowed')
     expect(AuditAction.CALL_EXECUTED).toBe('call_executed')
     expect(AuditAction.CALL_FAILED).toBe('call_failed')

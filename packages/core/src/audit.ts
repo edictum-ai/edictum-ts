@@ -8,8 +8,10 @@ import type { WorkflowContext } from './workflow/context.js'
 // -- AuditAction --------------------------------------------------------------
 
 export const AuditAction = {
-  CALL_DENIED: 'call_denied',
-  CALL_WOULD_DENY: 'call_would_deny',
+  CALL_BLOCKED: 'call_blocked',
+  CALL_DENIED: 'call_blocked',
+  CALL_WOULD_BLOCK: 'call_would_block',
+  CALL_WOULD_DENY: 'call_would_block',
   CALL_ALLOWED: 'call_allowed',
   CALL_EXECUTED: 'call_executed',
   CALL_FAILED: 'call_failed',
@@ -17,9 +19,11 @@ export const AuditAction = {
   WORKFLOW_COMPLETED: 'workflow_completed',
   WORKFLOW_STATE_UPDATED: 'workflow_state_updated',
   POSTCONDITION_WARNING: 'postcondition_warning',
-  CALL_APPROVAL_REQUESTED: 'call_approval_requested',
+  CALL_ASKED: 'call_asked',
+  CALL_APPROVAL_REQUESTED: 'call_asked',
   CALL_APPROVAL_GRANTED: 'call_approval_granted',
-  CALL_APPROVAL_DENIED: 'call_approval_denied',
+  CALL_APPROVAL_BLOCKED: 'call_approval_blocked',
+  CALL_APPROVAL_DENIED: 'call_approval_blocked',
   CALL_APPROVAL_TIMEOUT: 'call_approval_timeout',
 } as const
 
@@ -76,7 +80,7 @@ export function createAuditEvent(f: Partial<AuditEvent> = {}): AuditEvent {
     sideEffect: f.sideEffect ?? '',
     environment: f.environment ?? '',
     principal: f.principal ?? null,
-    action: f.action ?? AuditAction.CALL_DENIED,
+    action: f.action ?? AuditAction.CALL_BLOCKED,
     decisionSource: f.decisionSource ?? null,
     decisionName: f.decisionName ?? null,
     reason: f.reason ?? null,

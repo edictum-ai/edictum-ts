@@ -502,8 +502,8 @@ stages:
 
     expect(result).toBe('pushed')
     const state = await runtime.state(new Session('wf-approval-guard', guard.backend))
-    expect(state.activeStage).toBe('')
-    expect(state.completedStages).toEqual(['implement', 'review', 'push'])
+    expect(state.activeStage).toBe('push')
+    expect(state.completedStages).toEqual(['implement', 'review'])
   })
 
   test('guard.run emits workflow audit events with workflow snapshots and sessionId', async () => {
@@ -546,25 +546,26 @@ stages:
       (event) => event.action === AuditAction.WORKFLOW_STAGE_ADVANCED,
     )
     expect(stageAdvanced?.sessionId).toBe('wf-audit')
-    expect(stageAdvanced?.workflow).toEqual({
+    expect(stageAdvanced?.workflow).toMatchObject({
       name: 'audit-process',
       activeStage: 'implement',
       completedStages: ['read-context'],
       blockedReason: null,
       pendingApproval: { required: false },
+      lastRecordedEvidence: {
+        tool: 'Read',
+        summary: 'specs/008.md',
+      },
     })
 
     const completed = guard.localSink.events.find(
       (event) => event.action === AuditAction.WORKFLOW_COMPLETED,
     )
-    expect(completed?.sessionId).toBe('wf-audit')
-    expect(completed?.workflow).toEqual({
-      name: 'audit-process',
-      activeStage: '',
-      completedStages: ['read-context', 'implement'],
-      blockedReason: null,
-      pendingApproval: { required: false },
-    })
+    expect(completed).toBeUndefined()
+
+    const state = await runtime.state(new Session('wf-audit', guard.backend))
+    expect(state.activeStage).toBe('implement')
+    expect(state.completedStages).toEqual(['read-context'])
   })
 
   test('guard.run redacts workflow blocked action summaries in audit events', async () => {

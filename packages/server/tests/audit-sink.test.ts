@@ -319,6 +319,8 @@ describe('ServerAuditSink event mapping', () => {
         workflow: {
           name: 'coding-guard',
           version: '2026-04-03',
+          stageId: 'local-review',
+          toStageId: 'push',
           activeStage: 'local-review',
           completedStages: ['read-context', 'implement', 'local-verify'],
           blockedReason: 'Only review-safe git commands allowed',
@@ -333,6 +335,11 @@ describe('ServerAuditSink event mapping', () => {
             message: 'Only review-safe git commands allowed',
             timestamp: '2026-04-03T09:13:04Z',
           },
+          lastRecordedEvidence: {
+            tool: 'Read',
+            summary: 'workflow checklist reviewed',
+            timestamp: '2026-04-03T09:14:21Z',
+          },
         },
       }),
     )
@@ -344,6 +351,8 @@ describe('ServerAuditSink event mapping', () => {
         workflow: {
           name: string
           version?: string
+          stage_id?: string
+          to_stage_id?: string
           active_stage: string
           completed_stages: string[]
           blocked_reason?: string
@@ -358,6 +367,11 @@ describe('ServerAuditSink event mapping', () => {
             message: string
             timestamp: string
           }
+          last_recorded_evidence?: {
+            tool: string
+            summary: string
+            timestamp: string
+          }
         } | null
       }>
     }
@@ -367,6 +381,8 @@ describe('ServerAuditSink event mapping', () => {
       workflow: {
         name: 'coding-guard',
         version: '2026-04-03',
+        stage_id: 'local-review',
+        to_stage_id: 'push',
         active_stage: 'local-review',
         completed_stages: ['read-context', 'implement', 'local-verify'],
         blocked_reason: 'Only review-safe git commands allowed',
@@ -380,6 +396,11 @@ describe('ServerAuditSink event mapping', () => {
           summary: 'git push origin HEAD --dry-run',
           message: 'Only review-safe git commands allowed',
           timestamp: '2026-04-03T09:13:04Z',
+        },
+        last_recorded_evidence: {
+          tool: 'Read',
+          summary: 'workflow checklist reviewed',
+          timestamp: '2026-04-03T09:14:21Z',
         },
       },
     })
@@ -431,15 +452,7 @@ stages:
         pending_approval: { required: false },
       },
     })
-    expect(completed).toMatchObject({
-      session_id: 'wf-audit',
-      workflow: {
-        name: 'audit-process',
-        active_stage: '',
-        completed_stages: ['read-context', 'implement'],
-        pending_approval: { required: false },
-      },
-    })
+    expect(completed).toBeUndefined()
   })
 })
 
