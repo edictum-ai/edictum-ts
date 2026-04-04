@@ -147,7 +147,6 @@ export class WorkflowRuntime {
       state.activeStage = stageId
       state.completedStages = workflowStageIds(this.definition.stages.slice(0, index))
       clearWorkflowRuntimeStatus(state)
-      state.lastBlockedAction = null
       await saveWorkflowState(session, this.definition, state)
       return [
         buildWorkflowEvent('workflow_state_updated', buildWorkflowSnapshot(this.definition, state)),
