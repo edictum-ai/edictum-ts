@@ -138,6 +138,7 @@ export function clearWorkflowRuntimeStatus(state: MutableWorkflowState): void {
   ensureWorkflowState(state)
   state.blockedReason = null
   state.pendingApproval = defaultWorkflowPendingApproval()
+  state.lastBlockedAction = null
 }
 
 export function applyWorkflowEvaluationStatus(

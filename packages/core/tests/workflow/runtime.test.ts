@@ -90,6 +90,13 @@ stages:
     expect(decision.action).toBe('allow')
     expect(decision.stageId).toBe('push')
 
+    decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin main' }),
+    )
+    expect(decision.action).toBe('block')
+    expect(decision.reason).toBe('Push to a branch, not main')
+
     const events = await runtime.reset(session, 'implement')
     const state = await runtime.state(session)
     expect(state.activeStage).toBe('implement')
@@ -97,6 +104,7 @@ stages:
     expect(state.approvals).toEqual({})
     expect(state.pendingApproval).toEqual({ required: false })
     expect(state.blockedReason).toBeNull()
+    expect(state.lastBlockedAction).toBeNull()
     expect(events).toEqual([
       {
         action: AuditAction.WORKFLOW_STATE_UPDATED,
