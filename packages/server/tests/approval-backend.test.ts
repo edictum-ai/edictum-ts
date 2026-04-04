@@ -99,6 +99,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       tool_name: 'Tool',
       tool_args: {},
       message: 'msg',
+      session_id: 'session-123',
       timeout: 60,
       timeout_action: 'allow',
     })
@@ -596,6 +597,22 @@ describe('security', () => {
     await expect(backend.requestApproval('Bash', {}, 'msg\u2029evil')).rejects.toThrow(
       /control characters/,
     )
+  })
+
+  it('rejects null byte in requestApproval sessionId', async () => {
+    const client = mockClient()
+    const backend = new ServerApprovalBackend(client)
+    await expect(
+      backend.requestApproval('Bash', {}, 'msg', { sessionId: 'session\x00evil' }),
+    ).rejects.toThrow(/Invalid sessionId/)
+  })
+
+  it('rejects path traversal in requestApproval sessionId', async () => {
+    const client = mockClient()
+    const backend = new ServerApprovalBackend(client)
+    await expect(
+      backend.requestApproval('Bash', {}, 'msg', { sessionId: '../../escape' }),
+    ).rejects.toThrow(/Invalid sessionId/)
   })
 
   it('rejects path traversal in waitForDecision approvalId', async () => {

@@ -251,13 +251,16 @@ export class EdictumServerClient {
           throw new EdictumServerError(response.status, await response.text())
         }
 
-        // 204 No Content has no body — return empty object instead of
-        // calling .json() which would throw a parse error.
-        if (response.status === 204) {
+        // Some successful endpoints (for example /v1/events) acknowledge work
+        // with an empty body. Treat any empty successful body as `{}` instead
+        // of attempting JSON parsing and turning an accepted request into a
+        // client-side retry.
+        const responseText = await response.text()
+        if (responseText.trim() === '') {
           return {}
         }
 
-        return (await response.json()) as Record<string, unknown>
+        return JSON.parse(responseText) as Record<string, unknown>
       } catch (error) {
         if (error instanceof EdictumServerError) {
           throw error

@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { createAuditEvent, AuditAction, EdictumConfigError } from '@edictum/core'
+import {
+  createAuditEvent,
+  AuditAction,
+  Edictum,
+  EdictumConfigError,
+  MemoryBackend,
+  WorkflowRuntime,
+  loadWorkflowString,
+} from '@edictum/core'
 
 import { EdictumServerClient } from '../src/client.js'
 import { ServerAuditSink } from '../src/audit-sink.js'
@@ -297,6 +305,141 @@ describe('ServerAuditSink event mapping', () => {
       events: Array<{ environment: string }>
     }
     expect(body.events[0]!.environment).toBe('staging')
+  })
+
+  it('serializes lineage and workflow context to the server wire format', async () => {
+    const client = mockClient()
+    const sink = new ServerAuditSink(client, { batchSize: 1 })
+
+    await sink.emit(
+      makeEvent({
+        action: AuditAction.WORKFLOW_STAGE_ADVANCED,
+        sessionId: 'child-session-abc',
+        parentSessionId: 'parent-session-xyz',
+        workflow: {
+          name: 'coding-guard',
+          version: '2026-04-03',
+          activeStage: 'local-review',
+          completedStages: ['read-context', 'implement', 'local-verify'],
+          blockedReason: 'Only review-safe git commands allowed',
+          pendingApproval: {
+            required: true,
+            stageId: 'local-review',
+            message: 'Approve only after the final diff has been reviewed locally',
+          },
+          lastBlockedAction: {
+            tool: 'Bash',
+            summary: 'git push origin HEAD --dry-run',
+            message: 'Only review-safe git commands allowed',
+            timestamp: '2026-04-03T09:13:04Z',
+          },
+        },
+      }),
+    )
+
+    const body = vi.mocked(client.post).mock.calls[0]![1] as {
+      events: Array<{
+        session_id: string | null
+        parent_session_id: string | null
+        workflow: {
+          name: string
+          version?: string
+          active_stage: string
+          completed_stages: string[]
+          blocked_reason?: string
+          pending_approval: {
+            required: boolean
+            stage_id?: string
+            message?: string
+          }
+          last_blocked_action?: {
+            tool: string
+            summary: string
+            message: string
+            timestamp: string
+          }
+        } | null
+      }>
+    }
+    expect(body.events[0]).toMatchObject({
+      session_id: 'child-session-abc',
+      parent_session_id: 'parent-session-xyz',
+      workflow: {
+        name: 'coding-guard',
+        version: '2026-04-03',
+        active_stage: 'local-review',
+        completed_stages: ['read-context', 'implement', 'local-verify'],
+        blocked_reason: 'Only review-safe git commands allowed',
+        pending_approval: {
+          required: true,
+          stage_id: 'local-review',
+          message: 'Approve only after the final diff has been reviewed locally',
+        },
+        last_blocked_action: {
+          tool: 'Bash',
+          summary: 'git push origin HEAD --dry-run',
+          message: 'Only review-safe git commands allowed',
+          timestamp: '2026-04-03T09:13:04Z',
+        },
+      },
+    })
+  })
+
+  it('posts workflow progress events with the hydrated workflow snapshot', async () => {
+    const client = mockClient()
+    const sink = new ServerAuditSink(client, { batchSize: 1 })
+    const runtime = new WorkflowRuntime(
+      loadWorkflowString(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: audit-process
+stages:
+  - id: read-context
+    tools: [Read]
+    exit:
+      - condition: file_read("specs/008.md")
+        message: Read the workflow spec first
+  - id: implement
+    entry:
+      - condition: stage_complete("read-context")
+    tools: [Edit]
+`),
+    )
+    const guard = new Edictum({
+      backend: new MemoryBackend(),
+      workflowRuntime: runtime,
+      auditSink: sink,
+    })
+
+    await guard.run('Read', { path: 'specs/008.md' }, async () => 'read', { sessionId: 'wf-audit' })
+    await guard.run('Edit', { path: 'src/app.ts' }, async () => 'edited', { sessionId: 'wf-audit' })
+
+    const postedEvents = vi
+      .mocked(client.post)
+      .mock.calls.flatMap(([, body]) => (body as { events: Array<Record<string, unknown>> }).events)
+    const stageAdvanced = postedEvents.find(
+      (event) => event['action'] === 'workflow_stage_advanced',
+    )
+    const completed = postedEvents.find((event) => event['action'] === 'workflow_completed')
+
+    expect(stageAdvanced).toMatchObject({
+      session_id: 'wf-audit',
+      workflow: {
+        name: 'audit-process',
+        active_stage: 'implement',
+        completed_stages: ['read-context'],
+        pending_approval: { required: false },
+      },
+    })
+    expect(completed).toMatchObject({
+      session_id: 'wf-audit',
+      workflow: {
+        name: 'audit-process',
+        active_stage: '',
+        completed_stages: ['read-context', 'implement'],
+        pending_approval: { required: false },
+      },
+    })
   })
 })
 

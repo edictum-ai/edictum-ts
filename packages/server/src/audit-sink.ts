@@ -35,6 +35,9 @@ interface ServerEventPayload {
   run_id: string
   call_index: number
   parent_call_id: string | null
+  session_id: string | null
+  parent_session_id: string | null
+  workflow: ServerWorkflowPayload | null
   tool_success: boolean | null
   postconditions_passed: boolean | null
   duration_ms: number
@@ -43,6 +46,29 @@ interface ServerEventPayload {
   session_attempt_count: number
   session_execution_count: number
   policy_error: boolean
+}
+
+interface ServerWorkflowPendingApprovalPayload {
+  required: boolean
+  stage_id?: string
+  message?: string
+}
+
+interface ServerWorkflowBlockedActionPayload {
+  tool: string
+  summary: string
+  message: string
+  timestamp: string
+}
+
+interface ServerWorkflowPayload {
+  name: string
+  version?: string
+  active_stage: string
+  completed_stages: string[]
+  blocked_reason?: string
+  pending_approval: ServerWorkflowPendingApprovalPayload
+  last_blocked_action?: ServerWorkflowBlockedActionPayload
 }
 
 function toCanonicalAction(action: string): string {
@@ -59,6 +85,41 @@ function toCanonicalAction(action: string): string {
     default:
       return action
   }
+}
+
+function toServerWorkflowPayload(workflow: AuditEvent['workflow']): ServerWorkflowPayload | null {
+  if (workflow == null) {
+    return null
+  }
+
+  const pendingApproval: ServerWorkflowPendingApprovalPayload = {
+    required: workflow.pendingApproval.required,
+  }
+  if (workflow.pendingApproval.stageId != null && workflow.pendingApproval.stageId !== '') {
+    pendingApproval.stage_id = workflow.pendingApproval.stageId
+  }
+  if (workflow.pendingApproval.message != null && workflow.pendingApproval.message !== '') {
+    pendingApproval.message = workflow.pendingApproval.message
+  }
+
+  const payload: ServerWorkflowPayload = {
+    name: workflow.name,
+    active_stage: workflow.activeStage,
+    completed_stages: [...workflow.completedStages],
+    pending_approval: pendingApproval,
+  }
+
+  if (workflow.version != null && workflow.version !== '') {
+    payload.version = workflow.version
+  }
+  if (workflow.blockedReason != null && workflow.blockedReason !== '') {
+    payload.blocked_reason = workflow.blockedReason
+  }
+  if (workflow.lastBlockedAction != null) {
+    payload.last_blocked_action = { ...workflow.lastBlockedAction }
+  }
+
+  return payload
 }
 
 /**
@@ -156,6 +217,9 @@ export class ServerAuditSink implements AuditSink {
       run_id: event.runId,
       call_index: event.callIndex,
       parent_call_id: event.parentCallId,
+      session_id: event.sessionId,
+      parent_session_id: event.parentSessionId,
+      workflow: toServerWorkflowPayload(event.workflow),
       tool_success: event.toolSuccess,
       postconditions_passed: event.postconditionsPassed,
       duration_ms: event.durationMs,
