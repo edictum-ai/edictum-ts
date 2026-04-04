@@ -156,11 +156,7 @@ describe('WorkflowRuntime.setStage', () => {
 
     await runtime.recordApproval(reviewSession, 'review')
     await runtime.recordResult(reviewSession, 'plan', makeCall('Read', { path: 'specs/008.md' }))
-    await runtime.recordResult(
-      reviewSession,
-      'review',
-      makeCall('Bash', { command: 'pnpm test' }),
-    )
+    await runtime.recordResult(reviewSession, 'review', makeCall('Bash', { command: 'pnpm test' }))
 
     await runtime.reset(reviewSession, 'review')
 
