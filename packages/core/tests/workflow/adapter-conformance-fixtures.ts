@@ -38,7 +38,8 @@ export interface WorkflowAdapterFixtureStep {
   expect: Record<string, unknown>
 }
 
-export const workflowAdapterConformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
+export const workflowAdapterConformanceRequired =
+  process.env.EDICTUM_WORKFLOW_ADAPTER_CONFORMANCE_REQUIRED === '1'
 
 export function resolveWorkflowAdapterFixturesDir(): string | null {
   const fixturesEnv = process.env.EDICTUM_WORKFLOW_ADAPTER_FIXTURES_DIR

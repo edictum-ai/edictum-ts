@@ -47,7 +47,7 @@ const fixturesDir = resolveWorkflowAdapterFixturesDir()
 
 if (!fixturesDir && workflowAdapterConformanceRequired) {
   throw new Error(
-    'EDICTUM_CONFORMANCE_REQUIRED=1 but no workflow adapter fixtures found. ' +
+    'EDICTUM_WORKFLOW_ADAPTER_CONFORMANCE_REQUIRED=1 but no workflow adapter fixtures found. ' +
       'Set EDICTUM_WORKFLOW_ADAPTER_FIXTURES_DIR or EDICTUM_SCHEMAS_DIR, or check out edictum-schemas as a sibling.',
   )
 }
