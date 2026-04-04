@@ -29,6 +29,9 @@ describe('TestAuditEvent', () => {
     const event = createAuditEvent()
     expect(event.schemaVersion).toBe('0.3.0')
     expect(event.action).toBe(AuditAction.CALL_DENIED)
+    expect(event.sessionId).toBeNull()
+    expect(event.parentSessionId).toBeNull()
+    expect(event.workflow).toBeNull()
     expect(event.mode).toBe('enforce')
     expect(event.toolSuccess).toBeNull()
     expect(event.hooksEvaluated).toEqual([])
@@ -41,12 +44,30 @@ describe('TestAuditEvent', () => {
     const event = createAuditEvent({
       action: AuditAction.CALL_EXECUTED,
       toolName: 'Bash',
+      sessionId: 'child-session',
+      parentSessionId: 'parent-session',
       toolSuccess: true,
+      workflow: {
+        name: 'coding-guard',
+        activeStage: 'local-review',
+        completedStages: ['read-context'],
+        blockedReason: null,
+        pendingApproval: { required: false },
+      },
       mode: 'observe',
     })
     expect(event.action).toBe(AuditAction.CALL_EXECUTED)
     expect(event.toolName).toBe('Bash')
+    expect(event.sessionId).toBe('child-session')
+    expect(event.parentSessionId).toBe('parent-session')
     expect(event.toolSuccess).toBe(true)
+    expect(event.workflow).toEqual({
+      name: 'coding-guard',
+      activeStage: 'local-review',
+      completedStages: ['read-context'],
+      blockedReason: null,
+      pendingApproval: { required: false },
+    })
     expect(event.mode).toBe('observe')
   })
 
@@ -83,6 +104,9 @@ describe('TestAuditAction', () => {
     expect(AuditAction.CALL_ALLOWED).toBe('call_allowed')
     expect(AuditAction.CALL_EXECUTED).toBe('call_executed')
     expect(AuditAction.CALL_FAILED).toBe('call_failed')
+    expect(AuditAction.WORKFLOW_STAGE_ADVANCED).toBe('workflow_stage_advanced')
+    expect(AuditAction.WORKFLOW_COMPLETED).toBe('workflow_completed')
+    expect(AuditAction.WORKFLOW_STATE_UPDATED).toBe('workflow_state_updated')
     expect(AuditAction.POSTCONDITION_WARNING).toBe('postcondition_warning')
   })
 })

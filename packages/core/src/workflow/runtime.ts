@@ -28,6 +28,11 @@ import { advanceWorkflowAfterSuccess } from './runtime-post.js'
 import { evaluateWorkflowRuntime } from './runtime-eval.js'
 import { workflowMetadata, workflowStageIds } from './runtime-helpers.js'
 import {
+  applyWorkflowEvaluationStatus,
+  buildWorkflowEvent,
+  buildWorkflowSnapshot,
+  clearWorkflowRuntimeStatus,
+  hydrateWorkflowEvents,
   loadWorkflowState,
   recordWorkflowApproval,
   recordWorkflowResult,
@@ -80,7 +85,19 @@ export class WorkflowRuntime {
   }
 
   async evaluate(session: Session, envelope: ToolEnvelope): Promise<WorkflowEvaluation> {
-    return await this.withLock(async () => await evaluateWorkflowRuntime(this, session, envelope))
+    return await this.withLock(async () => {
+      const evaluation = await evaluateWorkflowRuntime(this, session, envelope)
+      const state = await loadWorkflowState(session, this.definition)
+      const stateChanged = applyWorkflowEvaluationStatus(state, evaluation, envelope)
+      if (stateChanged) {
+        await saveWorkflowState(session, this.definition, state)
+      }
+      return createWorkflowEvaluation({
+        ...evaluation,
+        audit: buildWorkflowSnapshot(this.definition, state),
+        events: hydrateWorkflowEvents(this.definition, state, evaluation.events),
+      })
+    })
   }
 
   async state(session: Session): Promise<WorkflowState> {
@@ -89,8 +106,8 @@ export class WorkflowRuntime {
     )
   }
 
-  async reset(session: Session, stageId: string): Promise<void> {
-    await this.withLock(async () => {
+  async reset(session: Session, stageId: string): Promise<Record<string, unknown>[]> {
+    return await this.withLock(async () => {
       const index = getWorkflowStageIndex(this.definition, stageId)
       if (index == null) {
         throw new Error(`workflow: unknown reset stage ${JSON.stringify(stageId)}`)
@@ -112,7 +129,11 @@ export class WorkflowRuntime {
       if (index === 0) {
         state.evidence.reads = []
       }
+      clearWorkflowRuntimeStatus(state)
       await saveWorkflowState(session, this.definition, state)
+      return [
+        buildWorkflowEvent('workflow_state_updated', buildWorkflowSnapshot(this.definition, state)),
+      ]
     })
   }
 
@@ -141,7 +162,7 @@ export class WorkflowRuntime {
       recordWorkflowResult(state, stageId, envelope)
       const events = await advanceWorkflowAfterSuccess(this, state, stageId, envelope)
       await saveWorkflowState(session, this.definition, state)
-      return events
+      return hydrateWorkflowEvents(this.definition, state, events)
     })
   }
 

@@ -1,5 +1,6 @@
 export { WorkflowRuntime } from './runtime.js'
 export { WorkflowAction, createWorkflowEvaluation } from './result.js'
+export { defaultWorkflowPendingApproval } from './context.js'
 export { loadWorkflow, loadWorkflowString } from './load.js'
 export type {
   WorkflowApproval,
@@ -9,5 +10,6 @@ export type {
   WorkflowMetadata,
   WorkflowStage,
 } from './definition.js'
+export type { WorkflowBlockedAction, WorkflowContext, WorkflowPendingApproval } from './context.js'
 export type { WorkflowRuntimeOptions } from './runtime.js'
 export type { WorkflowEvaluation, WorkflowEvidence, WorkflowState } from './result.js'

@@ -46,6 +46,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       timeoutEffect?: 'deny' | 'allow'
       principal?: Record<string, unknown> | null
       metadata?: Record<string, unknown> | null
+      sessionId?: string | null
     },
   ): Promise<ApprovalRequest> {
     // Validate toolName — must be a safe identifier to prevent injection
@@ -148,6 +149,7 @@ export class ServerApprovalBackend implements ApprovalBackend {
       timeoutEffect,
       principal: safePrincipal,
       metadata: safeMeta,
+      sessionId: options?.sessionId ?? null,
       createdAt: new Date(),
     })
 

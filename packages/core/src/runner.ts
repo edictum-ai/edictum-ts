@@ -9,10 +9,11 @@
  */
 
 import type { Edictum } from './guard.js'
-import type { AuditAction } from './audit.js'
+import type { AuditAction, AuditEvent } from './audit.js'
 import type { Principal, ToolCall } from './tool-call.js'
 import type { PreDecision } from './pipeline.js'
 import type { Session } from './session.js'
+import type { WorkflowContext } from './workflow/context.js'
 
 import { ApprovalStatus } from './approval.js'
 import { AuditAction as AA, createAuditEvent } from './audit.js'
@@ -77,28 +78,95 @@ async function _emitRunPreAudit(
   action: AuditAction,
   pre: PreDecision,
 ): Promise<void> {
-  const event = createAuditEvent({
+  const event = await _createRunAuditEvent(guard, toolCall, session, {
     action,
-    runId: toolCall.runId,
-    callId: toolCall.callId,
-    toolName: toolCall.toolName,
-    toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
-    sideEffect: toolCall.sideEffect,
-    environment: toolCall.environment,
-    principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
     decisionSource: pre.decisionSource,
     decisionName: pre.decisionName,
     reason: pre.reason,
     hooksEvaluated: pre.hooksEvaluated,
     contractsEvaluated: pre.contractsEvaluated,
-    sessionAttemptCount: await session.attemptCount(),
-    sessionExecutionCount: await session.executionCount(),
-    mode: guard.mode,
-    policyVersion: guard.policyVersion,
+    workflow: pre.workflow,
     policyError: pre.policyError,
   })
   await guard.auditSink.emit(event)
   // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, event)
+}
+
+async function _createRunAuditEvent(
+  guard: Edictum,
+  toolCall: Readonly<ToolCall>,
+  session: Session,
+  fields: Partial<AuditEvent>,
+): Promise<AuditEvent> {
+  return createAuditEvent({
+    ...fields,
+    runId: toolCall.runId,
+    callId: toolCall.callId,
+    callIndex: toolCall.callIndex,
+    parentCallId: toolCall.parentCallId,
+    sessionId: session.sessionId,
+    toolName: toolCall.toolName,
+    toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
+    sideEffect: toolCall.sideEffect,
+    environment: toolCall.environment,
+    principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
+    sessionAttemptCount: await session.attemptCount(),
+    sessionExecutionCount: await session.executionCount(),
+    mode: fields.mode ?? guard.mode,
+    policyVersion: fields.policyVersion ?? guard.policyVersion,
+    workflow: fields.workflow ?? null,
+    policyError: fields.policyError ?? false,
+  })
+}
+
+function _toWorkflowContext(value: unknown): WorkflowContext | null {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return null
+  }
+  const workflow = value as Record<string, unknown>
+  return typeof workflow['name'] === 'string' &&
+    typeof workflow['activeStage'] === 'string' &&
+    Array.isArray(workflow['completedStages']) &&
+    (typeof workflow['blockedReason'] === 'string' || workflow['blockedReason'] === null) &&
+    typeof workflow['pendingApproval'] === 'object' &&
+    workflow['pendingApproval'] != null
+    ? (workflow as unknown as WorkflowContext)
+    : null
+}
+
+function _isWorkflowAuditAction(action: unknown): action is AuditAction {
+  return (
+    action === AA.WORKFLOW_STAGE_ADVANCED ||
+    action === AA.WORKFLOW_COMPLETED ||
+    action === AA.WORKFLOW_STATE_UPDATED
+  )
+}
+
+async function _emitWorkflowAuditEvents(
+  guard: Edictum,
+  toolCall: Readonly<ToolCall>,
+  session: Session,
+  events: readonly Record<string, unknown>[],
+): Promise<WorkflowContext | null> {
+  let latest: WorkflowContext | null = null
+
+  for (const record of events) {
+    const action = record['action']
+    const workflow = _toWorkflowContext(record['workflow'])
+    if (!_isWorkflowAuditAction(action) || workflow == null) {
+      continue
+    }
+
+    latest = workflow
+    await guard.auditSink.emit(
+      await _createRunAuditEvent(guard, toolCall, session, {
+        action,
+        workflow,
+      }),
+    )
+  }
+
+  return latest
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +224,19 @@ export async function run(
 
     // Pre-execute
     let pre = await pipeline.preExecute(toolCall, session)
+    let workflowSnapshot = pre.workflow
     let skipStandardPreAudit = false
+
+    const initialWorkflowSnapshot = await _emitWorkflowAuditEvents(
+      guard,
+      toolCall,
+      session,
+      pre.workflowEvents,
+    )
+    if (initialWorkflowSnapshot != null) {
+      workflowSnapshot = initialWorkflowSnapshot
+      pre = { ...pre, workflow: initialWorkflowSnapshot }
+    }
 
     // Handle pending_approval: request approval from backend
     for (let approvalRound = 0; pre.action === 'pending_approval'; approvalRound += 1) {
@@ -181,6 +261,7 @@ export async function run(
           timeout: pre.approvalTimeout,
           timeoutEffect: pre.approvalTimeoutEffect,
           principal: principalDict,
+          sessionId: session.sessionId,
         },
       )
 
@@ -241,6 +322,17 @@ export async function run(
         }
         await workflowRuntime.recordApproval(session, pre.workflowStageId)
         pre = await pipeline.preExecute(toolCall, session)
+        workflowSnapshot = pre.workflow
+        const approvalWorkflowSnapshot = await _emitWorkflowAuditEvents(
+          guard,
+          toolCall,
+          session,
+          pre.workflowEvents,
+        )
+        if (approvalWorkflowSnapshot != null) {
+          workflowSnapshot = approvalWorkflowSnapshot
+          pre = { ...pre, workflow: approvalWorkflowSnapshot }
+        }
         continue
       }
 
@@ -286,21 +378,14 @@ export async function run(
       for (const cr of pre.contractsEvaluated) {
         if (cr['observed'] && !cr['passed']) {
           const observedEvent = createAuditEvent({
-            action: AA.CALL_WOULD_DENY,
-            runId: toolCall.runId,
-            callId: toolCall.callId,
-            toolName: toolCall.toolName,
-            toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
-            sideEffect: toolCall.sideEffect,
-            environment: toolCall.environment,
-            principal: toolCall.principal
-              ? ({ ...toolCall.principal } as Record<string, unknown>)
-              : null,
+            ...(await _createRunAuditEvent(guard, toolCall, session, {
+              action: AA.CALL_WOULD_DENY,
+              workflow: workflowSnapshot,
+            })),
             decisionSource: 'precondition',
             decisionName: cr['name'] as string,
             reason: cr['message'] as string | null,
             mode: 'observe',
-            policyVersion: guard.policyVersion,
             policyError: pre.policyError,
           })
           await guard.auditSink.emit(observedEvent)
@@ -324,21 +409,14 @@ export async function run(
     for (const sr of pre.observeResults) {
       const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
       const observeEvent = createAuditEvent({
-        action: observeAction,
-        runId: toolCall.runId,
-        callId: toolCall.callId,
-        toolName: toolCall.toolName,
-        toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
-        sideEffect: toolCall.sideEffect,
-        environment: toolCall.environment,
-        principal: toolCall.principal
-          ? ({ ...toolCall.principal } as Record<string, unknown>)
-          : null,
+        ...(await _createRunAuditEvent(guard, toolCall, session, {
+          action: observeAction,
+          workflow: workflowSnapshot,
+          mode: 'observe',
+        })),
         decisionSource: sr['source'] as string | null,
         decisionName: sr['name'] as string | null,
         reason: sr['message'] as string | null,
-        mode: 'observe',
-        policyVersion: guard.policyVersion,
       })
       await guard.auditSink.emit(observeEvent)
       // TODO: Phase 3 — _emitOtelGovernanceSpan(guard, observeEvent)
@@ -371,32 +449,31 @@ export async function run(
 
     // Post-execute
     const post = await pipeline.postExecute(toolCall, result, toolSuccess)
+    let workflowEvents: Record<string, unknown>[] = []
     if (toolSuccess && pre.workflowInvolved && pre.workflowStageId != null) {
       const workflowRuntime = guard.getWorkflowRuntime()
       if (workflowRuntime != null) {
-        await workflowRuntime.recordResult(session, pre.workflowStageId, toolCall)
+        workflowEvents = await workflowRuntime.recordResult(session, pre.workflowStageId, toolCall)
       }
     }
     await session.recordExecution(toolName, toolSuccess)
+    const latestWorkflowSnapshot = await _emitWorkflowAuditEvents(
+      guard,
+      toolCall,
+      session,
+      workflowEvents,
+    )
+    if (latestWorkflowSnapshot != null) {
+      workflowSnapshot = latestWorkflowSnapshot
+    }
 
     // Emit post-execute audit
-    const postAction = toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED
-    const postEvent = createAuditEvent({
-      action: postAction,
-      runId: toolCall.runId,
-      callId: toolCall.callId,
-      toolName: toolCall.toolName,
-      toolArgs: guard.redaction.redactArgs(toolCall.args) as Record<string, unknown>,
-      sideEffect: toolCall.sideEffect,
-      environment: toolCall.environment,
-      principal: toolCall.principal ? ({ ...toolCall.principal } as Record<string, unknown>) : null,
+    const postEvent = await _createRunAuditEvent(guard, toolCall, session, {
+      action: toolSuccess ? AA.CALL_EXECUTED : AA.CALL_FAILED,
+      workflow: workflowSnapshot,
       toolSuccess,
       postconditionsPassed: post.postconditionsPassed,
       contractsEvaluated: post.contractsEvaluated,
-      sessionAttemptCount: await session.attemptCount(),
-      sessionExecutionCount: await session.executionCount(),
-      mode: guard.mode,
-      policyVersion: guard.policyVersion,
       policyError: post.policyError,
     })
     await guard.auditSink.emit(postEvent)

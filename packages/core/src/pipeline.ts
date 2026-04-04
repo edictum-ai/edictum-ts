@@ -14,6 +14,7 @@ import { RedactionPolicy } from './redaction.js'
 import type { Session } from './session.js'
 import type { GuardLike } from './internal-rules.js'
 import { WorkflowAction } from './workflow/index.js'
+import type { WorkflowContext } from './workflow/context.js'
 
 // ---------------------------------------------------------------------------
 // PreDecision
@@ -35,6 +36,8 @@ export interface PreDecision {
   readonly approvalMessage: string | null
   readonly workflowStageId: string | null
   readonly workflowInvolved: boolean
+  readonly workflow: WorkflowContext | null
+  readonly workflowEvents: Record<string, unknown>[]
 }
 
 /** Create a PreDecision with defaults for omitted fields. */
@@ -56,6 +59,8 @@ export function createPreDecision(
     approvalMessage: partial.approvalMessage ?? null,
     workflowStageId: partial.workflowStageId ?? null,
     workflowInvolved: partial.workflowInvolved ?? false,
+    workflow: partial.workflow ?? null,
+    workflowEvents: partial.workflowEvents ?? [],
   }
 }
 
@@ -99,6 +104,21 @@ function hasPolicyError(contractsEvaluated: Record<string, unknown>[]): boolean 
     const meta = c['metadata'] as Record<string, unknown> | undefined
     return meta?.['policy_error'] === true
   })
+}
+
+function isWorkflowContext(value: unknown): value is WorkflowContext {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return false
+  }
+  const workflow = value as Record<string, unknown>
+  return (
+    typeof workflow['name'] === 'string' &&
+    typeof workflow['activeStage'] === 'string' &&
+    Array.isArray(workflow['completedStages']) &&
+    (typeof workflow['blockedReason'] === 'string' || workflow['blockedReason'] === null) &&
+    typeof workflow['pendingApproval'] === 'object' &&
+    workflow['pendingApproval'] != null
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +363,8 @@ export class CheckPipeline {
     // 5. Workflow gates
     let workflowStageId: string | null = null
     let workflowInvolved = false
+    let workflow: WorkflowContext | null = null
+    let workflowEvents: Record<string, unknown>[] = []
     const workflowRuntime = this._guard.getWorkflowRuntime()
     if (workflowRuntime != null) {
       try {
@@ -352,6 +374,8 @@ export class CheckPipeline {
         }
         workflowStageId = wf.stageId || null
         workflowInvolved = wf.records.length > 0 || wf.stageId !== ''
+        workflow = isWorkflowContext(wf.audit) ? wf.audit : null
+        workflowEvents = [...wf.events]
 
         if (wf.action === WorkflowAction.BLOCK) {
           return createPreDecision({
@@ -364,6 +388,8 @@ export class CheckPipeline {
             policyError: hasPolicyError(contractsEvaluated),
             workflowStageId,
             workflowInvolved,
+            workflow,
+            workflowEvents,
           })
         }
 
@@ -379,6 +405,8 @@ export class CheckPipeline {
             approvalMessage: wf.reason,
             workflowStageId,
             workflowInvolved,
+            workflow,
+            workflowEvents,
           })
         }
       } catch (exc) {
@@ -399,6 +427,8 @@ export class CheckPipeline {
           policyError: true,
           workflowStageId,
           workflowInvolved: true,
+          workflow,
+          workflowEvents,
         })
       }
     }
@@ -417,6 +447,8 @@ export class CheckPipeline {
         contractsEvaluated,
         workflowStageId,
         workflowInvolved,
+        workflow,
+        workflowEvents,
       })
     }
 
@@ -435,6 +467,8 @@ export class CheckPipeline {
           contractsEvaluated,
           workflowStageId,
           workflowInvolved,
+          workflow,
+          workflowEvents,
         })
       }
     }
@@ -454,6 +488,8 @@ export class CheckPipeline {
       observeResults,
       workflowStageId,
       workflowInvolved,
+      workflow,
+      workflowEvents,
     })
   }
 

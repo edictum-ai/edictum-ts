@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest'
 
-import { Edictum, EdictumDenied, MemoryBackend, Session, WorkflowRuntime } from '../../src/index.js'
+import {
+  AuditAction,
+  Edictum,
+  EdictumDenied,
+  MemoryBackend,
+  Session,
+  WorkflowRuntime,
+} from '../../src/index.js'
 import { MAX_WORKFLOW_EVIDENCE_ITEMS, workflowStateKey } from '../../src/workflow/state.js'
 import {
   makeCall,
@@ -82,11 +89,25 @@ stages:
     expect(decision.action).toBe('allow')
     expect(decision.stageId).toBe('push')
 
-    await runtime.reset(session, 'implement')
+    const events = await runtime.reset(session, 'implement')
     const state = await runtime.state(session)
     expect(state.activeStage).toBe('implement')
     expect(state.completedStages).toEqual([])
     expect(state.approvals).toEqual({})
+    expect(state.pendingApproval).toEqual({ required: false })
+    expect(state.blockedReason).toBeNull()
+    expect(events).toEqual([
+      {
+        action: AuditAction.WORKFLOW_STATE_UPDATED,
+        workflow: {
+          name: 'approval-process',
+          activeStage: 'implement',
+          completedStages: [],
+          blockedReason: null,
+          pendingApproval: { required: false },
+        },
+      },
+    ])
   })
 
   test('programmatic definitions re-derive compiled check regexes', async () => {
@@ -281,6 +302,126 @@ stages:
       expect(decision.reason).toBe('Read the workflow spec first')
     })
   })
+
+  test('workflow state persistence round trip preserves enriched fields', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: snapshot-roundtrip
+stages:
+  - id: implement
+    tools: [Edit]
+`)
+    const session = makeWorkflowSession('snapshot-roundtrip')
+
+    await session.setValue(
+      workflowStateKey('snapshot-roundtrip'),
+      JSON.stringify({
+        activeStage: 'implement',
+        completedStages: [],
+        approvals: {},
+        evidence: {
+          reads: [],
+          stageCalls: {},
+        },
+        blockedReason: 'Only review-safe git commands allowed',
+        pendingApproval: {
+          required: true,
+          stageId: 'implement',
+          message: 'Approve after local review',
+        },
+        lastBlockedAction: {
+          tool: 'Bash',
+          summary: 'git push origin HEAD',
+          message: 'Only review-safe git commands allowed',
+          timestamp: '2026-04-04T00:00:00Z',
+        },
+      }),
+    )
+
+    const state = await runtime.state(session)
+
+    expect(state.blockedReason).toBe('Only review-safe git commands allowed')
+    expect(state.pendingApproval).toEqual({
+      required: true,
+      stageId: 'implement',
+      message: 'Approve after local review',
+    })
+    expect(state.lastBlockedAction).toEqual({
+      tool: 'Bash',
+      summary: 'git push origin HEAD',
+      message: 'Only review-safe git commands allowed',
+      timestamp: '2026-04-04T00:00:00Z',
+    })
+  })
+
+  test('blocked workflow call persists blocked snapshot', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: blocked-snapshot
+stages:
+  - id: implement
+    tools: [Edit]
+`)
+    const session = makeWorkflowSession('blocked-snapshot')
+
+    const decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin HEAD' }),
+    )
+    const state = await runtime.state(session)
+
+    expect(decision.action).toBe('block')
+    expect(state.blockedReason).toBe('Tool is not allowed in this workflow stage')
+    expect(state.pendingApproval).toEqual({ required: false })
+    expect(state.lastBlockedAction).toEqual(
+      expect.objectContaining({
+        tool: 'Bash',
+        summary: 'git push origin HEAD',
+        message: 'Tool is not allowed in this workflow stage',
+      }),
+    )
+  })
+
+  test('pending workflow call persists pending approval snapshot', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: pending-snapshot
+stages:
+  - id: implement
+    tools: [Edit]
+  - id: review
+    entry:
+      - condition: stage_complete("implement")
+    approval:
+      message: need review
+  - id: push
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+`)
+    const session = makeWorkflowSession('pending-snapshot')
+
+    const edit = makeCall('Edit', { path: 'src/app.ts' })
+    let decision = await runtime.evaluate(session, edit)
+    await runtime.recordResult(session, decision.stageId, edit)
+
+    decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin feature' }),
+    )
+    const state = await runtime.state(session)
+
+    expect(decision.action).toBe('pending_approval')
+    expect(state.blockedReason).toBeNull()
+    expect(state.pendingApproval).toEqual({
+      required: true,
+      stageId: 'review',
+      message: 'need review',
+    })
+  })
 })
 
 describe('WorkflowGuardIntegration', () => {
@@ -354,5 +495,66 @@ stages:
     const state = await runtime.state(new Session('wf-approval-guard', guard.backend))
     expect(state.activeStage).toBe('')
     expect(state.completedStages).toEqual(['implement', 'review', 'push'])
+  })
+
+  test('guard.run emits workflow audit events with workflow snapshots and sessionId', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: audit-process
+stages:
+  - id: read-context
+    tools: [Read]
+    exit:
+      - condition: file_read("specs/008.md")
+        message: Read the workflow spec first
+  - id: implement
+    entry:
+      - condition: stage_complete("read-context")
+    tools: [Edit]
+`)
+    const guard = new Edictum({
+      backend: new MemoryBackend(),
+      workflowRuntime: runtime,
+    })
+
+    await guard.run('Read', { path: 'specs/008.md' }, async () => 'read', { sessionId: 'wf-audit' })
+    await guard.run('Edit', { path: 'src/app.ts' }, async () => 'edited', { sessionId: 'wf-audit' })
+
+    const allowed = guard.localSink.events.find(
+      (event) => event.action === AuditAction.CALL_ALLOWED,
+    )
+    expect(allowed?.sessionId).toBe('wf-audit')
+    expect(allowed?.workflow).toEqual({
+      name: 'audit-process',
+      activeStage: 'read-context',
+      completedStages: [],
+      blockedReason: null,
+      pendingApproval: { required: false },
+    })
+
+    const stageAdvanced = guard.localSink.events.find(
+      (event) => event.action === AuditAction.WORKFLOW_STAGE_ADVANCED,
+    )
+    expect(stageAdvanced?.sessionId).toBe('wf-audit')
+    expect(stageAdvanced?.workflow).toEqual({
+      name: 'audit-process',
+      activeStage: 'implement',
+      completedStages: ['read-context'],
+      blockedReason: null,
+      pendingApproval: { required: false },
+    })
+
+    const completed = guard.localSink.events.find(
+      (event) => event.action === AuditAction.WORKFLOW_COMPLETED,
+    )
+    expect(completed?.sessionId).toBe('wf-audit')
+    expect(completed?.workflow).toEqual({
+      name: 'audit-process',
+      activeStage: '',
+      completedStages: ['read-context', 'implement'],
+      blockedReason: null,
+      pendingApproval: { required: false },
+    })
   })
 })

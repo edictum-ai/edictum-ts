@@ -1,4 +1,10 @@
 import { deepFreeze } from '../tool-call.js'
+import {
+  defaultWorkflowPendingApproval,
+  type WorkflowBlockedAction,
+  type WorkflowContext,
+  type WorkflowPendingApproval,
+} from './context.js'
 
 export const WorkflowAction = {
   ALLOW: 'allow',
@@ -13,7 +19,7 @@ export interface WorkflowEvaluation {
   readonly reason: string
   readonly stageId: string
   readonly records: Record<string, unknown>[]
-  readonly audit: Record<string, unknown> | null
+  readonly audit: Record<string, unknown> | WorkflowContext | null
   readonly events: Record<string, unknown>[]
 }
 
@@ -23,6 +29,9 @@ export interface WorkflowState {
   readonly completedStages: readonly string[]
   readonly approvals: Readonly<Record<string, string>>
   readonly evidence: WorkflowEvidence
+  readonly blockedReason: string | null
+  readonly pendingApproval: WorkflowPendingApproval
+  readonly lastBlockedAction: WorkflowBlockedAction | null
 }
 
 export interface WorkflowEvidence {
@@ -36,6 +45,9 @@ export interface MutableWorkflowState {
   completedStages: string[]
   approvals: Record<string, string>
   evidence: MutableWorkflowEvidence
+  blockedReason: string | null
+  pendingApproval: WorkflowPendingApproval
+  lastBlockedAction: WorkflowBlockedAction | null
 }
 
 export interface MutableWorkflowEvidence {
@@ -69,6 +81,12 @@ export function ensureWorkflowState(state: Partial<MutableWorkflowState>): Mutab
   const evidence = (normalized.evidence ??= { reads: [], stageCalls: {} })
   evidence.reads ??= []
   evidence.stageCalls ??= {}
+  normalized.blockedReason ??= null
+  normalized.pendingApproval ??= defaultWorkflowPendingApproval()
+  if (typeof normalized.pendingApproval.required !== 'boolean') {
+    normalized.pendingApproval = defaultWorkflowPendingApproval()
+  }
+  normalized.lastBlockedAction ??= null
   return normalized
 }
 
@@ -87,5 +105,8 @@ export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState
         ]),
       ),
     },
+    blockedReason: state.blockedReason,
+    pendingApproval: { ...state.pendingApproval },
+    lastBlockedAction: state.lastBlockedAction == null ? null : { ...state.lastBlockedAction },
   }
 }

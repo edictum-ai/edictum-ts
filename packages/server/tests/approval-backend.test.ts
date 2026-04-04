@@ -91,6 +91,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
       timeoutEffect: 'allow',
       principal: { sub: 'user-1' },
       metadata: { key: 'value' },
+      sessionId: 'session-123',
     })
 
     expect(client.post).toHaveBeenCalledWith('/v1/approvals', {
@@ -105,6 +106,7 @@ describe('ServerApprovalBackend.requestApproval', () => {
     expect(request.timeoutEffect).toBe('allow')
     expect(request.principal).toEqual({ sub: 'user-1' })
     expect(request.metadata).toEqual({ key: 'value' })
+    expect(request.sessionId).toBe('session-123')
   })
 })
 
