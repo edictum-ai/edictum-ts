@@ -423,6 +423,21 @@ describe('retry logic', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('handles 202 Accepted with an empty body without retrying', async () => {
+    vi.useRealTimers()
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 202 }))
+
+    const client = new EdictumServerClient({
+      baseUrl: 'https://api.example.com',
+      apiKey: 'k',
+      maxRetries: 3,
+    })
+
+    const result = await client.post('/v1/events', { events: [] })
+    expect(result).toEqual({})
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('does not retry on 4xx errors', async () => {
     fetchSpy = vi
       .spyOn(globalThis, 'fetch')
