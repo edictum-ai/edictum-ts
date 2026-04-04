@@ -85,6 +85,18 @@ export class ServerApprovalBackend implements ApprovalBackend {
       )
     }
     const sessionId = options?.sessionId ?? null
+    if (
+      sessionId != null &&
+      (typeof sessionId !== 'string' ||
+        sessionId.length > 128 ||
+        !SAFE_IDENTIFIER_RE.test(sessionId))
+    ) {
+      const display =
+        typeof sessionId === 'string'
+          ? JSON.stringify(sessionId.slice(0, 64)) + (sessionId.length > 64 ? '…' : '')
+          : JSON.stringify(sessionId)
+      throw new EdictumConfigError(`Invalid sessionId: ${display}. Must match SAFE_IDENTIFIER_RE.`)
+    }
 
     if (this._pending.size >= ServerApprovalBackend.MAX_PENDING) {
       throw new EdictumConfigError(
