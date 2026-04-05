@@ -357,7 +357,7 @@ export class OpenAIAgentsAdapter {
       }
 
       if (this._guard.mode === 'observe' && decision.action === 'deny') {
-        await this._emitAuditPre(toolCall, decision, AuditAction.CALL_WOULD_BLOCK)
+        await this._emitAuditPre(toolCall, decision, AuditAction.CALL_WOULD_DENY)
         this._pending.set(callId, {
           toolCall,
           workflowStageId: decision.workflowStageId,
@@ -384,7 +384,7 @@ export class OpenAIAgentsAdapter {
           if (cr['observed'] && !cr['passed']) {
             await this._guard.auditSink.emit(
               createAuditEvent({
-                action: AuditAction.CALL_WOULD_BLOCK,
+                action: AuditAction.CALL_WOULD_DENY,
                 runId: toolCall.runId,
                 callId: toolCall.callId,
                 callIndex: toolCall.callIndex,
@@ -431,7 +431,7 @@ export class OpenAIAgentsAdapter {
         try {
           const observeAction = sr['passed']
             ? AuditAction.CALL_ALLOWED
-            : AuditAction.CALL_WOULD_BLOCK
+            : AuditAction.CALL_WOULD_DENY
           await this._guard.auditSink.emit(
             createAuditEvent({
               action: observeAction,

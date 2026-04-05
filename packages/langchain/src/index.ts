@@ -419,7 +419,7 @@ export class LangChainAdapter {
     }
 
     if (this._guard.mode === 'observe' && decision.action === 'deny') {
-      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_BLOCK)
+      await this._emitAuditPre(toolCall, decision, AA.CALL_WOULD_DENY)
       this._pending.set(callId, {
         toolCall,
         workflowStageId: decision.workflowStageId,
@@ -446,7 +446,7 @@ export class LangChainAdapter {
         if (cr['observed'] && !cr['passed']) {
           await this._guard.auditSink.emit(
             createAuditEvent({
-              action: AA.CALL_WOULD_BLOCK,
+              action: AA.CALL_WOULD_DENY,
               runId: toolCall.runId,
               callId: toolCall.callId,
               callIndex: toolCall.callIndex,
@@ -488,7 +488,7 @@ export class LangChainAdapter {
 
     for (const sr of decision.observeResults) {
       try {
-        const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_BLOCK
+        const observeAction = sr['passed'] ? AA.CALL_ALLOWED : AA.CALL_WOULD_DENY
         await this._guard.auditSink.emit(
           createAuditEvent({
             action: observeAction,
