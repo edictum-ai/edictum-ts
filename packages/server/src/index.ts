@@ -1,6 +1,6 @@
 /** @edictum/server — Server SDK (HTTP client, SSE, audit sink) for edictum. */
 
-export const VERSION = '0.3.0' as const
+export const VERSION = '0.4.0' as const
 
 // Client
 export { EdictumServerClient, EdictumServerError, SAFE_IDENTIFIER_RE } from './client.js'
