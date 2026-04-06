@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- Fix workflow stage moves so `setStage()` hydrates pending approvals for approval stages and terminal stages without explicit exits do not auto-advance incorrectly.
+
 ## 0.4.0
 
 - Breaking: canonical audit action values now emit `call_blocked`, `call_would_block`, `call_asked`, and `call_approval_blocked` instead of the older deny/request names.
