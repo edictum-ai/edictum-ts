@@ -31,7 +31,7 @@ import {
   applyWorkflowEvaluationStatus,
   buildWorkflowEvent,
   buildWorkflowSnapshot,
-  clearWorkflowRuntimeStatus,
+  hydrateActiveWorkflowRuntimeStatus,
   hydrateWorkflowEvents,
   loadWorkflowState,
   recordWorkflowApproval,
@@ -129,7 +129,7 @@ export class WorkflowRuntime {
       if (index === 0) {
         state.evidence.reads = []
       }
-      clearWorkflowRuntimeStatus(state)
+      hydrateActiveWorkflowRuntimeStatus(this.definition, state)
       await saveWorkflowState(session, this.definition, state)
       return [
         buildWorkflowEvent('workflow_state_updated', buildWorkflowSnapshot(this.definition, state)),
@@ -146,7 +146,7 @@ export class WorkflowRuntime {
       const state = await loadWorkflowState(session, this.definition)
       state.activeStage = stageId
       state.completedStages = workflowStageIds(this.definition.stages.slice(0, index))
-      clearWorkflowRuntimeStatus(state)
+      hydrateActiveWorkflowRuntimeStatus(this.definition, state)
       await saveWorkflowState(session, this.definition, state)
       return [
         buildWorkflowEvent('workflow_state_updated', buildWorkflowSnapshot(this.definition, state)),

@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ApprovalStatus,
+  AuditAction,
   CollectingAuditSink,
   Edictum,
   MemoryBackend,
   Session,
   WorkflowRuntime,
+  createAuditEvent,
   loadWorkflowString,
   type ApprovalBackend,
   type ApprovalDecision,
@@ -319,6 +321,8 @@ function assertOrderedAuditEvents(
 
 async function runFixtureStep(
   adapter: AdapterHarness,
+  runtime: WorkflowRuntime,
+  session: Session,
   approvalBackend: FixtureApprovalBackend,
   fixture: WorkflowAdapterFixture,
   step: WorkflowAdapterFixtureStep,
@@ -326,6 +330,41 @@ async function runFixtureStep(
 ): Promise<{ decision: string; actualEvents: AuditEvent[] }> {
   approvalBackend.setOutcomes(step.approval_outcomes)
   const mark = sink.mark()
+
+  if (step.set_stage_to != null) {
+    const events = await runtime.setStage(session, step.set_stage_to)
+    for (const event of events) {
+      const action = event['action']
+      if (typeof action !== 'string') {
+        continue
+      }
+
+      await sink.emit(
+        createAuditEvent({
+          callId: `${fixture.id}:${step.id}`,
+          sessionId: session.sessionId,
+          parentSessionId: fixture.lineage?.parent_session_id ?? null,
+          action: action as AuditAction,
+          workflow: (event['workflow'] as AuditEvent['workflow']) ?? null,
+        }),
+      )
+    }
+
+    expect(
+      approvalBackend.remainingOutcomes(),
+      `Step ${step.id} did not consume all configured approval outcomes`,
+    ).toBe(0)
+
+    return {
+      decision: 'allow',
+      actualEvents: sink.sinceMark(mark),
+    }
+  }
+
+  if (step.call == null) {
+    throw new Error(`Fixture step ${step.id} must define call or set_stage_to`)
+  }
+
   const callId = `${fixture.id}:${step.id}`
   const preResult = await adapter._pre(step.call.tool, step.call.args, callId)
 
@@ -379,12 +418,16 @@ if (suites) {
                 for (const step of fixture.steps) {
                   const { decision, actualEvents } = await runFixtureStep(
                     adapter,
+                    runtime,
+                    session,
                     approvalBackend,
                     fixture,
                     step,
                     auditSink,
                   )
-                  expect(decision).toBe(step.expect.decision)
+                  if ('decision' in step.expect) {
+                    expect(decision).toBe(step.expect.decision)
+                  }
                   expect(normalizeWorkflowState(await runtime.state(session))).toMatchObject(
                     stateExpectation(step.expect),
                   )

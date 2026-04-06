@@ -431,6 +431,41 @@ stages:
       message: 'need review',
     })
   })
+
+  test('implicit no-exit advancement ignores calls that no downstream stage can handle', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: downstream-legitimacy
+stages:
+  - id: implement
+    tools: [Edit]
+  - id: review
+    entry:
+      - condition: stage_complete("implement")
+    approval:
+      message: need review
+  - id: push
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+`)
+    const session = makeWorkflowSession('wf-downstream-legitimacy')
+
+    const edit = makeCall('Edit', { path: 'src/app.ts' })
+    const allow = await runtime.evaluate(session, edit)
+    await runtime.recordResult(session, allow.stageId, edit)
+
+    const decision = await runtime.evaluate(session, makeCall('Read', { path: 'docs/notes.md' }))
+    const state = await runtime.state(session)
+
+    expect(decision.action).toBe('block')
+    expect(decision.stageId).toBe('implement')
+    expect(decision.reason).toBe('Tool is not allowed in this workflow stage')
+    expect(state.activeStage).toBe('implement')
+    expect(state.completedStages).toEqual([])
+    expect(state.pendingApproval).toEqual({ required: false })
+  })
 })
 
 describe('WorkflowGuardIntegration', () => {

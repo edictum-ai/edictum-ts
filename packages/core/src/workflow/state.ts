@@ -146,6 +146,25 @@ export function clearWorkflowRuntimeStatus(state: MutableWorkflowState): void {
   state.lastBlockedAction = null
 }
 
+export function hydrateActiveWorkflowRuntimeStatus(
+  definition: WorkflowDefinition,
+  state: MutableWorkflowState,
+): void {
+  ensureWorkflowState(state)
+  clearWorkflowRuntimeStatus(state)
+
+  const stage = getWorkflowStageById(definition, state.activeStage)
+  if (stage?.approval == null || state.approvals[stage.id] === WORKFLOW_APPROVED_STATUS) {
+    return
+  }
+
+  state.pendingApproval = {
+    required: true,
+    stageId: stage.id,
+    message: stage.approval.message,
+  }
+}
+
 export function applyWorkflowEvaluationStatus(
   state: MutableWorkflowState,
   evaluation: WorkflowEvaluation,
