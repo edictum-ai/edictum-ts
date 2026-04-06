@@ -1,8 +1,8 @@
 # @edictum/langchain
 
-LangChain.js adapter for Edictum rule enforcement.
+Version `0.2.0`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+LangChain.js adapter for Edictum. Keep your LangChain tool graph and add deterministic rule enforcement around tool calls.
 
 ## Install
 
@@ -17,19 +17,28 @@ import { Edictum } from '@edictum/core'
 import { LangChainAdapter } from '@edictum/langchain'
 
 const guard = Edictum.fromYaml('rules.yaml')
-const adapter = new LangChainAdapter(guard)
+const adapter = new LangChainAdapter(guard, {
+  sessionId: 'run-42',
+  parentSessionId: 'agent-root',
+})
+
 const middleware = adapter.asMiddleware()
 // Pass to ToolNode or agent as tool_call_middleware
 ```
 
-## API
+## What It Exposes
 
-- `LangChainAdapter` — adapter class
-  - `asMiddleware(options?)` — returns `{ name, wrapToolCall }` for ToolNode
-  - `asToolWrapper(options?)` — returns a wrapper function for any tool callable
-  - `setPrincipal(principal)` — update principal mid-session
-- `LangChainAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
-- `AsMiddlewareOptions` — `{ onPostconditionWarn }` callback
+- `asMiddleware()` for ToolNode and LangChain middleware paths
+- `asToolWrapper()` for wrapping arbitrary tool callables directly
+- `parentSessionId` support for nested-agent lineage
+- Workflow-aware events when the guard includes a `WorkflowRuntime`
+
+## Key Exports
+
+- `LangChainAdapter`
+- `LangChainAdapterOptions`
+- `AsMiddlewareOptions`
+- `AsToolWrapperOptions`
 
 ## Links
 

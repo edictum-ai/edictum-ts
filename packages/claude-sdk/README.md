@@ -1,8 +1,8 @@
 # @edictum/claude-sdk
 
-Claude Agent SDK adapter for Edictum rule enforcement.
+Version `0.2.0`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Claude Agent SDK adapter for Edictum. Keep Claude's hook surface and enforce the same YAML ruleset you use in the rest of the stack.
 
 ## Install
 
@@ -17,17 +17,25 @@ import { Edictum } from '@edictum/core'
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
 
 const guard = Edictum.fromYaml('rules.yaml')
-const adapter = new ClaudeAgentSDKAdapter(guard)
+const adapter = new ClaudeAgentSDKAdapter(guard, {
+  sessionId: 'run-42',
+  parentSessionId: 'agent-root',
+})
+
 const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
 ```
 
-## API
+## Notes
 
-- `ClaudeAgentSDKAdapter` — adapter class
-  - `toSdkHooks(options?)` — returns `{ PreToolUse, PostToolUse }` hook callback arrays
-  - `setPrincipal(principal)` — update principal mid-session
-- `ClaudeAgentSDKAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
-- `ToSdkHooksOptions` — `{ onPostconditionWarn }` callback
+- `parentSessionId` keeps lineage for nested agent runs
+- Workflow stage context and approval state are emitted when the guard has a `WorkflowRuntime`
+- Post-tool output replacement depends on the Claude Agent SDK honoring `updatedMCPToolOutput`
+
+## Key Exports
+
+- `ClaudeAgentSDKAdapter`
+- `ClaudeAgentSDKAdapterOptions`
+- `ToSdkHooksOptions`
 
 ## Links
 

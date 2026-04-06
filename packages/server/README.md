@@ -1,8 +1,8 @@
 # @edictum/server
 
-Server SDK for connecting Edictum-governed agents to the Edictum API.
+Version `0.3.1`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Server-backed rulesets, approvals, session storage, and decision-log streaming for Edictum.
 
 ## Install
 
@@ -16,28 +16,37 @@ pnpm add @edictum/server @edictum/core
 import { createServerGuard } from '@edictum/server'
 
 const { guard, close } = await createServerGuard({
-  url: 'https://api.example.com',
+  url: 'https://api.edictum.ai',
   apiKey: 'edk_production_...',
   agentId: 'my-agent',
   bundleName: 'production-rules',
 })
 
 // guard is a standard Edictum instance backed by the API
-// Rules hot-reload via SSE, audit events stream to the API
+// rules hot-reload over SSE
+// approvals and session state come from the server
 
-// Clean up on shutdown
 await close()
 ```
 
-## API
+## What It Adds
 
-- `createServerGuard(options)` — factory returning `{ guard, close }` with server-backed rules, audit, sessions, and approvals
-- `EdictumServerClient` — low-level HTTP client for the canonical `/v1` API
-- `ServerRuleSource` — SSE-based rules hot-reload
-- `ServerAuditSink` — streams audit events to the API
-- `ServerBackend` — server-backed session storage
-- `ServerApprovalBackend` — server-backed HITL approval workflows
-- `verifyBundleSignature(bundle, publicKey)` — Ed25519 bundle signature verification
+- Fetches a named ruleset from the canonical `/v1` API
+- Hot-reloads rulesets over SSE
+- Uses server-backed approvals and session storage
+- Carries workflow context through emitted decision-log events when the attached guard is using Workflow Gates
+- Preserves session lineage when adapters supply `parentSessionId`
+- Supports Ed25519 signature verification for fetched rulesets
+
+## Key Exports
+
+- `createServerGuard`
+- `EdictumServerClient`
+- `ServerRuleSource`
+- `ServerBackend`
+- `ServerApprovalBackend`
+- `ServerAuditSink`
+- `verifyBundleSignature`
 
 ## Links
 

@@ -1,8 +1,8 @@
 # @edictum/otel
 
-OpenTelemetry integration for Edictum rule enforcement.
+Version `0.2.0`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+OpenTelemetry integration for Edictum spans and metrics.
 
 ## Install
 
@@ -13,30 +13,26 @@ pnpm add @edictum/otel @edictum/core @opentelemetry/api
 ## Usage
 
 ```typescript
-import { GovernanceTelemetry } from '@edictum/otel'
-
-const telemetry = new GovernanceTelemetry()
-const span = telemetry.startToolSpan(envelope)
-// ... run pipeline ...
-telemetry.setSpanOk(span) // or setSpanError(span, reason)
-```
-
-For automatic no-op fallback when OTel isn't installed:
-
-```typescript
 import { createTelemetry } from '@edictum/otel'
 
 const telemetry = await createTelemetry()
-// Returns GovernanceTelemetry if @opentelemetry/api is available, NoOpTelemetry otherwise
+const span = telemetry.startToolSpan(envelope)
+// ... run the guard or adapter ...
+telemetry.setSpanOk(span)
 ```
 
-## API
+## What It Adds
 
-- `GovernanceTelemetry` — emits rule-enforcement spans and counters (requires `@opentelemetry/api`)
-- `NoOpTelemetry`, `NoOpSpan` — no-op fallback when OTel isn't installed
-- `createTelemetry()` — async factory with runtime detection
-- `hasOtel()`, `hasOtelAsync()` — check if `@opentelemetry/api` is available
-- `configureOtel(options)` — setup helper for common OTel configurations
+- OTel spans and counters around tool calls and rule evaluation
+- No-op fallback when OTel packages are not installed
+- `configureOtel()` for common exporter setup
+
+## Key Exports
+
+- `createTelemetry`
+- `configureOtel`
+- `hasOtel`
+- `hasOtelAsync`
 
 ## Links
 

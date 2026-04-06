@@ -1,8 +1,8 @@
 # @edictum/vercel-ai
 
-Vercel AI SDK adapter for Edictum rule enforcement.
+Version `0.2.0`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Vercel AI SDK adapter for Edictum. Use the same YAML ruleset you use elsewhere and enforce it through `generateText()` or `streamText()`.
 
 ## Install
 
@@ -13,26 +13,35 @@ pnpm add @edictum/vercel-ai @edictum/core
 ## Usage
 
 ```typescript
+import { generateText } from 'ai'
+import { openai } from '@ai-sdk/openai'
 import { Edictum } from '@edictum/core'
 import { VercelAIAdapter } from '@edictum/vercel-ai'
 
 const guard = Edictum.fromYaml('rules.yaml')
-const adapter = new VercelAIAdapter(guard)
+const adapter = new VercelAIAdapter(guard, {
+  sessionId: 'run-42',
+  parentSessionId: 'agent-root',
+})
 
-const result = await generateText({
-  model: openai('gpt-4o'),
+await generateText({
+  model: openai('gpt-4.1'),
   tools: { myTool },
   ...adapter.asCallbacks(),
 })
 ```
 
-## API
+## Workflow And Lineage
 
-- `VercelAIAdapter` — adapter class
-  - `asCallbacks(options?)` — returns `{ experimental_onToolCallStart, experimental_onToolCallFinish }`
-  - `setPrincipal(principal)` — update principal mid-session
-- `VercelAIAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
-- `AsCallbacksOptions` — `{ onPostconditionWarn }` callback
+- `parentSessionId` keeps lineage when one agent run starts another
+- If the guard has a `WorkflowRuntime`, the adapter emits workflow stage context and approval state automatically
+- The adapter surface is `asCallbacks()`, which returns `experimental_onToolCallStart` and `experimental_onToolCallFinish`
+
+## Key Exports
+
+- `VercelAIAdapter`
+- `VercelAIAdapterOptions`
+- `AsCallbacksOptions`
 
 ## Links
 

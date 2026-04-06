@@ -1,8 +1,8 @@
 # @edictum/core
 
-Runtime rule enforcement for AI agent tool calls. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml)).
+Version `0.3.2`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Rules engine and workflow runtime for Edictum. Write rules and workflows in YAML. Enforce them at the tool-call boundary.
 
 ## Install
 
@@ -10,36 +10,74 @@ Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enf
 pnpm add @edictum/core
 ```
 
-## Usage
+## Run a ruleset
 
 ```typescript
 import { readFile } from 'node:fs/promises'
 import { Edictum, EdictumDenied } from '@edictum/core'
 
 const guard = Edictum.fromYaml('rules.yaml')
-
 const governedReadFile = (args: Record<string, unknown>) => readFile(args.path as string, 'utf8')
 
 try {
   await guard.run('readFile', { path: '.env' }, governedReadFile)
-} catch (e) {
-  if (e instanceof EdictumDenied) console.log(e.reason)
+} catch (error) {
+  if (error instanceof EdictumDenied) {
+    console.log(error.reason)
+  }
 }
 ```
 
+```yaml
+apiVersion: edictum/v1
+kind: Ruleset
+metadata:
+  name: file-safety
+rules:
+  - id: block-sensitive-reads
+    type: pre
+    tool: readFile
+    when:
+      args.path:
+        contains_any: ['.env', '.pem', 'id_rsa']
+    then:
+      action: block
+      message: 'Blocked sensitive file read: {args.path}'
+```
+
+## Add Workflow Gates
+
+```typescript
+import { readFile } from 'node:fs/promises'
+import { Edictum, WorkflowRuntime, loadWorkflowString } from '@edictum/core'
+
+const workflow = loadWorkflowString(await readFile('workflow.yaml', 'utf8'))
+const workflowRuntime = new WorkflowRuntime(workflow, {
+  execEvaluatorEnabled: true,
+})
+
+const guard = Edictum.fromYaml('rules.yaml', { workflowRuntime })
+```
+
+Workflow Gates use `kind: Workflow` documents with `stages`, `entry`, `exit`, `checks`, and optional `approval`.
+
 ## Key Exports
 
-- `Edictum` — main guard class (`fromYaml`, `fromYamlString`, `run`, `evaluate`)
-- `EdictumDenied`, `EdictumConfigError`, `EdictumToolError` — error types
-- `CheckPipeline` — pipeline implementation used by adapters
-- `Decision` — rule result builder (`pass_()`, `fail(message)`)
-- `Session`, `MemoryBackend` — session tracking and storage
-- `RedactionPolicy` — sensitive field redaction for audit events
-- `CollectingAuditSink`, `StdoutAuditSink`, `FileAuditSink`, `CompositeSink` — audit sinks
-- `createEnvelope`, `ToolCall`, `SideEffect` — tool-call construction and metadata
-- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString` — stateful multi-stage gate evaluation and YAML loaders
-- `composeBundles`, `loadBundle`, `compileContracts` — YAML engine helpers
-- `createViolation`, `buildViolations`, `Violation` — output-check violation helpers
+- `Edictum`, `EdictumDenied`, `EdictumConfigError`, `EdictumToolError`
+- `Decision`, `CheckPipeline`, `run`
+- `Session`, `MemoryBackend`, `LocalApprovalBackend`, `RedactionPolicy`
+- `CollectingAuditSink`, `StdoutAuditSink`, `FileAuditSink`, `CompositeSink`
+- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString`, `WorkflowAction`
+- Workflow definition types: `WorkflowDefinition`, `WorkflowStage`, `WorkflowGate`, `WorkflowCheck`, `WorkflowApproval`, `WorkflowRuntimeOptions`
+- Workflow state types: `WorkflowContext`, `WorkflowEvaluation`, `WorkflowState`, `WorkflowPendingApproval`, `WorkflowRecordedEvidence`, `WorkflowBlockedAction`
+- YAML engine helpers: `fromYaml`, `fromYamlString`, `reload`, `loadBundle`, `loadBundleString`, `composeBundles`
+
+## What Core Includes
+
+- Deterministic ruleset evaluation with pre, post, session, and sandbox rules
+- Workflow Gates with stage state, approvals, and recorded evidence
+- Decision log helpers and redaction support
+- Framework-agnostic tool wrapping through `guard.run()` and `run()`
 
 ## Links
 

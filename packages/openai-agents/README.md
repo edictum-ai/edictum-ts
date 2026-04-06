@@ -1,8 +1,8 @@
 # @edictum/openai-agents
 
-OpenAI Agents SDK adapter for Edictum rule enforcement.
+Version `0.2.0`.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+OpenAI Agents SDK adapter for Edictum. Use native input and output guardrails while keeping the same YAML ruleset you use in other SDKs.
 
 ## Install
 
@@ -17,17 +17,25 @@ import { Edictum } from '@edictum/core'
 import { OpenAIAgentsAdapter } from '@edictum/openai-agents'
 
 const guard = Edictum.fromYaml('rules.yaml')
-const adapter = new OpenAIAgentsAdapter(guard)
+const adapter = new OpenAIAgentsAdapter(guard, {
+  sessionId: 'run-42',
+  parentSessionId: 'agent-root',
+})
+
 const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 ```
 
-## API
+## Notes
 
-- `OpenAIAgentsAdapter` — adapter class
-  - `asGuardrails(options?)` — returns `{ inputGuardrail, outputGuardrail }`
-  - `setPrincipal(principal)` — update principal mid-session
-- `OpenAIAgentsAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
-- `AsGuardrailsOptions` — `{ onPostconditionWarn }` callback
+- `parentSessionId` preserves lineage in emitted decision-log events
+- Workflow context is included automatically when the guard has a `WorkflowRuntime`
+- Native output guardrails can tripwire blocked output, but they do not rewrite tool results
+
+## Key Exports
+
+- `OpenAIAgentsAdapter`
+- `OpenAIAgentsAdapterOptions`
+- `AsGuardrailsOptions`
 
 ## Links
 
