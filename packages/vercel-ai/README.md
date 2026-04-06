@@ -31,7 +31,7 @@ const result = await generateText({
 - `VercelAIAdapter` — adapter class
   - `asCallbacks(options?)` — returns `{ experimental_onToolCallStart, experimental_onToolCallFinish }`
   - `setPrincipal(principal)` — update principal mid-session
-- `VercelAIAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
+- `VercelAIAdapterOptions` — constructor options (`sessionId`, `parentSessionId`, `principal`, `principalResolver`)
 - `AsCallbacksOptions` — `{ onPostconditionWarn }` callback
 
 ## Links
