@@ -45,7 +45,8 @@ stages:
     const mainPush = makeCall('Bash', { command: 'git push origin main' })
     decision = await runtime.evaluate(session, mainPush)
     expect(decision.action).toBe('block')
-    expect(decision.reason).toBe('Push to a branch, not main')
+    expect(decision.stageId).toBe('local-verify')
+    expect(decision.reason).toBe('Only node --version is allowed')
   })
 
   test('exec requires explicit opt-in', () => {

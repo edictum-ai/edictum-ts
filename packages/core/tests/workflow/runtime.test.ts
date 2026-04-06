@@ -208,6 +208,38 @@ stages:
     expect(decision.reason).toBe('Push to a branch, not main')
   })
 
+  test('current-stage check failure blocks before auto-advancing to the next stage', async () => {
+    const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: no-exit-check-blocks
+stages:
+  - id: implement
+    tools: [Read, Grep, Glob, Edit, Write, Bash]
+    checks:
+      - command_not_matches: 'git\\s+push\\b'
+        message: Push belongs in ship stage
+  - id: ship
+    entry:
+      - condition: stage_complete("implement")
+    tools: [Read, Grep, Bash]
+`)
+    const session = makeWorkflowSession('wf-no-exit-check-blocks')
+
+    const decision = await runtime.evaluate(
+      session,
+      makeCall('Bash', { command: 'git push origin HEAD' }),
+    )
+    expect(decision.action).toBe('block')
+    expect(decision.stageId).toBe('implement')
+    expect(decision.reason).toBe('Push belongs in ship stage')
+
+    const state = await runtime.state(session)
+    expect(state.activeStage).toBe('implement')
+    expect(state.completedStages).toEqual([])
+    expect(state.blockedReason).toBe('Push belongs in ship stage')
+  })
+
   describe('security', () => {
     test('rejects corrupted persisted workflow state', async () => {
       const runtime = makeWorkflowRuntime(`apiVersion: edictum/v1

@@ -52,6 +52,16 @@ export async function evaluateWorkflowRuntime(
       }
     }
 
+    if (currentStage.invalidEvaluation != null && currentStage.invalidKind === 'check') {
+      if (changed) {
+        await saveWorkflowState(session, runtime.definition, state)
+      }
+      return {
+        ...currentStage.invalidEvaluation,
+        events: [...currentStage.invalidEvaluation.events, ...events],
+      }
+    }
+
     const nextIndex = getNextWorkflowStageIndex(runtime.definition, stage.id)
     const hasNext = nextIndex != null
     if (currentStage.invalidEvaluation != null && !hasNext) {
@@ -60,9 +70,6 @@ export async function evaluateWorkflowRuntime(
 
     const completion = await evaluateWorkflowCompletion(runtime, stage, state, envelope, hasNext)
     if (!completion.completed) {
-      if (currentStage.invalidEvaluation != null && currentStage.invalidKind === 'check') {
-        return currentStage.invalidEvaluation
-      }
       if (
         completion.evaluation.action !== WorkflowAction.ALLOW ||
         completion.evaluation.reason !== ''
