@@ -91,6 +91,10 @@ jobs:
               exit_code=$?
               if echo "$output" | grep -qE "EPUBLISHCONFLICT|E409|already exists|cannot publish over"; then
                 echo "Skipped @edictum/$pkg (already published)"
+              elif echo "$output" | grep -q 'Cannot implicitly apply the "latest" tag because previously published version'; then
+                tag=$(node -p 'const pkg = require("./package.json"); const [major, minor] = pkg.version.split("."); `${major}.${minor}`')
+                echo "Retrying @edictum/$pkg with dist-tag $tag..."
+                npm publish --access public --provenance --tag "$tag"
               else
                 echo "$output" >&2
                 exit $exit_code
