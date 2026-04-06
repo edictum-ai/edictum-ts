@@ -20,6 +20,8 @@ import { evaluateCurrentWorkflowStage } from './runtime-stage.js'
 import { loadWorkflowState, saveWorkflowState } from './state.js'
 import { workflowGateRecord } from './evaluator.js'
 
+type WorkflowEnvelopeContinuation = 'boundary' | 'handled' | 'none'
+
 export async function evaluateWorkflowRuntime(
   runtime: WorkflowRuntime,
   session: Session,
@@ -191,5 +193,81 @@ async function evaluateWorkflowCompletion(
     return { evaluation: entryResult.evaluation, completed: false }
   }
 
+  if (stage.exit.length === 0 && stage.approval == null) {
+    const continuation = await detectWorkflowEnvelopeContinuation(
+      runtime,
+      nextState,
+      nextStageIndex,
+      envelope,
+    )
+    if (continuation === 'none') {
+      return { evaluation: createWorkflowEvaluation(), completed: false }
+    }
+  }
+
   return { evaluation: createWorkflowEvaluation(), completed: true }
+}
+
+async function detectWorkflowEnvelopeContinuation(
+  runtime: WorkflowRuntime,
+  state: WorkflowState,
+  stageIndex: number,
+  envelope: ToolEnvelope,
+): Promise<WorkflowEnvelopeContinuation> {
+  const stage = runtime.definition.stages[stageIndex]
+  if (stage == null) {
+    throw new Error(`workflow: stage at index ${stageIndex} not found`)
+  }
+
+  const currentStage = evaluateCurrentWorkflowStage(runtime, stage, envelope)
+  if (currentStage.allowed || currentStage.invalidKind === 'check') {
+    return 'handled'
+  }
+
+  const nextIndex = getNextWorkflowStageIndex(runtime.definition, stage.id)
+  if (nextIndex == null) {
+    if (stage.exit.length > 0) {
+      const exitResult = await runtime.evaluateWorkflowGates(stage, state, envelope, stage.exit)
+      if (!exitResult.blocked) {
+        return 'handled'
+      }
+    }
+    if (stage.approval != null || (stage.tools.length === 0 && stage.checks.length === 0)) {
+      return 'boundary'
+    }
+    return 'none'
+  }
+
+  const nextStage = runtime.definition.stages[nextIndex]
+  if (nextStage == null) {
+    throw new Error(`workflow: next stage after ${JSON.stringify(stage.id)} not found`)
+  }
+
+  const nextState: WorkflowState = {
+    ...state,
+    completedStages: workflowStateCompletedStage(state, stage.id)
+      ? [...state.completedStages]
+      : [...state.completedStages, stage.id],
+  }
+  const entryResult = await runtime.evaluateWorkflowGates(
+    nextStage,
+    nextState,
+    envelope,
+    nextStage.entry,
+  )
+  if (entryResult.blocked) {
+    return 'none'
+  }
+
+  const continuation = await detectWorkflowEnvelopeContinuation(
+    runtime,
+    nextState,
+    nextIndex,
+    envelope,
+  )
+  if (stage.approval != null || stage.exit.length > 0) {
+    return continuation
+  }
+
+  return continuation === 'handled' ? 'handled' : 'none'
 }

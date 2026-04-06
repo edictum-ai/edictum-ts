@@ -29,12 +29,13 @@ export interface WorkflowAdapterFixture {
 
 export interface WorkflowAdapterFixtureStep {
   id: string
-  call: {
+  call?: {
     tool: string
     args: Record<string, unknown>
   }
+  set_stage_to?: string
   approval_outcomes?: Array<'approved' | 'rejected'>
-  execution: 'success' | 'error' | 'not_run'
+  execution?: 'success' | 'error' | 'not_run'
   expect: Record<string, unknown>
 }
 

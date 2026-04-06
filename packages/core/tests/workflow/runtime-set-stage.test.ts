@@ -23,6 +23,26 @@ stages:
 `)
 }
 
+function makeSetStageApprovalRuntime() {
+  return makeWorkflowRuntime(`apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: ${WORKFLOW_NAME}-approval
+stages:
+  - id: plan
+    tools: [Read]
+  - id: review
+    entry:
+      - condition: stage_complete("plan")
+    approval:
+      message: Approval required before release
+  - id: ship
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+`)
+}
+
 async function persistWorkflowState(
   session: Session,
   state: Record<string, unknown>,
@@ -145,6 +165,36 @@ describe('WorkflowRuntime.setStage', () => {
           completedStages: ['plan'],
           blockedReason: null,
           pendingApproval: { required: false },
+        },
+      },
+    ])
+  })
+
+  test('hydrates pending approval immediately when moved into an approval stage', async () => {
+    const runtime = makeSetStageApprovalRuntime()
+    const session = makeWorkflowSession('wf-set-stage-approval-hydration')
+
+    const events = await runtime.setStage(session, 'review')
+    const state = await runtime.state(session)
+
+    expect(state.pendingApproval).toEqual({
+      required: true,
+      stageId: 'review',
+      message: 'Approval required before release',
+    })
+    expect(events).toEqual([
+      {
+        action: AuditAction.WORKFLOW_STATE_UPDATED,
+        workflow: {
+          name: `${WORKFLOW_NAME}-approval`,
+          activeStage: 'review',
+          completedStages: ['plan'],
+          blockedReason: null,
+          pendingApproval: {
+            required: true,
+            stageId: 'review',
+            message: 'Approval required before release',
+          },
         },
       },
     ])
