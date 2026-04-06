@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Fix workflow evaluation so a failed current-stage command check blocks immediately instead of auto-advancing into a downstream stage where the command may be allowed.
+
 ## 0.4.1
 
 - Fix workflow stage moves so `setStage()` hydrates pending approvals for approval stages and terminal stages without explicit exits do not auto-advance incorrectly.
