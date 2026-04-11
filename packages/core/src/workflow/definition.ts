@@ -128,6 +128,12 @@ function validateWorkflowStage(stage: WorkflowStage, isNonTerminal: boolean): Wo
 
   const checks = stage.checks.map((check) => validateWorkflowCheck(stage.id, check))
 
+  if (stage.terminal && isNonTerminal) {
+    throw new EdictumConfigError(
+      `workflow: stage ${JSON.stringify(stage.id)} is marked terminal but is not the last stage`,
+    )
+  }
+
   if (
     isNonTerminal &&
     !stage.terminal &&

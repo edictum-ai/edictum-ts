@@ -132,13 +132,13 @@ export class WorkflowRuntime {
       const clearedToolPatterns = this.definition.stages
         .slice(index)
         .flatMap((stage) => stage.tools)
-      state.evidence.mcpResults = Object.fromEntries(
-        Object.entries(state.evidence.mcpResults).filter(
-          ([toolName]) =>
-            clearedToolPatterns.length > 0 &&
-            !clearedToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
-        ),
-      )
+      if (clearedToolPatterns.length > 0) {
+        state.evidence.mcpResults = Object.fromEntries(
+          Object.entries(state.evidence.mcpResults).filter(
+            ([toolName]) => !clearedToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
+          ),
+        )
+      }
       if (index === 0) {
         state.evidence.reads = []
         state.evidence.mcpResults = {}
