@@ -1,12 +1,13 @@
+import { fnmatch } from '../fnmatch.js'
 import type { ToolEnvelope } from '../envelope.js'
 import { getWorkflowStageIndex, type WorkflowDefinition, type WorkflowStage } from './definition.js'
 import { createWorkflowEvaluation, type WorkflowAction, type WorkflowEvaluation } from './result.js'
 
 export function workflowToolAllowed(stage: WorkflowStage, envelope: ToolEnvelope): boolean {
   if (stage.tools.length === 0) {
-    return true
+    return !stage.terminal
   }
-  return stage.tools.includes(envelope.toolName)
+  return stage.tools.some((pattern) => fnmatch(envelope.toolName, pattern))
 }
 
 export function isWorkflowBoundaryOnlyStage(stage: WorkflowStage): boolean {

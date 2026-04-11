@@ -21,6 +21,10 @@ export async function advanceWorkflowAfterSuccess(
     throw new Error(`workflow: active stage ${JSON.stringify(stageId)} not found`)
   }
 
+  if (stage.terminal) {
+    return []
+  }
+
   if (getNextWorkflowStageIndex(runtime.definition, stage.id) != null) {
     return []
   }

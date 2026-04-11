@@ -13,10 +13,12 @@ import {
   usesExecCondition,
   workflowGateRecord,
 } from './evaluator.js'
+import { fnmatch } from '../fnmatch.js'
 import { approvalEvaluator } from './evaluator-approval.js'
 import { commandEvaluator } from './evaluator-command.js'
 import { createExecEvaluator } from './evaluator-exec.js'
 import { fileReadEvaluator } from './evaluator-file.js'
+import { mcpResultMatchesEvaluator } from './evaluator-mcp.js'
 import { stageCompleteEvaluator } from './evaluator-stage.js'
 import {
   createWorkflowEvaluation,
@@ -74,6 +76,7 @@ export class WorkflowRuntime {
       approval: approvalEvaluator,
       command_matches: commandEvaluator,
       command_not_matches: commandEvaluator,
+      mcp_result_matches: mcpResultMatchesEvaluator,
       ...(options.execEvaluatorEnabled
         ? {
             exec: createExecEvaluator({
@@ -126,8 +129,19 @@ export class WorkflowRuntime {
           ([key]) => !clearedApprovalStageIds.has(key),
         ),
       )
+      const clearedToolPatterns = this.definition.stages
+        .slice(index)
+        .flatMap((stage) => stage.tools)
+      if (clearedToolPatterns.length > 0) {
+        state.evidence.mcpResults = Object.fromEntries(
+          Object.entries(state.evidence.mcpResults).filter(
+            ([toolName]) => !clearedToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
+          ),
+        )
+      }
       if (index === 0) {
         state.evidence.reads = []
+        state.evidence.mcpResults = {}
       }
       hydrateActiveWorkflowRuntimeStatus(this.definition, state)
       await saveWorkflowState(session, this.definition, state)
@@ -169,6 +183,7 @@ export class WorkflowRuntime {
     session: Session,
     stageId: string,
     envelope: ToolEnvelope,
+    mcpResult?: Record<string, unknown>,
   ): Promise<Record<string, unknown>[]> {
     if (stageId === '') {
       return []
@@ -176,7 +191,7 @@ export class WorkflowRuntime {
 
     return await this.withLock(async () => {
       const state = await loadWorkflowState(session, this.definition)
-      recordWorkflowResult(state, stageId, envelope)
+      recordWorkflowResult(state, stageId, envelope, mcpResult)
       const events = await advanceWorkflowAfterSuccess(this, state, stageId, envelope)
       await saveWorkflowState(session, this.definition, state)
       return hydrateWorkflowEvents(this.definition, state, events)

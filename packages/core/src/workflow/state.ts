@@ -9,6 +9,7 @@ import {
   type WorkflowRecordedEvidence,
 } from './context.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
+import { fnmatch } from '../fnmatch.js'
 import {
   ensureWorkflowState,
   type MutableWorkflowState,
@@ -24,6 +25,7 @@ import {
 
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
+const MAX_MCP_RESULT_KEYS = 100
 const MAX_WORKFLOW_ACTION_SUMMARY_LENGTH = 4_096
 
 export function workflowStateKey(name: string): string {
@@ -48,7 +50,7 @@ export async function loadWorkflowState(
       activeStage: definition.stages[0]?.id ?? '',
       completedStages: [],
       approvals: {},
-      evidence: { reads: [], stageCalls: {} },
+      evidence: { reads: [], stageCalls: {}, mcpResults: {} },
       blockedReason: null,
       pendingApproval: defaultWorkflowPendingApproval(),
       lastBlockedAction: null,
@@ -64,6 +66,17 @@ export async function loadWorkflowState(
     Object.entries(state.evidence.stageCalls)
       .filter(([stageId]) => validStageIds.has(stageId))
       .map(([stageId, calls]) => [stageId, capStringArray(calls, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
+  )
+  const allStageToolPatterns = definition.stages.flatMap((stage) => stage.tools)
+  state.evidence.mcpResults = Object.fromEntries(
+    Object.entries(state.evidence.mcpResults)
+      .filter(
+        ([toolName]) =>
+          allStageToolPatterns.length === 0 ||
+          allStageToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
+      )
+      .slice(0, MAX_MCP_RESULT_KEYS)
+      .map(([toolName, results]) => [toolName, results.slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
   )
   if (state.activeStage !== '' && getWorkflowStageById(definition, state.activeStage) == null) {
     throw new Error(
@@ -91,6 +104,7 @@ export async function saveWorkflowState(
       evidence: {
         reads: state.evidence.reads,
         stageCalls: state.evidence.stageCalls,
+        mcpResults: state.evidence.mcpResults,
       },
       blockedReason: state.blockedReason,
       pendingApproval: state.pendingApproval,
@@ -111,8 +125,17 @@ export function recordWorkflowResult(
   state: MutableWorkflowState,
   stageId: string,
   envelope: ToolEnvelope,
+  mcpResult?: Record<string, unknown>,
 ): void {
   ensureWorkflowState(state)
+  if (mcpResult != null) {
+    const existing = state.evidence.mcpResults[envelope.toolName] ?? []
+    state.evidence.mcpResults[envelope.toolName] = appendDictCapped(
+      existing,
+      structuredClone(mcpResult),
+      MAX_WORKFLOW_EVIDENCE_ITEMS,
+    )
+  }
   switch (envelope.toolName) {
     case 'Read': {
       if (envelope.filePath) {
@@ -306,6 +329,17 @@ function appendCapped(items: string[], item: string, limit: number): string[] {
   return [...items, item]
 }
 
+function appendDictCapped(
+  items: Record<string, unknown>[],
+  item: Record<string, unknown>,
+  limit: number,
+): Record<string, unknown>[] {
+  if (items.length >= limit) {
+    return items
+  }
+  return [...items, item]
+}
+
 function parseWorkflowState(raw: string): MutableWorkflowState {
   let parsed: unknown
   try {
@@ -322,6 +356,10 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
     string,
     unknown
   >
+  const mcpResults = (evidence?.mcpResults ?? evidence?.mcp_results ?? {}) as Record<
+    string,
+    unknown
+  >
 
   return {
     sessionId: normalizeString(value.sessionId ?? value.session_id),
@@ -331,6 +369,7 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
     evidence: {
       reads: normalizeStringArray(evidence?.reads),
       stageCalls: normalizeStringArrayMap(stageCalls),
+      mcpResults: normalizeMcpResults(mcpResults),
     },
     blockedReason: normalizeOptionalString(value.blockedReason ?? value.blocked_reason),
     pendingApproval: normalizeWorkflowPendingApproval(
@@ -481,6 +520,22 @@ function normalizeStringArrayMap(value: unknown): Record<string, string[]> {
   const result: Record<string, string[]> = {}
   for (const [key, item] of Object.entries(value)) {
     result[key] = normalizeStringArray(item)
+  }
+  return result
+}
+
+function normalizeMcpResults(value: unknown): Record<string, Record<string, unknown>[]> {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return {}
+  }
+  const result: Record<string, Record<string, unknown>[]> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(item)) {
+      result[key] = item
+        .filter((entry) => typeof entry === 'object' && entry != null && !Array.isArray(entry))
+        .map((entry) => structuredClone(entry) as Record<string, unknown>)
+        .slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)
+    }
   }
   return result
 }

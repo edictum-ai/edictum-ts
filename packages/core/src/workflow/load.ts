@@ -83,7 +83,7 @@ function normalizeWorkflowStage(value: unknown, label: string): WorkflowStage {
   const stage = expectMapping(value, label)
   assertAllowedKeys(
     stage,
-    ['id', 'description', 'entry', 'tools', 'checks', 'exit', 'approval'],
+    ['id', 'description', 'entry', 'tools', 'checks', 'exit', 'approval', 'terminal'],
     label,
   )
 
@@ -103,6 +103,7 @@ function normalizeWorkflowStage(value: unknown, label: string): WorkflowStage {
       normalizeWorkflowGate(gate, `${label}.exit[${index}]`),
     ),
     approval: stage.approval == null ? null : normalizeWorkflowApproval(stage.approval, label),
+    terminal: expectOptionalBoolean(stage.terminal, `${label}.terminal`) ?? false,
   }
 }
 
@@ -175,6 +176,16 @@ function expectOptionalString(value: unknown, label: string): string | undefined
     return undefined
   }
   return expectString(value, label)
+}
+
+function expectOptionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value == null) {
+    return undefined
+  }
+  if (typeof value !== 'boolean') {
+    throw new EdictumConfigError(`workflow: parse error: ${label} must be a boolean`)
+  }
+  return value
 }
 
 function assertAllowedKeys(
