@@ -144,6 +144,7 @@ export {
   compileContracts,
   loadBundle,
   loadBundleString,
+  resolveRulesetExtends,
   computeHash,
   MAX_BUNDLE_SIZE,
   composeBundles,

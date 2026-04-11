@@ -110,6 +110,68 @@ export function loadBundle(source: string): [Record<string, unknown>, BundleHash
   return [data, bundleHash]
 }
 
+// ---------------------------------------------------------------------------
+// Ruleset extends: inheritance
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge a parent bundle into a child bundle.
+ * Parent rules come first; child metadata and defaults take precedence.
+ */
+function mergeParentBundle(
+  parent: Record<string, unknown>,
+  child: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...parent }
+  const parentRules = Array.isArray(parent.rules) ? parent.rules : []
+  const childRules = Array.isArray(child.rules) ? child.rules : []
+  merged.rules = [...parentRules, ...childRules]
+  if (child.defaults != null) {
+    merged.defaults = child.defaults
+  }
+  if (child.metadata != null) {
+    merged.metadata = child.metadata
+  }
+  delete merged.extends
+  return merged
+}
+
+/**
+ * Resolve the `extends:` inheritance chain for a named ruleset in a registry.
+ *
+ * Merges parent rules (recursively) before the child's rules.
+ * Throws {@link EdictumConfigError} on missing parents or circular references.
+ *
+ * @param rulesets - Registry of named ruleset dicts (parsed YAML, not yet validated).
+ * @param name     - Name of the ruleset to resolve.
+ */
+export function resolveRulesetExtends(
+  rulesets: Record<string, Record<string, unknown>>,
+  name: string,
+): Record<string, unknown> {
+  const seen = new Set<string>()
+
+  function resolve(n: string): Record<string, unknown> {
+    if (seen.has(n)) {
+      throw new EdictumConfigError(`extends: circular reference detected at '${n}'`)
+    }
+    if (!(n in rulesets)) {
+      throw new EdictumConfigError(`extends: parent ruleset '${n}' not found`)
+    }
+    seen.add(n)
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by `n in rulesets` above
+    const bundle = rulesets[n]!
+    const parentName = bundle.extends
+    if (!parentName) {
+      return { ...bundle }
+    }
+    const parent = resolve(String(parentName))
+    return mergeParentBundle(parent, bundle)
+  }
+
+  return resolve(name)
+}
+
 /**
  * Load and validate a YAML rule bundle from a string or bytes.
  *

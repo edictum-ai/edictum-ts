@@ -48,7 +48,7 @@ export async function loadWorkflowState(
       activeStage: definition.stages[0]?.id ?? '',
       completedStages: [],
       approvals: {},
-      evidence: { reads: [], stageCalls: {} },
+      evidence: { reads: [], stageCalls: {}, mcpResults: {} },
       blockedReason: null,
       pendingApproval: defaultWorkflowPendingApproval(),
       lastBlockedAction: null,
@@ -91,6 +91,7 @@ export async function saveWorkflowState(
       evidence: {
         reads: state.evidence.reads,
         stageCalls: state.evidence.stageCalls,
+        mcpResults: state.evidence.mcpResults,
       },
       blockedReason: state.blockedReason,
       pendingApproval: state.pendingApproval,
@@ -111,8 +112,17 @@ export function recordWorkflowResult(
   state: MutableWorkflowState,
   stageId: string,
   envelope: ToolEnvelope,
+  mcpResult?: Record<string, unknown>,
 ): void {
   ensureWorkflowState(state)
+  if (mcpResult != null) {
+    const existing = state.evidence.mcpResults[envelope.toolName] ?? []
+    state.evidence.mcpResults[envelope.toolName] = appendDictCapped(
+      existing,
+      { ...mcpResult },
+      MAX_WORKFLOW_EVIDENCE_ITEMS,
+    )
+  }
   switch (envelope.toolName) {
     case 'Read': {
       if (envelope.filePath) {
@@ -306,6 +316,17 @@ function appendCapped(items: string[], item: string, limit: number): string[] {
   return [...items, item]
 }
 
+function appendDictCapped(
+  items: Record<string, unknown>[],
+  item: Record<string, unknown>,
+  limit: number,
+): Record<string, unknown>[] {
+  if (items.length >= limit) {
+    return items
+  }
+  return [...items, item]
+}
+
 function parseWorkflowState(raw: string): MutableWorkflowState {
   let parsed: unknown
   try {
@@ -322,6 +343,10 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
     string,
     unknown
   >
+  const mcpResults = (evidence?.mcpResults ?? evidence?.mcp_results ?? {}) as Record<
+    string,
+    unknown
+  >
 
   return {
     sessionId: normalizeString(value.sessionId ?? value.session_id),
@@ -331,6 +356,7 @@ function parseWorkflowState(raw: string): MutableWorkflowState {
     evidence: {
       reads: normalizeStringArray(evidence?.reads),
       stageCalls: normalizeStringArrayMap(stageCalls),
+      mcpResults: normalizeMcpResults(mcpResults),
     },
     blockedReason: normalizeOptionalString(value.blockedReason ?? value.blocked_reason),
     pendingApproval: normalizeWorkflowPendingApproval(
@@ -481,6 +507,21 @@ function normalizeStringArrayMap(value: unknown): Record<string, string[]> {
   const result: Record<string, string[]> = {}
   for (const [key, item] of Object.entries(value)) {
     result[key] = normalizeStringArray(item)
+  }
+  return result
+}
+
+function normalizeMcpResults(value: unknown): Record<string, Record<string, unknown>[]> {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    return {}
+  }
+  const result: Record<string, Record<string, unknown>[]> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(item)) {
+      result[key] = item
+        .filter((entry) => typeof entry === 'object' && entry != null && !Array.isArray(entry))
+        .map((entry) => ({ ...(entry as Record<string, unknown>) }))
+    }
   }
   return result
 }

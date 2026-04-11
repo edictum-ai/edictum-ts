@@ -39,6 +39,7 @@ export interface WorkflowState {
 export interface WorkflowEvidence {
   readonly reads: readonly string[]
   readonly stageCalls: Readonly<Record<string, readonly string[]>>
+  readonly mcpResults: Readonly<Record<string, readonly Record<string, unknown>[]>>
 }
 
 export interface MutableWorkflowState {
@@ -56,6 +57,7 @@ export interface MutableWorkflowState {
 export interface MutableWorkflowEvidence {
   reads: string[]
   stageCalls: Record<string, string[]>
+  mcpResults: Record<string, Record<string, unknown>[]>
 }
 
 export function createWorkflowEvaluation(
@@ -81,9 +83,10 @@ export function ensureWorkflowState(state: Partial<MutableWorkflowState>): Mutab
   normalized.activeStage ??= ''
   normalized.completedStages ??= []
   normalized.approvals ??= {}
-  const evidence = (normalized.evidence ??= { reads: [], stageCalls: {} })
+  const evidence = (normalized.evidence ??= { reads: [], stageCalls: {}, mcpResults: {} })
   evidence.reads ??= []
   evidence.stageCalls ??= {}
+  evidence.mcpResults ??= {}
   normalized.blockedReason ??= null
   normalized.pendingApproval ??= defaultWorkflowPendingApproval()
   if (typeof normalized.pendingApproval.required !== 'boolean') {
@@ -106,6 +109,12 @@ export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState
         Object.entries(state.evidence.stageCalls).map(([stageId, commands]) => [
           stageId,
           [...commands],
+        ]),
+      ),
+      mcpResults: Object.fromEntries(
+        Object.entries(state.evidence.mcpResults).map(([tool, results]) => [
+          tool,
+          results.map((r) => ({ ...r })),
         ]),
       ),
     },

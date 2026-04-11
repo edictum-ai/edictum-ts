@@ -37,28 +37,31 @@ export interface ParsedCondition {
     | 'command_matches'
     | 'command_not_matches'
     | 'exec'
+    | 'mcp_result_matches'
   readonly arg: string
   readonly exitCode: number
   readonly regex: RegExp | null
   readonly condition: string
+  readonly extra: readonly string[]
 }
 
 const singleStringArgRe = /^([a-z_]+)\("((?:[^"\\]|\\.)*)"\)$/
 const optionalArgRe = /^approval\((?:"((?:[^"\\]|\\.)*)")?\)$/
 const execConditionRe = /^exec\("((?:[^"\\]|\\.)*)"(?:,\s*exit_code=(\d+))?\)$/
+const mcpResultMatchesRe = /^mcp_result_matches\("([^"\\]+)",\s*"([^"\\]+)",\s*"([^"\\]+)"\)$/
 
 export function parseCondition(raw: string): ParsedCondition {
   if (raw.startsWith('stage_complete(')) {
     const arg = parseSingleStringArg(raw, 'stage_complete')
-    return { kind: 'stage_complete', arg, exitCode: 0, regex: null, condition: raw }
+    return { kind: 'stage_complete', arg, exitCode: 0, regex: null, condition: raw, extra: [] }
   }
   if (raw.startsWith('file_read(')) {
     const arg = parseSingleStringArg(raw, 'file_read')
-    return { kind: 'file_read', arg, exitCode: 0, regex: null, condition: raw }
+    return { kind: 'file_read', arg, exitCode: 0, regex: null, condition: raw, extra: [] }
   }
   if (raw.startsWith('approval(')) {
     const arg = parseOptionalStringArg(raw, 'approval')
-    return { kind: 'approval', arg, exitCode: 0, regex: null, condition: raw }
+    return { kind: 'approval', arg, exitCode: 0, regex: null, condition: raw, extra: [] }
   }
   if (raw.startsWith('command_matches(')) {
     const arg = parseSingleStringArg(raw, 'command_matches')
@@ -68,6 +71,7 @@ export function parseCondition(raw: string): ParsedCondition {
       exitCode: 0,
       regex: compileWorkflowRegex(arg, raw),
       condition: raw,
+      extra: [],
     }
   }
   if (raw.startsWith('command_not_matches(')) {
@@ -78,6 +82,7 @@ export function parseCondition(raw: string): ParsedCondition {
       exitCode: 0,
       regex: compileWorkflowRegex(arg, raw),
       condition: raw,
+      extra: [],
     }
   }
   if (raw.startsWith('exec(')) {
@@ -93,6 +98,26 @@ export function parseCondition(raw: string): ParsedCondition {
       exitCode,
       regex: null,
       condition: raw,
+      extra: [],
+    }
+  }
+  if (raw.startsWith('mcp_result_matches(')) {
+    const match = mcpResultMatchesRe.exec(raw)
+    if (match == null) {
+      throw new EdictumConfigError(
+        `workflow: unsupported mcp_result_matches condition ${JSON.stringify(raw)}`,
+      )
+    }
+    const tool = match[1] ?? ''
+    const fieldName = match[2] ?? ''
+    const value = match[3] ?? ''
+    return {
+      kind: 'mcp_result_matches',
+      arg: tool,
+      exitCode: 0,
+      regex: null,
+      condition: raw,
+      extra: [tool, fieldName, value],
     }
   }
 

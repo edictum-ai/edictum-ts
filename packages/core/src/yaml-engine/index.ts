@@ -40,6 +40,7 @@ export { compilePre, compilePost, compileSession, mergeSessionLimits } from './c
 export {
   loadBundle,
   loadBundleString,
+  resolveRulesetExtends,
   computeHash,
   MAX_BUNDLE_SIZE,
   validateSchema,

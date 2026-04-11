@@ -27,6 +27,7 @@ export interface WorkflowStage {
   readonly checks: WorkflowCheck[]
   readonly exit: WorkflowGate[]
   readonly approval: WorkflowApproval | null
+  readonly terminal: boolean
 }
 
 export interface WorkflowGate {
@@ -129,6 +130,7 @@ function validateWorkflowStage(stage: WorkflowStage, isNonTerminal: boolean): Wo
 
   if (
     isNonTerminal &&
+    !stage.terminal &&
     stage.tools.length === 0 &&
     checks.length === 0 &&
     stage.exit.length === 0 &&
@@ -147,6 +149,7 @@ function validateWorkflowStage(stage: WorkflowStage, isNonTerminal: boolean): Wo
 
   return {
     ...stage,
+    terminal: stage.terminal ?? false,
     checks,
   }
 }
