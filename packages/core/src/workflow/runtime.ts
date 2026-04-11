@@ -13,6 +13,7 @@ import {
   usesExecCondition,
   workflowGateRecord,
 } from './evaluator.js'
+import { fnmatch } from '../fnmatch.js'
 import { approvalEvaluator } from './evaluator-approval.js'
 import { commandEvaluator } from './evaluator-command.js'
 import { createExecEvaluator } from './evaluator-exec.js'
@@ -128,8 +129,19 @@ export class WorkflowRuntime {
           ([key]) => !clearedApprovalStageIds.has(key),
         ),
       )
+      const clearedToolPatterns = this.definition.stages
+        .slice(index)
+        .flatMap((stage) => stage.tools)
+      state.evidence.mcpResults = Object.fromEntries(
+        Object.entries(state.evidence.mcpResults).filter(
+          ([toolName]) =>
+            clearedToolPatterns.length > 0 &&
+            !clearedToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
+        ),
+      )
       if (index === 0) {
         state.evidence.reads = []
+        state.evidence.mcpResults = {}
       }
       hydrateActiveWorkflowRuntimeStatus(this.definition, state)
       await saveWorkflowState(session, this.definition, state)

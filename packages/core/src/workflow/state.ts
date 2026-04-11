@@ -73,7 +73,7 @@ export async function loadWorkflowState(
       .filter(
         ([toolName]) =>
           allStageToolPatterns.length === 0 ||
-          allStageToolPatterns.some((pattern) => fnmatch(pattern, toolName)),
+          allStageToolPatterns.some((pattern) => fnmatch(toolName, pattern)),
       )
       .slice(0, MAX_MCP_RESULT_KEYS)
       .map(([toolName, results]) => [toolName, results.slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
