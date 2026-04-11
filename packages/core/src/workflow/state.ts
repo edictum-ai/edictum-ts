@@ -9,6 +9,7 @@ import {
   type WorkflowRecordedEvidence,
 } from './context.js'
 import { getWorkflowStageById, type WorkflowDefinition } from './definition.js'
+import { fnmatch } from '../fnmatch.js'
 import {
   ensureWorkflowState,
   type MutableWorkflowState,
@@ -64,6 +65,16 @@ export async function loadWorkflowState(
     Object.entries(state.evidence.stageCalls)
       .filter(([stageId]) => validStageIds.has(stageId))
       .map(([stageId, calls]) => [stageId, capStringArray(calls, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
+  )
+  const allStageToolPatterns = definition.stages.flatMap((stage) => stage.tools)
+  state.evidence.mcpResults = Object.fromEntries(
+    Object.entries(state.evidence.mcpResults)
+      .filter(
+        ([toolName]) =>
+          allStageToolPatterns.length === 0 ||
+          allStageToolPatterns.some((pattern) => fnmatch(pattern, toolName)),
+      )
+      .map(([toolName, results]) => [toolName, results.slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
   )
   if (state.activeStage !== '' && getWorkflowStageById(definition, state.activeStage) == null) {
     throw new Error(

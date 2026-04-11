@@ -149,6 +149,9 @@ async function runWorkflowFixture(
     const envelope = createEnvelope(tool, args)
     const evaluation = await runtime.evaluate(session, envelope)
 
+    // Fixture format uses 'deny' as the blocked-decision string (cross-SDK convention from
+    // edictum-schemas). This repo uses WorkflowAction.BLOCK ('block') internally; the mapping
+    // here is intentional so that shared fixtures validate correctly across all SDKs.
     const actualDecision = evaluation.action === 'block' ? 'deny' : evaluation.action
     expect(actualDecision, `step ${stepId}: decision`).toBe(expect_.decision)
 
