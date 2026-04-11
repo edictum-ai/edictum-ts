@@ -52,7 +52,10 @@ function loadSuite(filename: string): Record<string, unknown> | null {
   if (!v018Dir) return null
   const path = join(v018Dir, filename)
   if (!existsSync(path)) return null
-  return yaml.load(readFileSync(path, 'utf-8')) as Record<string, unknown>
+  return yaml.load(readFileSync(path, 'utf-8'), { schema: yaml.CORE_SCHEMA }) as Record<
+    string,
+    unknown
+  >
 }
 
 // ---------------------------------------------------------------------------

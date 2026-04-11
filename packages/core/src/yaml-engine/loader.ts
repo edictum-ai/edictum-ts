@@ -155,11 +155,11 @@ export function resolveRulesetExtends(
     if (seen.has(n)) {
       throw new EdictumConfigError(`extends: circular reference detected at '${n}'`)
     }
-    if (!(n in rulesets)) {
+    if (!Object.prototype.hasOwnProperty.call(rulesets, n)) {
       throw new EdictumConfigError(`extends: parent ruleset '${n}' not found`)
     }
     seen.add(n)
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by `n in rulesets` above
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by hasOwnProperty above
     const bundle = rulesets[n]!
     const parentName = bundle.extends
     if (!parentName) {
