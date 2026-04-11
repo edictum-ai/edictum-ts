@@ -132,7 +132,7 @@ export function recordWorkflowResult(
     const existing = state.evidence.mcpResults[envelope.toolName] ?? []
     state.evidence.mcpResults[envelope.toolName] = appendDictCapped(
       existing,
-      { ...mcpResult },
+      structuredClone(mcpResult),
       MAX_WORKFLOW_EVIDENCE_ITEMS,
     )
   }

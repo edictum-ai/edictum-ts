@@ -225,11 +225,11 @@ async function runExtendsFixture(
   fixture: Record<string, unknown>,
 ): Promise<void> {
   const rulesets = (suite.rulesets ?? {}) as Record<string, Record<string, unknown>>
-  const contractRef = String(fixture.contract)
+  const rulesetRef = String(fixture.contract)
   const envelopeData = fixture.envelope as Record<string, unknown>
   const expected = fixture.expected as Record<string, unknown>
 
-  const merged = resolveRulesetExtends(rulesets, contractRef)
+  const merged = resolveRulesetExtends(rulesets, rulesetRef)
   const mergedYaml = yaml.dump(merged)
   const guard = Edictum.fromYamlString(mergedYaml)
 
@@ -237,6 +237,9 @@ async function runExtendsFixture(
   const args = (envelopeData.arguments ?? {}) as Record<string, unknown>
   const result = await guard.evaluate(toolName, args)
 
+  // Fixture format uses 'denied' as the blocked-verdict string (cross-SDK convention from
+  // edictum-schemas). EvaluationResult.decision uses 'deny' internally. Assert on the raw
+  // decision value to prevent terminology regressions.
   if (expected.verdict === 'denied') {
     expect(result.decision, `fixture ${String(fixture.id)}: verdict`).toBe('deny')
     if (typeof expected.message_contains === 'string') {
