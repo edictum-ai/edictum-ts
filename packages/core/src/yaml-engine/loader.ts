@@ -165,7 +165,12 @@ export function resolveRulesetExtends(
     if (!parentName) {
       return { ...bundle }
     }
-    const parent = resolve(String(parentName))
+    if (typeof parentName !== 'string') {
+      throw new EdictumConfigError(
+        `extends: '${n}' — extends value must be a string, got ${typeof parentName}`,
+      )
+    }
+    const parent = resolve(parentName)
     return mergeParentBundle(parent, bundle)
   }
 

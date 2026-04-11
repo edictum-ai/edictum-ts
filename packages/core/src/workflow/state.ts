@@ -521,6 +521,7 @@ function normalizeMcpResults(value: unknown): Record<string, Record<string, unkn
       result[key] = item
         .filter((entry) => typeof entry === 'object' && entry != null && !Array.isArray(entry))
         .map((entry) => ({ ...(entry as Record<string, unknown>) }))
+        .slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)
     }
   }
   return result
