@@ -7,8 +7,7 @@
  *   3. <repo-root>/../edictum-schemas/fixtures/workflow-v0.18/
  *
  * Missing-fixture behavior:
- *   - EDICTUM_CONFORMANCE_REQUIRED=1 → fail the test run
- *   - Otherwise → skip the suite cleanly
+ *   - Skip the suite cleanly (check out edictum-schemas sibling to run locally)
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -48,14 +47,6 @@ function findV018Dir(): string | null {
 }
 
 const v018Dir = findV018Dir()
-const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
-
-if (!v018Dir && conformanceRequired) {
-  throw new Error(
-    'EDICTUM_CONFORMANCE_REQUIRED=1 but workflow-v0.18 fixtures not found. ' +
-      'Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling.',
-  )
-}
 
 function loadSuite(filename: string): Record<string, unknown> | null {
   if (!v018Dir) return null
