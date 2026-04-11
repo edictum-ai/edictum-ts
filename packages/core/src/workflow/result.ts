@@ -114,7 +114,7 @@ export function createWorkflowStateSnapshot(state: WorkflowState): WorkflowState
       mcpResults: Object.fromEntries(
         Object.entries(state.evidence.mcpResults).map(([tool, results]) => [
           tool,
-          results.map((r) => ({ ...r })),
+          results.map((r) => structuredClone(r) as Record<string, unknown>),
         ]),
       ),
     },

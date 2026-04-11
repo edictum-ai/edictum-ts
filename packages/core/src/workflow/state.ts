@@ -25,6 +25,7 @@ import {
 
 export const WORKFLOW_APPROVED_STATUS = 'approved'
 export const MAX_WORKFLOW_EVIDENCE_ITEMS = 1000
+const MAX_MCP_RESULT_KEYS = 100
 const MAX_WORKFLOW_ACTION_SUMMARY_LENGTH = 4_096
 
 export function workflowStateKey(name: string): string {
@@ -74,6 +75,7 @@ export async function loadWorkflowState(
           allStageToolPatterns.length === 0 ||
           allStageToolPatterns.some((pattern) => fnmatch(pattern, toolName)),
       )
+      .slice(0, MAX_MCP_RESULT_KEYS)
       .map(([toolName, results]) => [toolName, results.slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)]),
   )
   if (state.activeStage !== '' && getWorkflowStageById(definition, state.activeStage) == null) {
@@ -531,7 +533,7 @@ function normalizeMcpResults(value: unknown): Record<string, Record<string, unkn
     if (Array.isArray(item)) {
       result[key] = item
         .filter((entry) => typeof entry === 'object' && entry != null && !Array.isArray(entry))
-        .map((entry) => ({ ...(entry as Record<string, unknown>) }))
+        .map((entry) => structuredClone(entry) as Record<string, unknown>)
         .slice(0, MAX_WORKFLOW_EVIDENCE_ITEMS)
     }
   }
