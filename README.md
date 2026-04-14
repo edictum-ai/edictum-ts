@@ -160,9 +160,9 @@ const guard = new Edictum({ rules: [noRm] })
 
 **Observe mode** — log what would be blocked without blocking, then switch to enforce.
 
-## Edictum Console
+## Edictum Control Plane
 
-Optional self-hostable operations console. Ruleset management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
+Optional hosted control plane. Ruleset management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
 
 ```typescript
 import { createServerGuard } from '@edictum/server'
@@ -174,7 +174,7 @@ const { guard, close } = await createServerGuard({
 })
 ```
 
-See the [console docs](https://docs.edictum.ai/docs/console) for the current control-plane surface.
+See the [control-plane docs](https://docs.edictum.ai/docs/console) for the current control-plane surface.
 
 ## Research
 
