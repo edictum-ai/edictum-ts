@@ -190,15 +190,15 @@ Every security boundary has bypass tests. Every error path fails closed. Every i
 
 ## Ecosystem
 
-| Repo                                                             | Language       | Role                                       |
-| ---------------------------------------------------------------- | -------------- | ------------------------------------------ |
-| [edictum](https://github.com/edictum-ai/edictum)                 | Python         | Reference implementation (PyPI: `edictum`) |
-| [edictum-ts](https://github.com/edictum-ai/edictum-ts)           | TypeScript     | This repo                                  |
-| [edictum-go](https://github.com/edictum-ai/edictum-go)           | Go             | Full port + adapters                       |
-| [edictum-api](https://github.com/edictum-ai/edictum-api)         | Go             | Hosted control-plane API                   |
-| [edictum-app](https://github.com/edictum-ai/edictum-app)         | React          | Hosted control-plane UI                    |
-| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | JSON Schema    | Shared ruleset schema                      |
-| [edictum-demo](https://github.com/edictum-ai/edictum-demo)       | Python         | Demos, adversarial tests, benchmarks       |
+| Repo                                                             | Language    | Role                                       |
+| ---------------------------------------------------------------- | ----------- | ------------------------------------------ |
+| [edictum](https://github.com/edictum-ai/edictum)                 | Python      | Reference implementation (PyPI: `edictum`) |
+| [edictum-ts](https://github.com/edictum-ai/edictum-ts)           | TypeScript  | This repo                                  |
+| [edictum-go](https://github.com/edictum-ai/edictum-go)           | Go          | Full port + adapters                       |
+| [edictum-api](https://github.com/edictum-ai/edictum-api)         | Go          | Hosted control-plane API                   |
+| [edictum-app](https://github.com/edictum-ai/edictum-app)         | React       | Hosted control-plane UI                    |
+| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | JSON Schema | Shared ruleset schema                      |
+| [edictum-demo](https://github.com/edictum-ai/edictum-demo)       | Python      | Demos, adversarial tests, benchmarks       |
 
 - [Documentation](https://docs.edictum.ai)
 - [Website](https://edictum.ai)

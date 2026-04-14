@@ -29,15 +29,15 @@ packages/
 
 ## Tech Stack
 
-| Layer           | Technology          | Rationale                                                      |
-| --------------- | ------------------- | -------------------------------------------------------------- |
-| Language        | TypeScript (strict) | Security product — type safety is non-negotiable               |
-| Runtime         | Node 22+ (LTS)      | Native fetch/structuredClone and current package support        |
-| Build           | tsup (esbuild)      | Dual ESM+CJS output, ~10 lines config                          |
-| Test            | Vitest              | ESM-native, fast, good DX                                      |
-| Lint            | ESLint              | Largest plugin ecosystem, best for security rules              |
-| Package manager | pnpm                | Workspace monorepo support                                     |
-| Module format   | Dual ESM + CJS      | Maximum compatibility via tsup                                 |
+| Layer           | Technology          | Rationale                                                |
+| --------------- | ------------------- | -------------------------------------------------------- |
+| Language        | TypeScript (strict) | Security product — type safety is non-negotiable         |
+| Runtime         | Node 22+ (LTS)      | Native fetch/structuredClone and current package support |
+| Build           | tsup (esbuild)      | Dual ESM+CJS output, ~10 lines config                    |
+| Test            | Vitest              | ESM-native, fast, good DX                                |
+| Lint            | ESLint              | Largest plugin ecosystem, best for security rules        |
+| Package manager | pnpm                | Workspace monorepo support                               |
+| Module format   | Dual ESM + CJS      | Maximum compatibility via tsup                           |
 
 ## Non-Negotiable Principles
 
