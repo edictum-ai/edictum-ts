@@ -174,7 +174,7 @@ const { guard, close } = await createServerGuard({
 })
 ```
 
-See the [control-plane docs](https://docs.edictum.ai/docs/console) for the current control-plane surface.
+See the [control-plane docs](https://docs.edictum.ai/docs/control-plane) for the current control-plane surface.
 
 ## Research
 
