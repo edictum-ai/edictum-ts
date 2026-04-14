@@ -4,9 +4,9 @@
 
 ## What is Edictum
 
-Runtime rule enforcement for AI agent tool calls. Deterministic pipeline: checks before execution, output checks after execution, session rules, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, OpenClaw, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library (`edictum` on PyPI, v0.15.0).
+Runtime rule enforcement for AI agent tool calls. Deterministic pipeline: checks before execution, output checks after execution, session rules, principal-aware enforcement. Framework adapters (Vercel AI SDK, OpenAI Agents SDK, Claude Agent SDK, LangChain.js). One runtime dep in core (js-yaml). Full feature parity with the Python library.
 
-Current version: 0.3.0 (npm: `@edictum/core`)
+Current version: 0.4.2 (npm: `@edictum/core`)
 
 ## THE ONE RULE
 
@@ -21,9 +21,9 @@ packages/
 ├── core/              # @edictum/core — pipeline, rules, audit, session, YAML engine
 ├── vercel-ai/         # @edictum/vercel-ai — Vercel AI SDK adapter
 ├── openai-agents/     # @edictum/openai-agents — OpenAI Agents SDK adapter
-├── openclaw/          # @edictum/openclaw — OpenClaw adapter
 ├── claude-sdk/        # @edictum/claude-sdk — Claude Agent SDK adapter
 ├── langchain/         # @edictum/langchain — LangChain.js adapter
+├── otel/              # @edictum/otel — OpenTelemetry integration
 └── server/            # @edictum/server — Server SDK (HTTP client, SSE, audit sink)
 ```
 
@@ -32,7 +32,7 @@ packages/
 | Layer           | Technology          | Rationale                                                      |
 | --------------- | ------------------- | -------------------------------------------------------------- |
 | Language        | TypeScript (strict) | Security product — type safety is non-negotiable               |
-| Runtime         | Node 22+ (LTS)      | Required by OpenClaw (P0 target), native fetch/structuredClone |
+| Runtime         | Node 22+ (LTS)      | Native fetch/structuredClone and current package support        |
 | Build           | tsup (esbuild)      | Dual ESM+CJS output, ~10 lines config                          |
 | Test            | Vitest              | ESM-native, fast, good DX                                      |
 | Lint            | ESLint              | Largest plugin ecosystem, best for security rules              |
@@ -206,14 +206,16 @@ The ruleset schema lives in the `edictum-schemas` repo — single source of trut
 
 ## Ecosystem Context
 
-Edictum is four repos that work together:
+Edictum spans multiple repos that work together:
 
 - **edictum** (core Python): `edictum-ai/edictum` — MIT Python library. PyPI: `edictum`.
 - **edictum-ts** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
-- **edictum-console** (server): `edictum-ai/edictum-console` — Self-hostable FastAPI + React SPA.
-- **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared YAML ruleset schema.
+- **edictum-go** (core Go): `edictum-ai/edictum-go` — Go SDK and CLI.
+- **edictum-api** (control-plane API): `edictum-ai/edictum-api` — hosted backend for runs, approvals, notifications, and audit.
+- **edictum-app** (control-plane UI): `edictum-ai/edictum-app` — hosted frontend for runs, approvals, policies, and settings.
+- **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared schema and conformance fixtures.
 
-Both core libraries (Python and TS) work standalone. Console is an optional enhancement. Schema repo is the single source of truth for the ruleset format.
+The SDKs work standalone. The control plane is optional. The schema repo is the single source of truth for shared formats and fixtures.
 
 ## Cross-SDK Conformance Workflow
 
