@@ -10,7 +10,7 @@ TypeScript SDK for runtime rule enforcement on AI agent tool calls.
 Prompts are suggestions. Rules are enforcement.
 The LLM cannot talk its way past a rule.
 
-**55us overhead** · **18 adapters across Python, TypeScript, Go** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml)) · **Fail-closed by default**
+**55us overhead** · **Python, TypeScript, and Go SDKs** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml)) · **Fail-closed by default**
 
 ```bash
 pnpm add @edictum/core
@@ -104,13 +104,6 @@ const adapter = new LangChainAdapter(guard)
 const middleware = adapter.asMiddleware()
 ```
 
-**OpenClaw** — see the OpenClaw adapter repository:
-
-```bash
-openclaw plugins install @edictum/openclaw
-# Zero config — ships with bundled rules
-```
-
 Adapters are thin wrappers. All rule enforcement logic lives in the pipeline.
 
 > **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. See adapter docs for per-SDK details.
@@ -167,9 +160,9 @@ const guard = new Edictum({ rules: [noRm] })
 
 **Observe mode** — log what would be blocked without blocking, then switch to enforce.
 
-## Edictum Console
+## Edictum Control Plane
 
-Optional self-hostable operations console. Ruleset management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
+Optional hosted control plane. Ruleset management, live hot-reload via SSE, human-in-the-loop approvals, audit event feeds, and fleet monitoring.
 
 ```typescript
 import { createServerGuard } from '@edictum/server'
@@ -181,7 +174,7 @@ const { guard, close } = await createServerGuard({
 })
 ```
 
-See [edictum-console](https://github.com/edictum-ai/edictum-console) for deployment.
+See the [control-plane docs](https://docs.edictum.ai/docs/control-plane) for the current control-plane surface.
 
 ## Research
 
@@ -197,14 +190,15 @@ Every security boundary has bypass tests. Every error path fails closed. Every i
 
 ## Ecosystem
 
-| Repo                                                             | Language       | Role                                       |
-| ---------------------------------------------------------------- | -------------- | ------------------------------------------ |
-| [edictum](https://github.com/edictum-ai/edictum)                 | Python         | Reference implementation (PyPI: `edictum`) |
-| [edictum-ts](https://github.com/edictum-ai/edictum-ts)           | TypeScript     | This repo                                  |
-| [edictum-go](https://github.com/edictum-ai/edictum-go)           | Go             | Full port + adapters                       |
-| [edictum-console](https://github.com/edictum-ai/edictum-console) | Python + React | Self-hostable ops console                  |
-| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | YAML           | Shared ruleset schema                      |
-| [edictum-demo](https://github.com/edictum-ai/edictum-demo)       | Python         | Demos, adversarial tests, benchmarks       |
+| Repo                                                             | Language    | Role                                       |
+| ---------------------------------------------------------------- | ----------- | ------------------------------------------ |
+| [edictum](https://github.com/edictum-ai/edictum)                 | Python      | Reference implementation (PyPI: `edictum`) |
+| [edictum-ts](https://github.com/edictum-ai/edictum-ts)           | TypeScript  | This repo                                  |
+| [edictum-go](https://github.com/edictum-ai/edictum-go)           | Go          | Full port + adapters                       |
+| [edictum-api](https://github.com/edictum-ai/edictum-api)         | Go          | Hosted control-plane API                   |
+| [edictum-app](https://github.com/edictum-ai/edictum-app)         | React       | Hosted control-plane UI                    |
+| [edictum-schemas](https://github.com/edictum-ai/edictum-schemas) | JSON Schema | Shared ruleset schema                      |
+| [edictum-demo](https://github.com/edictum-ai/edictum-demo)       | Python      | Demos, adversarial tests, benchmarks       |
 
 - [Documentation](https://docs.edictum.ai)
 - [Website](https://edictum.ai)
