@@ -1,6 +1,6 @@
 {
   "name": "@edictum/otel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "OpenTelemetry integration for Edictum rule enforcement",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@edictum/core": "^0.3.0",
+    "@edictum/core": ">=0.3.0 <0.6.0",
     "@opentelemetry/api": ">=1.0.0",
     "@opentelemetry/resources": ">=1.0.0",
     "@opentelemetry/sdk-trace-base": ">=1.0.0",
