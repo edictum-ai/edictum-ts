@@ -1,8 +1,10 @@
 # @edictum/otel
 
-OpenTelemetry integration for Edictum rule enforcement.
+OpenTelemetry integration for Edictum behavioral conformance signals.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+
+Use this package to emit spans and metrics for runtime enforcement decisions. Edictum measures behavioral conformance to a declared profile, not output quality such as accuracy, relevance, coherence, or answer quality.
 
 ## Install
 

@@ -1,7 +1,7 @@
 {
   "name": "@edictum/server",
   "version": "0.4.1",
-  "description": "Server SDK (HTTP client, SSE, audit sink) for edictum",
+  "description": "Server SDK for Edictum agency boundaries, approvals, and audit",
   "license": "MIT",
   "type": "module",
   "exports": {

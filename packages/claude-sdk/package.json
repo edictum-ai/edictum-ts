@@ -1,7 +1,7 @@
 {
   "name": "@edictum/claude-sdk",
   "version": "0.2.1",
-  "description": "Claude Agent SDK adapter for edictum",
+  "description": "Claude Agent SDK adapter for Edictum agency-boundary enforcement",
   "license": "MIT",
   "type": "module",
   "exports": {

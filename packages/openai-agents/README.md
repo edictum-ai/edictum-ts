@@ -1,8 +1,10 @@
 # @edictum/openai-agents
 
-OpenAI Agents SDK adapter for Edictum rule enforcement.
+OpenAI Agents SDK adapter for Edictum agency-boundary enforcement.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+
+Agent frameworks build the agent. Edictum bounds the agency. This package composes Edictum with OpenAI Agents SDK hooks while the core pipeline enforces rulesets and Workflow Gates.
 
 ## Install
 

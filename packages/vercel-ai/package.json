@@ -1,7 +1,7 @@
 {
   "name": "@edictum/vercel-ai",
   "version": "0.3.1",
-  "description": "Vercel AI SDK adapter for edictum",
+  "description": "Vercel AI SDK adapter for Edictum agency-boundary enforcement",
   "license": "MIT",
   "type": "module",
   "exports": {

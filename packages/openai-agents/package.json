@@ -1,7 +1,7 @@
 {
   "name": "@edictum/openai-agents",
   "version": "0.2.1",
-  "description": "OpenAI Agents SDK adapter for edictum",
+  "description": "OpenAI Agents SDK adapter for Edictum agency-boundary enforcement",
   "license": "MIT",
   "type": "module",
   "exports": {

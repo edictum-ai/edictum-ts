@@ -5,10 +5,11 @@
 [![Node](https://img.shields.io/node/v/@edictum/core?cacheSeconds=86400)](https://www.npmjs.com/package/@edictum/core)
 [![CI](https://github.com/edictum-ai/edictum-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/edictum-ai/edictum-ts/actions/workflows/ci.yml)
 
-TypeScript SDK for runtime rule enforcement on AI agent tool calls.
+Edictum is the agency control layer for production AI agents in TypeScript.
 
-Prompts are suggestions. Rules are enforcement.
-The LLM cannot talk its way past a rule.
+Agent frameworks build the agent. Edictum bounds the agency.
+
+Edictum turns documented agent profiles into executable runtime boundaries: tools, data operations, workflow stage, required evidence, human approvals, and audit. Rulesets enforce call-level behavior. Workflow Gates enforce ordered process across calls.
 
 **55us overhead** · **Python, TypeScript, and Go SDKs** · **One runtime dep** ([js-yaml](https://github.com/nodeca/js-yaml)) · **Fail-closed by default**
 
@@ -16,7 +17,9 @@ The LLM cannot talk its way past a rule.
 pnpm add @edictum/core
 ```
 
-## Quick Start
+## Single Tool-Call Enforcement
+
+This quickstart blocks one tool call before execution. The same `Edictum` instance can be used directly or through a framework adapter.
 
 ```typescript
 import { readFile } from 'node:fs/promises'
@@ -35,7 +38,7 @@ try {
 }
 ```
 
-**The ruleset** — `rules.yaml`:
+**The single-call ruleset**: `rules.yaml`
 
 ```yaml
 apiVersion: edictum/v1
@@ -58,19 +61,64 @@ rules:
 
 Rules are YAML. Enforcement is deterministic — no LLM in the evaluation path. The agent cannot bypass a matched rule. Errors, type mismatches, and missing fields all fail closed.
 
+## Workflow Gates
+
+Workflow Gates enforce ordered process with runtime state, evidence, approvals, and audit. A ruleset can block a dangerous call; a Workflow Gate can block a call because it is happening in the wrong stage or without the required evidence.
+
+```typescript
+import { Edictum, LocalApprovalBackend, WorkflowRuntime, loadWorkflowString } from '@edictum/core'
+
+const workflowRuntime = new WorkflowRuntime(
+  loadWorkflowString(`
+apiVersion: edictum/v1
+kind: Workflow
+metadata:
+  name: release-process
+stages:
+  - id: read-context
+    tools: [Read]
+    exit:
+      - condition: file_read("specs/release.md")
+        message: Read the release spec first
+  - id: implement
+    entry:
+      - condition: stage_complete("read-context")
+    tools: [Edit]
+  - id: review
+    entry:
+      - condition: stage_complete("implement")
+    approval:
+      message: Approval required before publish
+  - id: publish
+    entry:
+      - condition: stage_complete("review")
+    tools: [Bash]
+`),
+)
+
+const guard = new Edictum({
+  workflowRuntime,
+  approvalBackend: new LocalApprovalBackend(),
+})
+```
+
+The gate stores evidence such as completed stages and file reads, asks for approval at the review boundary, and emits audit records when a call is blocked, approved, or allowed.
+
 ## Packages
 
-| Package                                            | Description                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`@edictum/core`](packages/core)                   | Pipeline, rules, audit, session, YAML engine. One runtime dep (js-yaml). |
-| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                                    |
-| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                                |
-| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                                 |
-| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                                     |
-| [`@edictum/server`](packages/server)               | Server SDK — HTTP client, SSE hot-reload, audit sink                     |
-| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and metrics                                          |
+| Package                                            | Description                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| [`@edictum/core`](packages/core)                   | Agency-boundary runtime, rulesets, Workflow Gates, audit, sessions |
+| [`@edictum/vercel-ai`](packages/vercel-ai)         | Vercel AI SDK adapter                                              |
+| [`@edictum/openai-agents`](packages/openai-agents) | OpenAI Agents SDK adapter                                          |
+| [`@edictum/claude-sdk`](packages/claude-sdk)       | Claude Agent SDK adapter                                           |
+| [`@edictum/langchain`](packages/langchain)         | LangChain.js adapter                                               |
+| [`@edictum/server`](packages/server)               | Server SDK: HTTP client, SSE hot-reload, approvals, audit sink     |
+| [`@edictum/otel`](packages/otel)                   | OpenTelemetry spans and behavioral conformance metrics             |
 
 ## Works With Your Framework
+
+Edictum composes with Vercel AI SDK, LangChain.js, OpenAI Agents, and Claude SDK. The framework owns planning, model calls, memory, and tool routing. Edictum enforces the declared agency boundaries at runtime.
 
 **Vercel AI SDK** — callbacks for generateText / streamText:
 
@@ -80,7 +128,7 @@ const adapter = new VercelAIAdapter(guard)
 const result = await generateText({ ...options, ...adapter.asCallbacks() })
 ```
 
-**OpenAI Agents SDK** — input/output guardrails:
+**OpenAI Agents SDK** — input/output enforcement hooks:
 
 ```typescript
 import { OpenAIAgentsAdapter } from '@edictum/openai-agents'
@@ -107,26 +155,6 @@ const middleware = adapter.asMiddleware()
 Adapters are thin wrappers. All rule enforcement logic lives in the pipeline.
 
 > **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. See adapter docs for per-SDK details.
-
-**Multi-stage gates** — stateful gate evaluation and approvals are available in core:
-
-```typescript
-import { Edictum, WorkflowRuntime, loadWorkflowString } from '@edictum/core'
-
-const workflowRuntime = new WorkflowRuntime(
-  loadWorkflowString(`
-apiVersion: edictum/v1
-kind: Workflow
-metadata:
-  name: my-workflow
-stages:
-  - id: read-context
-    tools: [Read]
-`),
-)
-
-const guard = new Edictum({ workflowRuntime })
-```
 
 ## What You Can Do
 
@@ -159,6 +187,22 @@ const guard = new Edictum({ rules: [noRm] })
 **Callbacks** — `onDeny` / `onAllow` for logging and observability. For human-in-the-loop approvals, use `approvalBackend`.
 
 **Observe mode** — log what would be blocked without blocking, then switch to enforce.
+
+## Enterprise Profiles
+
+Enterprises usually document an agent profile before they ship it: low, medium, or high agency; read-only, write-only, or read-write permissions; approved tools; allowed data operations; and process requirements.
+
+Edictum makes any agency level defensible. Medium Agency is the enterprise demand center right now because those agents can act on systems of record but still need explicit boundaries.
+
+Rulesets and Workflow Gates turn the profile into executable controls:
+
+- **Low agency:** read-only tools, narrow data access, mostly call-level rules.
+- **Medium agency:** read-write or scoped write operations, staged Workflow Gates, evidence checks, approvals at irreversible steps.
+- **High agency:** broader tool access with stricter runtime enforcement, session limits, approvals, audit, and post-execution checks.
+
+## Measurement Boundary
+
+Edictum measures behavioral conformance to a declared profile. It does not replace output-quality evals such as accuracy, relevance, coherence, or answer quality.
 
 ## Edictum Control Plane
 
