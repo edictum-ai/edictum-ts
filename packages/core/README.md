@@ -1,8 +1,12 @@
 # @edictum/core
 
-Runtime rule enforcement for AI agent tool calls. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml)).
+Runtime agency-boundary enforcement for production AI agents. One runtime dep ([js-yaml](https://github.com/nodeca/js-yaml)).
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+
+Agent frameworks build the agent. Edictum bounds the agency.
+
+`@edictum/core` turns documented agent profiles into executable runtime boundaries for tools, data operations, workflow stage, evidence, approvals, and audit.
 
 ## Install
 
@@ -11,6 +15,8 @@ pnpm add @edictum/core
 ```
 
 ## Usage
+
+This is single tool-call enforcement. For ordered process enforcement, use `WorkflowRuntime` and Workflow Gates with the same `Edictum` instance.
 
 ```typescript
 import { readFile } from 'node:fs/promises'
@@ -37,9 +43,13 @@ try {
 - `RedactionPolicy` — sensitive field redaction for audit events
 - `CollectingAuditSink`, `StdoutAuditSink`, `FileAuditSink`, `CompositeSink` — audit sinks
 - `createEnvelope`, `ToolCall`, `SideEffect` — tool-call construction and metadata
-- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString` — stateful multi-stage gate evaluation and YAML loaders
+- `WorkflowRuntime`, `loadWorkflow`, `loadWorkflowString` — Workflow Gates for ordered stage enforcement, evidence, and approvals
 - `composeBundles`, `loadBundle`, `compileContracts` — YAML engine helpers
 - `createViolation`, `buildViolations`, `Violation` — output-check violation helpers
+
+## Measurement Boundary
+
+Edictum measures behavioral conformance to a declared profile. It does not replace output-quality evals such as accuracy, relevance, coherence, or answer quality.
 
 ## Links
 

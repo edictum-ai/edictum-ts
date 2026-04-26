@@ -1,7 +1,7 @@
 {
   "name": "@edictum/otel",
   "version": "0.2.1",
-  "description": "OpenTelemetry integration for Edictum rule enforcement",
+  "description": "OpenTelemetry integration for Edictum behavioral conformance signals",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -89,7 +89,7 @@
     "opentelemetry",
     "otel",
     "observability",
-    "governance"
+    "behavioral-conformance"
   ],
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@edictum/langchain",
   "version": "0.2.1",
-  "description": "LangChain.js adapter for edictum",
+  "description": "LangChain.js adapter for Edictum agency-boundary enforcement",
   "license": "MIT",
   "type": "module",
   "exports": {

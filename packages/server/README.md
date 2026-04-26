@@ -1,8 +1,10 @@
 # @edictum/server
 
-Server SDK for connecting Edictum-governed agents to the Edictum API.
+Server SDK for connecting Edictum-enforced agents to the Edictum API.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts) — runtime rule enforcement for AI agent tool calls.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+
+Use this package when rulesets, Workflow Gates, approvals, audit events, and live updates should come from the Edictum API instead of local files.
 
 ## Install
 
