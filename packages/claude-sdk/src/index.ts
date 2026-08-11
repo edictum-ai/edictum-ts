@@ -4,7 +4,7 @@
  * Translates Edictum pipeline decisions into Claude Agent SDK hook format.
  * The adapter does NOT contain governance logic -- that lives in CheckPipeline.
  *
- * Integration point: PreToolUse / PostToolUse hooks.
+ * Integration point: PreToolUse / PostToolUse / PostToolUseFailure hooks.
  *
  * Note: toSdkHooks() fully enforces preconditions. Postconditions run after
  * the tool, so they cannot undo side effects. Native hook output replacement
@@ -17,6 +17,8 @@ import { randomUUID } from 'node:crypto'
 import type {
   HookCallback as SDKHookCallback,
   HookCallbackMatcher,
+  PostToolUseFailureHookInput as SDKPostToolUseFailureHookInput,
+  PostToolUseFailureHookSpecificOutput,
   PostToolUseHookInput as SDKPostToolUseHookInput,
   PostToolUseHookSpecificOutput,
   PreToolUseHookInput as SDKPreToolUseHookInput,
@@ -54,8 +56,12 @@ export type HookCallback = SDKHookCallback
 export type HookMatcher = HookCallbackMatcher
 export type PreToolUseInput = SDKPreToolUseHookInput
 export type PostToolUseInput = SDKPostToolUseHookInput
+export type PostToolUseFailureInput = SDKPostToolUseFailureHookInput
 export type PreToolUseHookOutput = { hookSpecificOutput: PreToolUseHookSpecificOutput }
 export type PostToolUseHookOutput = { hookSpecificOutput?: PostToolUseHookSpecificOutput }
+export type PostToolUseFailureHookOutput = {
+  hookSpecificOutput?: PostToolUseFailureHookSpecificOutput
+}
 
 // ---------------------------------------------------------------------------
 // ClaudeAgentSDKAdapterOptions
@@ -96,7 +102,7 @@ interface PendingCall {
  * The adapter does NOT contain governance logic -- that lives in
  * CheckPipeline. The adapter only:
  * 1. Creates envelopes from SDK hook data
- * 2. Manages pending state (toolCall) between PreToolUse/PostToolUse
+ * 2. Manages pending state between PreToolUse and either post-tool exit event
  * 3. Translates PreDecision/PostDecision into hook behavior
  * 4. Handles observe mode (deny -> allow conversion)
  */
@@ -163,6 +169,7 @@ export class ClaudeAgentSDKAdapter {
   toSdkHooks(options?: ToSdkHooksOptions): {
     PreToolUse: HookCallbackMatcher[]
     PostToolUse: HookCallbackMatcher[]
+    PostToolUseFailure: HookCallbackMatcher[]
   } {
     this._onPostconditionWarn = options?.onPostconditionWarn ?? null
 
@@ -210,23 +217,21 @@ export class ClaudeAgentSDKAdapter {
       }
     }
 
-    const postToolUse: SDKHookCallback = async (input, toolUseID) => {
-      if (input.hook_event_name !== 'PostToolUse') {
-        return {}
-      }
-
-      const toolResponse = input.tool_response
-
-      // Correlate via the callback argument first, then the input field.
-      const callId = toolUseID ?? input.tool_use_id
+    const finalizePending = async (
+      toolUseID: string | undefined,
+      inputToolUseID: string,
+      toolResponse: unknown,
+      forcedToolSuccess?: boolean,
+    ): Promise<PostCallResult | null> => {
+      const callId = toolUseID ?? inputToolUseID
       if (!callId || !this._pending.has(callId)) {
-        return {}
+        return null
       }
+      return this._post(callId, toolResponse, forcedToolSuccess)
+    }
 
-      const postResult = await this._post(callId, toolResponse)
-
+    const postContext = (postResult: PostCallResult, toolResponse: unknown): string | null => {
       const outputChanged = postResult.outputSuppressed || postResult.result !== toolResponse
-
       if (postResult.violations.length > 0 || outputChanged) {
         const findings = postResult.violations.map((finding) => finding.message)
         if (outputChanged) {
@@ -234,10 +239,27 @@ export class ClaudeAgentSDKAdapter {
             'Edictum did not replace tool output: Claude Agent SDK updatedToolOutput requires a schema-preserving replacement that the generic adapter cannot synthesize',
           )
         }
+        return findings.join('\n')
+      }
+      return null
+    }
+
+    const postToolUse: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PostToolUse') {
+        return {}
+      }
+
+      const postResult = await finalizePending(toolUseID, input.tool_use_id, input.tool_response)
+      if (!postResult) {
+        return {}
+      }
+
+      const additionalContext = postContext(postResult, input.tool_response)
+      if (additionalContext) {
         return {
           hookSpecificOutput: {
             hookEventName: 'PostToolUse',
-            additionalContext: findings.join('\n'),
+            additionalContext,
           },
         }
       }
@@ -245,9 +267,31 @@ export class ClaudeAgentSDKAdapter {
       return {}
     }
 
+    const postToolUseFailure: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PostToolUseFailure') {
+        return {}
+      }
+
+      const failureResponse = {
+        is_error: true,
+        error: input.error,
+        is_interrupt: input.is_interrupt === true,
+      }
+      const postResult = await finalizePending(toolUseID, input.tool_use_id, failureResponse, false)
+      if (!postResult) {
+        return {}
+      }
+
+      const additionalContext = postContext(postResult, failureResponse)
+      return additionalContext
+        ? { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext } }
+        : {}
+    }
+
     return {
       PreToolUse: [{ hooks: [preToolUse] }],
       PostToolUse: [{ hooks: [postToolUse] }],
+      PostToolUseFailure: [{ hooks: [postToolUseFailure] }],
     }
   }
 
@@ -496,9 +540,19 @@ export class ClaudeAgentSDKAdapter {
   /**
    * Run post-execution governance. Returns PostCallResult with violations.
    *
+   * Finalization is at-most-once: pending state is consumed before calling
+   * postconditions, workflow storage, session storage, or the audit sink. Those
+   * ports do not share a transaction or idempotency key, so retrying after a
+   * partial failure could duplicate durable state. A thrown finalization error
+   * is propagated and is not retried by this adapter.
+   *
    * Exposed for direct testing without framework imports.
    */
-  async _post(callId: string, toolResponse: unknown = undefined): Promise<PostCallResult> {
+  async _post(
+    callId: string,
+    toolResponse: unknown = undefined,
+    forcedToolSuccess?: boolean,
+  ): Promise<PostCallResult> {
     const pending = this._pending.get(callId)
     this._pending.delete(callId)
 
@@ -508,8 +562,8 @@ export class ClaudeAgentSDKAdapter {
 
     const { toolCall, workflowStageId, workflowInvolved } = pending
 
-    // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
+    // An SDK failure event is authoritative; otherwise derive success from the configured check.
+    const toolSuccess = forcedToolSuccess ?? this._checkToolSuccess(toolCall.toolName, toolResponse)
 
     // Run pipeline
     const postDecision = await this._pipeline.postExecute(toolCall, toolResponse, toolSuccess)

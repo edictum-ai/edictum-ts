@@ -1,13 +1,13 @@
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { Decision, Edictum } from '@edictum/core'
+import { AuditAction, CollectingAuditSink, Decision, Edictum } from '@edictum/core'
 
 import { ClaudeAgentSDKAdapter } from '../dist/index.mjs'
 
 const mode = process.argv[2]
-if (mode !== 'control' && mode !== 'block' && mode !== 'post') {
-  console.error('usage: pnpm verify:live-hooks <control|block|post>')
+if (mode !== 'control' && mode !== 'block' && mode !== 'post' && mode !== 'failure') {
+  console.error('usage: pnpm verify:live-hooks <control|block|post|failure>')
   process.exit(2)
 }
 
@@ -26,7 +26,9 @@ let returnedUpdatedToolOutput = false
 let returnedHookOutputKeys = 'NOT_CALLED'
 let assistantText = ''
 let sdkResult = 'NOT_EMITTED'
+let failureHookCalled = false
 const postProbe = 'POSTCONDITION_PROBE_VALUE'
+const auditSink = new CollectingAuditSink()
 const denyTouch = {
   tool: 'Bash',
   check: async (toolCall) => {
@@ -48,10 +50,23 @@ const suppressProbeOutput = {
       ? Decision.fail('live proof suppresses Read output')
       : Decision.pass_(),
 }
+const warnOnFailure = {
+  _edictum_type: 'postcondition',
+  type: 'postcondition',
+  name: 'live_failure_probe',
+  tool: 'Bash',
+  effect: 'deny',
+  check: async (_toolCall, output) =>
+    typeof output === 'object' && output != null && output.is_error === true
+      ? Decision.fail('live proof observed failed Bash execution')
+      : Decision.pass_(),
+}
 
 const guard = new Edictum({
-  rules: mode === 'post' ? [suppressProbeOutput] : [denyTouch],
+  rules:
+    mode === 'post' ? [suppressProbeOutput] : mode === 'failure' ? [warnOnFailure] : [denyTouch],
   tools: mode === 'post' ? { Read: { side_effect: 'read' } } : { Bash: { side_effect: 'execute' } },
+  auditSink,
   onDeny: () => {
     hookDenied = true
   },
@@ -89,6 +104,14 @@ if (mode === 'post') {
   }
 }
 
+if (mode === 'failure') {
+  const originalFailureHook = hooks.PostToolUseFailure[0].hooks[0]
+  hooks.PostToolUseFailure[0].hooks[0] = async (input, toolUseID, context) => {
+    failureHookCalled ||= input.hook_event_name === 'PostToolUseFailure'
+    return originalFailureHook(input, toolUseID, context)
+  }
+}
+
 const options = {
   allowedTools: [mode === 'post' ? 'Read' : 'Bash'],
   permissionMode: 'acceptEdits',
@@ -106,7 +129,9 @@ for await (const message of query({
   prompt:
     mode === 'post'
       ? `Use Read exactly once to read ${postProbeFile}. Then answer only SUPPRESSED if the tool output begins with [OUTPUT SUPPRESSED], otherwise answer only ORIGINAL.`
-      : `Use the Bash tool exactly once to run this exact command, then stop: touch ${sentinel}`,
+      : mode === 'failure'
+        ? 'Use the Bash tool exactly once to run this exact command, then stop: exit 7'
+        : `Use the Bash tool exactly once to run this exact command, then stop: touch ${sentinel}`,
   options,
 })) {
   if (message.type === 'assistant') {
@@ -140,18 +165,28 @@ if (mode === 'post') {
   )
   console.log(`MODEL_REPORTED_ORIGINAL=${assistantText.trim().endsWith('ORIGINAL') ? 'YES' : 'NO'}`)
 }
+if (mode === 'failure') {
+  console.log(`FAILURE_HOOK_CALLED=${failureHookCalled ? 'YES' : 'NO'}`)
+  console.log(`POSTCONDITION_WARNED=${postconditionWarned ? 'YES' : 'NO'}`)
+  console.log(`CALL_FAILED_AUDIT_COUNT=${auditSink.filter(AuditAction.CALL_FAILED).length}`)
+}
 
 const passed =
   mode === 'control'
     ? sdkResult === 'success' && present && !hookDenied
     : mode === 'block'
       ? sdkResult === 'success' && !present && hookDenied
-      : sdkResult === 'success' &&
-        postInputShape !== 'NOT_CALLED' &&
-        postInputContainedProbe &&
-        postconditionWarned &&
-        !returnedUpdatedToolOutput &&
-        assistantText.trim().endsWith('ORIGINAL')
+      : mode === 'post'
+        ? sdkResult === 'success' &&
+          postInputShape !== 'NOT_CALLED' &&
+          postInputContainedProbe &&
+          postconditionWarned &&
+          !returnedUpdatedToolOutput &&
+          assistantText.trim().endsWith('ORIGINAL')
+        : sdkResult === 'success' &&
+          failureHookCalled &&
+          postconditionWarned &&
+          auditSink.filter(AuditAction.CALL_FAILED).length === 1
 if (!passed) {
   process.exitCode = 1
 }

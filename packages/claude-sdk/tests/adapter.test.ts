@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   HookCallback,
   Options,
+  PostToolUseFailureHookInput,
   PostToolUseHookInput,
   PreToolUseHookInput,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -73,7 +74,27 @@ function postInput(
   }
 }
 
-function sdkCallback(options: Pick<Options, 'hooks'>, event: 'PreToolUse' | 'PostToolUse') {
+function failureInput(
+  toolName: string,
+  error: string,
+  toolUseId = 'call-1',
+): PostToolUseFailureHookInput {
+  return {
+    session_id: 'test-session',
+    transcript_path: '/tmp/edictum-test-transcript',
+    cwd: '/tmp',
+    hook_event_name: 'PostToolUseFailure',
+    tool_name: toolName,
+    tool_input: {},
+    tool_use_id: toolUseId,
+    error,
+  }
+}
+
+function sdkCallback(
+  options: Pick<Options, 'hooks'>,
+  event: 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure',
+) {
   return options.hooks?.[event]?.[0]?.hooks[0] as HookCallback
 }
 
@@ -545,8 +566,10 @@ describe('toSdkHooks', () => {
 
     expect(options.hooks.PreToolUse).toHaveLength(1)
     expect(options.hooks.PostToolUse).toHaveLength(1)
+    expect(options.hooks.PostToolUseFailure).toHaveLength(1)
     expect(options.hooks.PreToolUse[0]).toEqual({ hooks: [expect.any(Function)] })
     expect(options.hooks.PostToolUse[0]).toEqual({ hooks: [expect.any(Function)] })
+    expect(options.hooks.PostToolUseFailure[0]).toEqual({ hooks: [expect.any(Function)] })
   })
 
   it('PreToolUse hook returns allow for passing rules', async () => {
@@ -732,6 +755,49 @@ describe('toSdkHooks', () => {
     )) as { hookSpecificOutput?: { additionalContext?: string } }
 
     expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
+  })
+
+  it('finalizes failed tool calls through PostToolUseFailure exactly once', async () => {
+    const postContract: Postcondition = {
+      tool: '*',
+      contractType: 'post',
+      check: async () => Decision.fail('failure postcondition ran'),
+    }
+    const sink = makeSink()
+    const onPostconditionWarn = vi.fn()
+    const guard = makeGuard({
+      rules: [postContract],
+      auditSink: sink,
+      tools: { Bash: { side_effect: 'execute' } },
+      successCheck: () => true,
+    })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const options = {
+      hooks: adapter.toSdkHooks({ onPostconditionWarn }),
+    } satisfies Pick<Options, 'hooks'>
+
+    await sdkCallback(options, 'PreToolUse')(preInput('Bash', {}), 'call-1', hookContext)
+    const first = await sdkCallback(options, 'PostToolUseFailure')(
+      failureInput('Bash', 'command exited unsuccessfully'),
+      'call-1',
+      hookContext,
+    )
+    const duplicate = await sdkCallback(options, 'PostToolUseFailure')(
+      failureInput('Bash', 'duplicate delivery'),
+      'call-1',
+      hookContext,
+    )
+
+    expect(first).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PostToolUseFailure',
+        additionalContext: 'failure postcondition ran',
+      },
+    })
+    expect(duplicate).toEqual({})
+    expect(sink.filter(AuditAction.CALL_FAILED)).toHaveLength(1)
+    expect(sink.filter(AuditAction.CALL_EXECUTED)).toHaveLength(0)
+    expect(onPostconditionWarn).toHaveBeenCalledOnce()
   })
 })
 

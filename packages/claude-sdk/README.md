@@ -51,7 +51,15 @@ they cannot undo filesystem, network, or other side effects. Native hook postcon
 and warning only for both built-in and MCP tools. The SDK's supported replacement field is
 `updatedToolOutput`, but its value must preserve the invoked tool's result schema. Edictum's generic
 redact/deny result does not carry enough schema information to do that safely, so the adapter does not
-claim output suppression. Use a precondition when an action or its output must be blocked.
+claim output suppression. Both `PostToolUse` and `PostToolUseFailure` finalize pending calls so failed
+tools still run postconditions, fire warnings, and attempt failure audit emission. An SDK failure event
+is authoritative and cannot be overridden by a custom success check. Use a precondition when an
+action or its output must be blocked.
+
+Post finalization is at-most-once. If a postcondition, workflow store, session store, or audit sink
+throws, the hook propagates that error but does not retry: those ports do not share a transaction or
+idempotency key, and retry could duplicate durable state. This is a core transaction-boundary gap,
+not a claim that failure audit is guaranteed.
 
 ## Links
 
