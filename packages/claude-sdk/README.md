@@ -17,19 +17,41 @@ pnpm add @edictum/claude-sdk @edictum/core
 ```typescript
 import { Edictum } from '@edictum/core'
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
+import { query } from '@anthropic-ai/claude-agent-sdk'
 
 const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new ClaudeAgentSDKAdapter(guard)
-const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
+
+for await (const message of query({
+  prompt: 'Inspect this repository',
+  options: {
+    hooks: adapter.toSdkHooks(),
+  },
+})) {
+  // Consume SDK messages.
+}
 ```
 
 ## API
 
 - `ClaudeAgentSDKAdapter` — adapter class
-  - `toSdkHooks(options?)` — returns `{ PreToolUse, PostToolUse }` hook callback arrays
+  - `toSdkHooks(options?)` — returns the SDK-native `hooks` object. This is a breaking change from
+    the 0.2.x shape: each event now contains hook matcher objects, not bare callback arrays.
   - `setPrincipal(principal)` — update principal mid-session
 - `ClaudeAgentSDKAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
 - `ToSdkHooksOptions` — `{ onPostconditionWarn }` callback
+
+The exported hook type aliases now also resolve to the SDK-native types. Code that imported the old
+structural `HookCallback`, input, or output aliases must update to the native three-argument callback
+and required SDK input fields. Code that only passed `toSdkHooks()` to `options.hooks` needs no
+additional bridge.
+
+Preconditions execute before the tool and can deny it. Postconditions execute after the tool, so
+they cannot undo filesystem, network, or other side effects. Native hook postconditions are detection
+and warning only for both built-in and MCP tools. The SDK's supported replacement field is
+`updatedToolOutput`, but its value must preserve the invoked tool's result schema. Edictum's generic
+redact/deny result does not carry enough schema information to do that safely, so the adapter does not
+claim output suppression. Use a precondition when an action or its output must be blocked.
 
 ## Links
 

@@ -7,6 +7,12 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import type {
+  HookCallback,
+  Options,
+  PostToolUseHookInput,
+  PreToolUseHookInput,
+} from '@anthropic-ai/claude-agent-sdk'
 import {
   AuditAction,
   CollectingAuditSink,
@@ -30,6 +36,45 @@ function makeSink(): CollectingAuditSink {
 
 function makeGuard(options: ConstructorParameters<typeof Edictum>[0] = {}): Edictum {
   return new Edictum(options)
+}
+
+const hookContext = { signal: new AbortController().signal }
+
+function preInput(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  toolUseId = 'call-1',
+): PreToolUseHookInput {
+  return {
+    session_id: 'test-session',
+    transcript_path: '/tmp/edictum-test-transcript',
+    cwd: '/tmp',
+    hook_event_name: 'PreToolUse',
+    tool_name: toolName,
+    tool_input: toolInput,
+    tool_use_id: toolUseId,
+  }
+}
+
+function postInput(
+  toolName: string,
+  toolResponse: unknown,
+  toolUseId = 'call-1',
+): PostToolUseHookInput {
+  return {
+    session_id: 'test-session',
+    transcript_path: '/tmp/edictum-test-transcript',
+    cwd: '/tmp',
+    hook_event_name: 'PostToolUse',
+    tool_name: toolName,
+    tool_input: {},
+    tool_response: toolResponse,
+    tool_use_id: toolUseId,
+  }
+}
+
+function sdkCallback(options: Pick<Options, 'hooks'>, event: 'PreToolUse' | 'PostToolUse') {
+  return options.hooks?.[event]?.[0]?.hooks[0] as HookCallback
 }
 
 // ---------------------------------------------------------------------------
@@ -493,29 +538,27 @@ describe('_post edge cases', () => {
 // ---------------------------------------------------------------------------
 
 describe('toSdkHooks', () => {
-  it('returns correct structure with PreToolUse and PostToolUse arrays', () => {
+  it('hands SDK-native matcher objects to the Claude Agent SDK options contract', () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    expect(hooks.PreToolUse).toHaveLength(1)
-    expect(hooks.PostToolUse).toHaveLength(1)
-    expect(typeof hooks.PreToolUse[0]).toBe('function')
-    expect(typeof hooks.PostToolUse[0]).toBe('function')
+    expect(options.hooks.PreToolUse).toHaveLength(1)
+    expect(options.hooks.PostToolUse).toHaveLength(1)
+    expect(options.hooks.PreToolUse[0]).toEqual({ hooks: [expect.any(Function)] })
+    expect(options.hooks.PostToolUse[0]).toEqual({ hooks: [expect.any(Function)] })
   })
 
   it('PreToolUse hook returns allow for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    const result = await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'MyTool',
-        tool_input: {},
-      },
-    })
+    const result = await sdkCallback(options, 'PreToolUse')(
+      preInput('MyTool', {}),
+      'call-1',
+      hookContext,
+    )
 
     expect(result).toEqual({
       hookSpecificOutput: {
@@ -532,15 +575,13 @@ describe('toSdkHooks', () => {
     }
     const guard = makeGuard({ rules: [alwaysDeny] })
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    const result = await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'MyTool',
-        tool_input: {},
-      },
-    })
+    const result = await sdkCallback(options, 'PreToolUse')(
+      preInput('MyTool', {}),
+      'call-1',
+      hookContext,
+    )
 
     expect(result).toEqual({
       hookSpecificOutput: {
@@ -554,24 +595,15 @@ describe('toSdkHooks', () => {
   it('PostToolUse hook returns empty object when no postconditions', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    // First trigger pre to create pending state
-    await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'MyTool',
-        tool_input: {},
-      },
-    })
+    await sdkCallback(options, 'PreToolUse')(preInput('MyTool', {}), 'call-1', hookContext)
 
-    const result = await hooks.PostToolUse[0]!({
-      input: {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'MyTool',
-        tool_result: 'success',
-      },
-    })
+    const result = await sdkCallback(options, 'PostToolUse')(
+      postInput('MyTool', 'success'),
+      'call-1',
+      hookContext,
+    )
 
     expect(result).toEqual({})
   })
@@ -592,66 +624,82 @@ describe('toSdkHooks', () => {
       tools: { MyTool: { side_effect: 'pure' } },
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'MyTool',
-        tool_input: {},
-      },
-    })
+    await sdkCallback(options, 'PreToolUse')(preInput('MyTool', {}), 'call-1', hookContext)
 
-    const result = (await hooks.PostToolUse[0]!({
-      input: {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'MyTool',
-        tool_result: 'the secret is here',
-      },
-    })) as { hookSpecificOutput?: { additionalContext?: string } }
+    const result = (await sdkCallback(options, 'PostToolUse')(
+      postInput('MyTool', 'the secret is here'),
+      'call-1',
+      hookContext,
+    )) as { hookSpecificOutput?: { additionalContext?: string } }
 
     expect(result.hookSpecificOutput?.additionalContext).toContain('Contains secret data')
   })
-})
 
-// ---------------------------------------------------------------------------
-// Ambiguous same-name call correlation (Violation #9)
-// ---------------------------------------------------------------------------
-
-describe('ambiguous same-name call correlation', () => {
-  it('skips postcondition when two same-name calls pending and no tool_use_id', async () => {
-    const postContract: Postcondition = {
+  it('does not claim suppression for tool output without a schema-preserving replacement', async () => {
+    const denyOutput = {
+      _edictum_type: 'postcondition',
+      type: 'postcondition',
+      name: 'suppress_test',
       tool: '*',
-      contractType: 'post',
-      check: async () => Decision.fail('should not run'),
+      effect: 'deny',
+      check: async () => Decision.fail('sensitive data detected'),
     }
-    const sink = makeSink()
-    const guard = makeGuard({ rules: [postContract], auditSink: sink })
+    const guard = makeGuard({
+      rules: [denyOutput as unknown as Postcondition],
+      tools: { Read: { side_effect: 'read' } },
+    })
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    // Two Read calls pending
-    await hooks.PreToolUse[0]!({
-      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/a' } },
-    })
-    await hooks.PreToolUse[0]!({
-      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/b' } },
-    })
+    await sdkCallback(options, 'PreToolUse')(preInput('Read', {}), 'call-1', hookContext)
+    const result = (await sdkCallback(options, 'PostToolUse')(
+      postInput('Read', { file: { content: 'sensitive data' }, type: 'text' }),
+      'call-1',
+      hookContext,
+    )) as { hookSpecificOutput?: { additionalContext?: string; updatedToolOutput?: unknown } }
 
-    // PostToolUse without tool_use_id — ambiguous, should passthrough
-    const result = await hooks.PostToolUse[0]!({
-      input: {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'Read',
-        tool_response: 'file contents',
-      },
-    })
-
-    // Passthrough: empty object (no postcondition evaluation)
-    expect(result).toEqual({})
+    expect(result.hookSpecificOutput?.updatedToolOutput).toBeUndefined()
+    expect(result.hookSpecificOutput?.additionalContext).toContain(
+      'updatedToolOutput requires a schema-preserving replacement',
+    )
   })
 
-  it('correlates correctly when only one same-name call pending', async () => {
+  it('does not claim suppression for MCP tool output without its result schema', async () => {
+    const denyOutput = {
+      _edictum_type: 'postcondition',
+      type: 'postcondition',
+      name: 'suppress_test',
+      tool: '*',
+      effect: 'deny',
+      check: async () => Decision.fail('sensitive data detected'),
+    }
+    const guard = makeGuard({
+      rules: [denyOutput as unknown as Postcondition],
+      tools: { mcp__server__tool: { side_effect: 'read' } },
+    })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+
+    await sdkCallback(options, 'PreToolUse')(
+      preInput('mcp__server__tool', {}),
+      'call-1',
+      hookContext,
+    )
+    const result = (await sdkCallback(options, 'PostToolUse')(
+      postInput('mcp__server__tool', 'sensitive data'),
+      'call-1',
+      hookContext,
+    )) as { hookSpecificOutput?: { additionalContext?: string; updatedToolOutput?: unknown } }
+
+    expect(result.hookSpecificOutput?.updatedToolOutput).toBeUndefined()
+    expect(result.hookSpecificOutput?.additionalContext).toContain(
+      'updatedToolOutput requires a schema-preserving replacement',
+    )
+  })
+
+  it('correlates concurrent same-name calls with the SDK toolUseID callback argument', async () => {
     const postContract: Postcondition = {
       tool: '*',
       contractType: 'post',
@@ -664,68 +712,24 @@ describe('ambiguous same-name call correlation', () => {
       tools: { Read: { side_effect: 'pure' } },
     })
     const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    // Only one Read call pending
-    await hooks.PreToolUse[0]!({
-      input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { path: '/a' } },
-    })
+    await sdkCallback(options, 'PreToolUse')(
+      preInput('Read', { path: '/a' }, 'input-id-is-ignored'),
+      'id-1',
+      hookContext,
+    )
+    await sdkCallback(options, 'PreToolUse')(
+      preInput('Read', { path: '/b' }, 'another-input-id'),
+      'id-2',
+      hookContext,
+    )
 
-    // PostToolUse without tool_use_id — unambiguous, should correlate
-    const result = (await hooks.PostToolUse[0]!({
-      input: {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'Read',
-        tool_response: 'file contents',
-      },
-    })) as { hookSpecificOutput?: { additionalContext?: string } }
-
-    // Postcondition ran and produced violations
-    expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
-  })
-
-  it('correlates correctly with explicit tool_use_id even when ambiguous', async () => {
-    const postContract: Postcondition = {
-      tool: '*',
-      contractType: 'post',
-      check: async () => Decision.fail('postcondition ran'),
-    }
-    const sink = makeSink()
-    const guard = makeGuard({
-      rules: [postContract],
-      auditSink: sink,
-      tools: { Read: { side_effect: 'pure' } },
-    })
-    const adapter = new ClaudeAgentSDKAdapter(guard)
-    const hooks = adapter.toSdkHooks()
-
-    // Two Read calls with explicit IDs
-    await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Read',
-        tool_input: { path: '/a' },
-        tool_use_id: 'id-1',
-      },
-    })
-    await hooks.PreToolUse[0]!({
-      input: {
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Read',
-        tool_input: { path: '/b' },
-        tool_use_id: 'id-2',
-      },
-    })
-
-    // PostToolUse WITH explicit tool_use_id → should correlate correctly
-    const result = (await hooks.PostToolUse[0]!({
-      input: {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'Read',
-        tool_use_id: 'id-2',
-        tool_response: 'file contents',
-      },
-    })) as { hookSpecificOutput?: { additionalContext?: string } }
+    const result = (await sdkCallback(options, 'PostToolUse')(
+      postInput('Read', 'file contents', 'wrong-input-id'),
+      'id-2',
+      hookContext,
+    )) as { hookSpecificOutput?: { additionalContext?: string } }
 
     expect(result.hookSpecificOutput?.additionalContext).toContain('postcondition ran')
   })

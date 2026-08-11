@@ -6,13 +6,22 @@
  *
  * Integration point: PreToolUse / PostToolUse hooks.
  *
- * Note: toSdkHooks() fully enforces preconditions. For postcondition
- * redact/deny, the adapter sets updatedMCPToolOutput in the PostToolUse
- * response, but full enforcement depends on the Claude Agent SDK honoring
- * this field. Use the wrapper integration path for guaranteed enforcement.
+ * Note: toSdkHooks() fully enforces preconditions. Postconditions run after
+ * the tool, so they cannot undo side effects. Native hook output replacement
+ * is not enforced: updatedToolOutput requires a schema-preserving replacement,
+ * which Edictum cannot safely synthesize from its generic postcondition result.
  */
 
 import { randomUUID } from 'node:crypto'
+
+import type {
+  HookCallback as SDKHookCallback,
+  HookCallbackMatcher,
+  PostToolUseHookInput as SDKPostToolUseHookInput,
+  PostToolUseHookSpecificOutput,
+  PreToolUseHookInput as SDKPreToolUseHookInput,
+  PreToolUseHookSpecificOutput,
+} from '@anthropic-ai/claude-agent-sdk'
 
 import {
   type AuditAction,
@@ -38,49 +47,15 @@ export const VERSION = '0.1.0' as const
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
 
 // ---------------------------------------------------------------------------
-// Claude Agent SDK hook types (structural -- no framework import needed)
+// Claude Agent SDK hook types
 // ---------------------------------------------------------------------------
 
-/** Shape of input passed to a PreToolUse hook callback. */
-export interface PreToolUseInput {
-  readonly hook_event_name: string
-  readonly tool_name: string
-  readonly tool_input: Record<string, unknown>
-  readonly tool_use_id?: string
-}
-
-/** Shape of input passed to a PostToolUse hook callback. */
-export interface PostToolUseInput {
-  readonly hook_event_name: string
-  readonly tool_name: string
-  readonly tool_use_id?: string
-  readonly tool_response?: unknown
-  /** @deprecated Use tool_response instead. Kept for backward compatibility. */
-  readonly tool_result?: unknown
-}
-
-/** PreToolUse hook output for deny. */
-export interface PreToolUseHookOutput {
-  readonly hookSpecificOutput: {
-    readonly hookEventName: 'PreToolUse'
-    readonly permissionDecision: 'allow' | 'deny'
-    readonly permissionDecisionReason?: string
-  }
-}
-
-/** PostToolUse hook output (informational + optional result substitution). */
-export interface PostToolUseHookOutput {
-  readonly hookSpecificOutput?: {
-    readonly hookEventName: 'PostToolUse'
-    readonly additionalContext?: string
-    readonly updatedMCPToolOutput?: unknown
-  }
-}
-
-/** Hook callback type matching Claude Agent SDK convention. */
-export type HookCallback = (input: {
-  readonly input: PreToolUseInput | PostToolUseInput
-}) => Promise<PreToolUseHookOutput | PostToolUseHookOutput | Record<string, never>>
+export type HookCallback = SDKHookCallback
+export type HookMatcher = HookCallbackMatcher
+export type PreToolUseInput = SDKPreToolUseHookInput
+export type PostToolUseInput = SDKPostToolUseHookInput
+export type PreToolUseHookOutput = { hookSpecificOutput: PreToolUseHookSpecificOutput }
+export type PostToolUseHookOutput = { hookSpecificOutput?: PostToolUseHookSpecificOutput }
 
 // ---------------------------------------------------------------------------
 // ClaudeAgentSDKAdapterOptions
@@ -182,108 +157,97 @@ export class ClaudeAgentSDKAdapter {
    * ```ts
    * const adapter = new ClaudeAgentSDKAdapter(guard);
    * const hooks = adapter.toSdkHooks();
-   * // Pass hooks.PreToolUse and hooks.PostToolUse to Claude Agent SDK
+   * // Pass hooks as options.hooks to the Claude Agent SDK.
    * ```
    */
   toSdkHooks(options?: ToSdkHooksOptions): {
-    PreToolUse: HookCallback[]
-    PostToolUse: HookCallback[]
+    PreToolUse: HookCallbackMatcher[]
+    PostToolUse: HookCallbackMatcher[]
   } {
     this._onPostconditionWarn = options?.onPostconditionWarn ?? null
 
+    const preToolUse: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PreToolUse') {
+        return {}
+      }
+
+      if (
+        typeof input.tool_input !== 'object' ||
+        input.tool_input == null ||
+        Array.isArray(input.tool_input)
+      ) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: 'DENIED: Claude Agent SDK supplied invalid tool input',
+          },
+        }
+      }
+
+      const callId = toolUseID ?? input.tool_use_id ?? randomUUID()
+      const result = await this._pre(
+        input.tool_name,
+        input.tool_input as Record<string, unknown>,
+        callId,
+      )
+
+      if (result != null) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: result,
+          },
+        }
+      }
+
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+        },
+      }
+    }
+
+    const postToolUse: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PostToolUse') {
+        return {}
+      }
+
+      const toolResponse = input.tool_response
+
+      // Correlate via the callback argument first, then the input field.
+      const callId = toolUseID ?? input.tool_use_id
+      if (!callId || !this._pending.has(callId)) {
+        return {}
+      }
+
+      const postResult = await this._post(callId, toolResponse)
+
+      const outputChanged = postResult.outputSuppressed || postResult.result !== toolResponse
+
+      if (postResult.violations.length > 0 || outputChanged) {
+        const findings = postResult.violations.map((finding) => finding.message)
+        if (outputChanged) {
+          findings.push(
+            'Edictum did not replace tool output: Claude Agent SDK updatedToolOutput requires a schema-preserving replacement that the generic adapter cannot synthesize',
+          )
+        }
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PostToolUse',
+            additionalContext: findings.join('\n'),
+          },
+        }
+      }
+
+      return {}
+    }
+
     return {
-      PreToolUse: [
-        async ({ input }): Promise<PreToolUseHookOutput> => {
-          const hookInput = input as PreToolUseInput
-          const toolName = hookInput.tool_name
-          const toolInput = hookInput.tool_input
-          const callId = hookInput.tool_use_id ?? randomUUID()
-
-          const result = await this._pre(toolName, toolInput, callId)
-
-          if (result != null) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: result,
-              },
-            }
-          }
-
-          return {
-            hookSpecificOutput: {
-              hookEventName: 'PreToolUse',
-              permissionDecision: 'allow',
-            },
-          }
-        },
-      ],
-      PostToolUse: [
-        async ({ input }): Promise<PostToolUseHookOutput | Record<string, never>> => {
-          const hookInput = input as PostToolUseInput
-          // Note 2: read tool_response (preferred), fall back to tool_result
-          const toolResponse =
-            hookInput.tool_response !== undefined ? hookInput.tool_response : hookInput.tool_result
-
-          // Correlate via tool_use_id (exact match), then tool_name (only if unambiguous)
-          let callId: string | undefined
-
-          // Note 2: use tool_use_id for correlation if available
-          if (hookInput.tool_use_id && this._pending.has(hookInput.tool_use_id)) {
-            callId = hookInput.tool_use_id
-          }
-
-          // Fall back to tool_name match — only if unambiguous (exactly one match)
-          if (!callId) {
-            const toolName = hookInput.tool_name
-            if (toolName) {
-              let matchCount = 0
-              let matchedId: string | undefined
-              for (const [id, pending] of this._pending) {
-                if (pending.toolCall.toolName === toolName) {
-                  matchCount++
-                  matchedId = id
-                }
-              }
-              if (matchCount === 1 && matchedId) {
-                callId = matchedId
-              }
-              // If matchCount > 1 or 0, callId stays undefined → passthrough
-            }
-          }
-
-          if (callId) {
-            const postResult = await this._post(callId, toolResponse)
-
-            // Note 3: return updatedMCPToolOutput for redacted/suppressed content
-            if (postResult.outputSuppressed || postResult.result !== toolResponse) {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PostToolUse',
-                  updatedMCPToolOutput: postResult.result,
-                  additionalContext:
-                    postResult.violations.length > 0
-                      ? postResult.violations.map((f) => f.message).join('\n')
-                      : undefined,
-                },
-              }
-            }
-
-            if (postResult.violations.length > 0) {
-              const context = postResult.violations.map((f) => f.message).join('\n')
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PostToolUse',
-                  additionalContext: context,
-                },
-              }
-            }
-          }
-
-          return {}
-        },
-      ],
+      PreToolUse: [{ hooks: [preToolUse] }],
+      PostToolUse: [{ hooks: [postToolUse] }],
     }
   }
 
