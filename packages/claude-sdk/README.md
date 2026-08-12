@@ -53,8 +53,10 @@ Preconditions execute before the tool and can block it. Passing an Edictum preco
 approve the call: the SDK still applies `allowedTools`, `canUseTool`, and its normal permission path.
 The pinned SDK executes a `canUseTool` `updatedInput` without another `PreToolUse` callback, so a raw
 permission callback can bypass governance. Always pass configured callbacks through
-`adapter.wrapCanUseTool(callback)`. The wrapper preserves normal allow, deny, and documented null
-results, rejects replacements, and converts thrown or malformed callback results to a fixed denial.
+`adapter.wrapCanUseTool(callback)`. The wrapper copies normal allow and deny results into fresh plain
+objects, preserves documented null responses, rejects input and permission mutations, and converts
+thrown or malformed callback results to a fixed denial. It deliberately does not forward
+`updatedPermissions`; pre-approve stable permissions through SDK options instead.
 The live verification has a permission callback rewrite a benign command to a forbidden `touch` and
 proves that the wrapper blocks it.
 

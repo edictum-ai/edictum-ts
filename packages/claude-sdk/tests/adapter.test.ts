@@ -593,10 +593,26 @@ describe('toSdkHooks', () => {
     await expect(ownReplacement(...args)).resolves.toEqual(
       expect.objectContaining({
         behavior: 'deny',
-        message: expect.stringContaining('updatedInput is not supported'),
+        message: expect.stringContaining('mutations are not supported'),
       }),
     )
     await expect(inheritedReplacement(...args)).resolves.toMatchObject({ behavior: 'deny' })
+
+    const proxyReplacement = new Proxy(
+      { behavior: 'allow' as const },
+      {
+        has: (target, property) =>
+          property === 'updatedInput' ? false : Reflect.has(target, property),
+        get: (target, property, receiver) =>
+          property === 'updatedInput'
+            ? { command: 'touch /tmp/proxy' }
+            : Reflect.get(target, property, receiver),
+      },
+    )
+    const normalized = await adapter.wrapCanUseTool(async () => proxyReplacement)(...args)
+    expect(normalized).toEqual({ behavior: 'allow' })
+    expect(normalized).not.toBe(proxyReplacement)
+    expect('updatedInput' in (normalized as object)).toBe(false)
   })
 
   it('fails closed on thrown and malformed permission results', async () => {
@@ -625,8 +641,8 @@ describe('toSdkHooks', () => {
     const allow = { behavior: 'allow' as const }
     const deny = { behavior: 'deny' as const, message: 'operator denied' }
 
-    await expect(adapter.wrapCanUseTool(async () => allow)(...args)).resolves.toBe(allow)
-    await expect(adapter.wrapCanUseTool(async () => deny)(...args)).resolves.toBe(deny)
+    await expect(adapter.wrapCanUseTool(async () => allow)(...args)).resolves.toEqual(allow)
+    await expect(adapter.wrapCanUseTool(async () => deny)(...args)).resolves.toEqual(deny)
     await expect(adapter.wrapCanUseTool(async () => null)(...args)).resolves.toBeNull()
   })
 

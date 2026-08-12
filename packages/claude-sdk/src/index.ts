@@ -56,7 +56,7 @@ function permissionBoundaryDenial(): {
   return {
     behavior: 'deny',
     message:
-      'DENIED: Edictum rejected an unsafe or invalid SDK permission result; updatedInput is not supported after PreToolUse governance',
+      'BLOCKED: Edictum rejected an unsafe or invalid SDK permission result; input and permission mutations are not supported after PreToolUse governance',
   }
 }
 
@@ -199,7 +199,7 @@ export class ClaudeAgentSDKAdapter {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',
-            permissionDecisionReason: 'DENIED: Claude Agent SDK supplied invalid tool input',
+            permissionDecisionReason: 'BLOCKED: Claude Agent SDK supplied invalid tool input',
           },
         }
       }
@@ -305,9 +305,10 @@ export class ClaudeAgentSDKAdapter {
   }
 
   /**
-   * Wrap an SDK permission callback so it cannot replace arguments after
-   * PreToolUse governance. Null is preserved for documented out-of-band
-   * responses. Throws and malformed results fail closed with a fixed denial.
+   * Wrap an SDK permission callback so it cannot mutate arguments or permissions
+   * after PreToolUse governance. Accepted decisions are copied into fresh plain
+   * objects. Null is preserved for documented out-of-band responses. Throws and
+   * malformed results fail closed with a fixed denial.
    */
   wrapCanUseTool(callback: CanUseTool): CanUseTool {
     return async (toolName, input, options) => {
@@ -321,17 +322,38 @@ export class ClaudeAgentSDKAdapter {
         }
 
         const permissionResult = result as Record<string, unknown>
+        const decisionClassification = permissionResult['decisionClassification']
+        if (
+          decisionClassification !== undefined &&
+          decisionClassification !== 'user_temporary' &&
+          decisionClassification !== 'user_permanent' &&
+          decisionClassification !== 'user_reject'
+        ) {
+          return permissionBoundaryDenial()
+        }
+
         if (permissionResult['behavior'] === 'allow') {
-          if ('updatedInput' in permissionResult) {
+          if ('updatedInput' in permissionResult || 'updatedPermissions' in permissionResult) {
             return permissionBoundaryDenial()
           }
-          return result as Awaited<ReturnType<CanUseTool>>
+          return decisionClassification === undefined
+            ? { behavior: 'allow' }
+            : { behavior: 'allow', decisionClassification }
         }
         if (
           permissionResult['behavior'] === 'deny' &&
           typeof permissionResult['message'] === 'string'
         ) {
-          return result as Awaited<ReturnType<CanUseTool>>
+          const interrupt = permissionResult['interrupt']
+          if (interrupt !== undefined && typeof interrupt !== 'boolean') {
+            return permissionBoundaryDenial()
+          }
+          return {
+            behavior: 'deny',
+            message: permissionResult['message'],
+            ...(interrupt === undefined ? {} : { interrupt }),
+            ...(decisionClassification === undefined ? {} : { decisionClassification }),
+          }
         }
         return permissionBoundaryDenial()
       } catch {

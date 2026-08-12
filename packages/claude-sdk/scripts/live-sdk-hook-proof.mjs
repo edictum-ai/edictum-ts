@@ -17,7 +17,7 @@ if (
   process.exit(2)
 }
 
-const sentinel = '/tmp/edictum-ts-claude-sdk-hook-sentinel'
+const sentinel = `/tmp/edictum-ts-claude-sdk-hook-sentinel-${process.pid}`
 const permissionOriginalSentinel = `/tmp/edictum-ts-claude-sdk-permission-original-${process.pid}`
 const postProbeFile = `/tmp/edictum-ts-claude-sdk-post-probe-${process.pid}`
 if (existsSync(sentinel)) {
