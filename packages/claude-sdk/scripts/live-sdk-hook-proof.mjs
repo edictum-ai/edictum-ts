@@ -18,9 +18,13 @@ if (
 }
 
 const sentinel = '/tmp/edictum-ts-claude-sdk-hook-sentinel'
+const permissionOriginalSentinel = `/tmp/edictum-ts-claude-sdk-permission-original-${process.pid}`
 const postProbeFile = `/tmp/edictum-ts-claude-sdk-post-probe-${process.pid}`
 if (existsSync(sentinel)) {
   unlinkSync(sentinel)
+}
+if (existsSync(permissionOriginalSentinel)) {
+  unlinkSync(permissionOriginalSentinel)
 }
 
 let hookDenied = false
@@ -34,6 +38,8 @@ let assistantText = ''
 let sdkResult = 'NOT_EMITTED'
 let failureHookCalled = false
 let permissionCallbackCalled = false
+let permissionRewriteRejected = false
+let preHookObservedRewrittenInput = false
 const postProbe = 'POSTCONDITION_PROBE_VALUE'
 const auditSink = new CollectingAuditSink()
 const denyTouch = {
@@ -51,7 +57,7 @@ const suppressProbeOutput = {
   type: 'postcondition',
   name: 'live_postcondition_probe',
   tool: 'Read',
-  effect: 'deny',
+  action: 'block',
   check: async (_toolCall, output) =>
     JSON.stringify(output).includes(postProbe)
       ? Decision.fail('live proof suppresses Read output')
@@ -62,7 +68,7 @@ const warnOnFailure = {
   type: 'postcondition',
   name: 'live_failure_probe',
   tool: 'Bash',
-  effect: 'deny',
+  action: 'block',
   check: async (_toolCall, output) =>
     typeof output === 'object' && output != null && output.is_error === true
       ? Decision.fail('live proof observed failed Bash execution')
@@ -125,6 +131,15 @@ if (mode === 'failure') {
   }
 }
 
+if (mode === 'permission') {
+  const originalPreToolUseHook = hooks.PreToolUse[0].hooks[0]
+  hooks.PreToolUse[0].hooks[0] = async (input, toolUseID, context) => {
+    preHookObservedRewrittenInput ||=
+      input.hook_event_name === 'PreToolUse' && input.tool_input.command === `touch ${sentinel}`
+    return originalPreToolUseHook(input, toolUseID, context)
+  }
+}
+
 const options = {
   ...(mode === 'permission' ? {} : { allowedTools: [mode === 'post' ? 'Read' : 'Bash'] }),
   permissionMode: 'acceptEdits',
@@ -132,9 +147,13 @@ const options = {
   maxTurns: 2,
   ...(mode === 'permission'
     ? {
-        canUseTool: async () => {
-          permissionCallbackCalled = true
-          return { behavior: 'deny', message: 'live proof SDK permission denial' }
+        canUseTool: async (...args) => {
+          const result = await adapter.wrapCanUseTool(async () => {
+            permissionCallbackCalled = true
+            return { behavior: 'allow', updatedInput: { command: `touch ${sentinel}` } }
+          })(...args)
+          permissionRewriteRejected = result?.behavior === 'deny'
+          return result
         },
       }
     : {}),
@@ -154,7 +173,9 @@ for await (const message of query({
       ? `Use Read exactly once to read ${postProbeFile}. Then answer only SUPPRESSED if the tool output begins with [OUTPUT SUPPRESSED], otherwise answer only ORIGINAL.`
       : mode === 'failure'
         ? 'Use the Bash tool exactly once to run this exact command, then stop: exit 7'
-        : `Use the Bash tool exactly once to run this exact command, then stop: touch ${sentinel}`,
+        : mode === 'permission'
+          ? `Use the Bash tool exactly once to run this exact command, then stop: touch ${permissionOriginalSentinel}`
+          : `Use the Bash tool exactly once to run this exact command, then stop: touch ${sentinel}`,
   options,
 })) {
   if (message.type === 'assistant') {
@@ -170,6 +191,9 @@ for await (const message of query({
 }
 
 const present = existsSync(sentinel)
+if (existsSync(permissionOriginalSentinel)) {
+  unlinkSync(permissionOriginalSentinel)
+}
 if (mode === 'post' && existsSync(postProbeFile)) {
   unlinkSync(postProbeFile)
 }
@@ -195,6 +219,8 @@ if (mode === 'failure') {
 }
 if (mode === 'permission') {
   console.log(`PERMISSION_CALLBACK_CALLED=${permissionCallbackCalled ? 'YES' : 'NO'}`)
+  console.log(`PERMISSION_REWRITE_REJECTED=${permissionRewriteRejected ? 'YES' : 'NO'}`)
+  console.log(`PRE_HOOK_SAW_REWRITTEN_INPUT=${preHookObservedRewrittenInput ? 'YES' : 'NO'}`)
 }
 
 const passed =
@@ -203,7 +229,12 @@ const passed =
     : mode === 'block'
       ? sdkResult === 'success' && !present && hookDenied
       : mode === 'permission'
-        ? sdkResult === 'success' && !present && !hookDenied && permissionCallbackCalled
+        ? sdkResult === 'success' &&
+          !present &&
+          !hookDenied &&
+          permissionCallbackCalled &&
+          permissionRewriteRejected &&
+          !preHookObservedRewrittenInput
         : mode === 'post'
           ? sdkResult === 'success' &&
             postInputShape !== 'NOT_CALLED' &&

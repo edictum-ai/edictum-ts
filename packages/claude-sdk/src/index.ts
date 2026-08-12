@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type {
+  CanUseTool,
   HookCallback as SDKHookCallback,
   HookCallbackMatcher,
   PostToolUseFailureHookInput as SDKPostToolUseFailureHookInput,
@@ -47,6 +48,17 @@ import {
 
 export const VERSION = '0.3.0' as const
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
+
+function permissionBoundaryDenial(): {
+  behavior: 'deny'
+  message: string
+} {
+  return {
+    behavior: 'deny',
+    message:
+      'DENIED: Edictum rejected an unsafe or invalid SDK permission result; updatedInput is not supported after PreToolUse governance',
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Claude Agent SDK hook types
@@ -230,13 +242,13 @@ export class ClaudeAgentSDKAdapter {
     const postContext = (postResult: PostCallResult, toolResponse: unknown): string | null => {
       const outputChanged = postResult.outputSuppressed || postResult.result !== toolResponse
       if (postResult.violations.length > 0 || outputChanged) {
-        const findings = postResult.violations.map((finding) => finding.message)
+        const violations = postResult.violations.map((violation) => violation.message)
         if (outputChanged) {
-          findings.push(
+          violations.push(
             'Edictum did not replace tool output: Claude Agent SDK updatedToolOutput requires a schema-preserving replacement that the generic adapter cannot synthesize',
           )
         }
-        return findings.join('\n')
+        return violations.join('\n')
       }
       return null
     }
@@ -289,6 +301,42 @@ export class ClaudeAgentSDKAdapter {
       PreToolUse: [{ hooks: [preToolUse] }],
       PostToolUse: [{ hooks: [postToolUse] }],
       PostToolUseFailure: [{ hooks: [postToolUseFailure] }],
+    }
+  }
+
+  /**
+   * Wrap an SDK permission callback so it cannot replace arguments after
+   * PreToolUse governance. Null is preserved for documented out-of-band
+   * responses. Throws and malformed results fail closed with a fixed denial.
+   */
+  wrapCanUseTool(callback: CanUseTool): CanUseTool {
+    return async (toolName, input, options) => {
+      try {
+        const result: unknown = await callback(toolName, input, options)
+        if (result === null) {
+          return null
+        }
+        if (typeof result !== 'object') {
+          return permissionBoundaryDenial()
+        }
+
+        const permissionResult = result as Record<string, unknown>
+        if (permissionResult['behavior'] === 'allow') {
+          if (Object.prototype.hasOwnProperty.call(permissionResult, 'updatedInput')) {
+            return permissionBoundaryDenial()
+          }
+          return result as Awaited<ReturnType<CanUseTool>>
+        }
+        if (
+          permissionResult['behavior'] === 'deny' &&
+          typeof permissionResult['message'] === 'string'
+        ) {
+          return result as Awaited<ReturnType<CanUseTool>>
+        }
+        return permissionBoundaryDenial()
+      } catch {
+        return permissionBoundaryDenial()
+      }
     }
   }
 

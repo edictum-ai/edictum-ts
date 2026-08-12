@@ -572,6 +572,62 @@ describe('toSdkHooks', () => {
     expect(options.hooks.PostToolUseFailure[0]).toEqual({ hooks: [expect.any(Function)] })
   })
 
+  it('rejects permission callbacks that replace governed input', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const callback = adapter.wrapCanUseTool(async () => ({
+      behavior: 'allow',
+      updatedInput: { command: 'touch /tmp/rewritten' },
+    }))
+
+    await expect(
+      callback(
+        'Bash',
+        { command: 'echo safe' },
+        {
+          signal: hookContext.signal,
+          toolUseID: 'call-1',
+          requestId: 'request-1',
+        },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        behavior: 'deny',
+        message: expect.stringContaining('updatedInput is not supported'),
+      }),
+    )
+  })
+
+  it('fails closed on thrown and malformed permission results', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const args = [
+      'Bash',
+      { command: 'echo safe' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
+    const thrown = adapter.wrapCanUseTool(async () => {
+      throw new Error('permission backend failed')
+    })
+    const malformed = adapter.wrapCanUseTool(async () => 'allow' as never)
+
+    await expect(thrown(...args)).resolves.toMatchObject({ behavior: 'deny' })
+    await expect(malformed(...args)).resolves.toMatchObject({ behavior: 'deny' })
+  })
+
+  it('preserves normal permission results and documented null responses', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const args = [
+      'Bash',
+      { command: 'echo safe' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
+    const allow = { behavior: 'allow' as const }
+    const deny = { behavior: 'deny' as const, message: 'operator denied' }
+
+    await expect(adapter.wrapCanUseTool(async () => allow)(...args)).resolves.toBe(allow)
+    await expect(adapter.wrapCanUseTool(async () => deny)(...args)).resolves.toBe(deny)
+    await expect(adapter.wrapCanUseTool(async () => null)(...args)).resolves.toBeNull()
+  })
+
   it('PreToolUse hook returns no permission decision for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
@@ -811,6 +867,30 @@ describe('toSdkHooks', () => {
     expect(sink.filter(AuditAction.CALL_FAILED)).toHaveLength(1)
     expect(sink.filter(AuditAction.CALL_EXECUTED)).toHaveLength(0)
     expect(onPostconditionWarn).toHaveBeenCalledOnce()
+  })
+
+  it('PostToolUse is a no-op after PostToolUseFailure finalized the call', async () => {
+    const sink = makeSink()
+    const adapter = new ClaudeAgentSDKAdapter(
+      makeGuard({ auditSink: sink, tools: { Bash: { side_effect: 'execute' } } }),
+    )
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+
+    await sdkCallback(options, 'PreToolUse')(preInput('Bash', {}), 'call-1', hookContext)
+    await sdkCallback(options, 'PostToolUseFailure')(
+      failureInput('Bash', 'command exited unsuccessfully'),
+      'call-1',
+      hookContext,
+    )
+    const duplicate = await sdkCallback(options, 'PostToolUse')(
+      postInput('Bash', 'ignored'),
+      'call-1',
+      hookContext,
+    )
+
+    expect(duplicate).toEqual({})
+    expect(sink.filter(AuditAction.CALL_FAILED)).toHaveLength(1)
+    expect(sink.filter(AuditAction.CALL_EXECUTED)).toHaveLength(0)
   })
 })
 

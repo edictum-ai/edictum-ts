@@ -141,7 +141,10 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 ```typescript
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
 const adapter = new ClaudeAgentSDKAdapter(guard)
-const options = { hooks: adapter.toSdkHooks() }
+const options = {
+  allowedTools: ['Read'],
+  hooks: adapter.toSdkHooks(),
+}
 ```
 
 **LangChain.js** — middleware for ToolNode:

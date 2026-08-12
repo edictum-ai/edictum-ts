@@ -21,11 +21,13 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 
 const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new ClaudeAgentSDKAdapter(guard)
+const permissionHandler = async () => ({ behavior: 'allow' as const })
 
 for await (const message of query({
   prompt: 'Inspect this repository',
   options: {
     hooks: adapter.toSdkHooks(),
+    canUseTool: adapter.wrapCanUseTool(permissionHandler),
   },
 })) {
   // Consume SDK messages.
@@ -38,6 +40,8 @@ for await (const message of query({
   - `toSdkHooks(options?)` — returns the SDK-native `hooks` object. This is a breaking change from
     the 0.2.x shape: each event now contains hook matcher objects, not bare callback arrays. The
     corrected API ships as 0.3.0.
+  - `wrapCanUseTool(callback)` — wraps an SDK permission callback and rejects `updatedInput`
+    replacements after governance. Use it for every configured `canUseTool` callback.
   - `setPrincipal(principal)` — update principal mid-session
 - `ClaudeAgentSDKAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
 - `ToSdkHooksOptions` — `{ onPostconditionWarn }` callback
@@ -49,6 +53,13 @@ additional bridge.
 
 Preconditions execute before the tool and can block it. Passing an Edictum precondition does not
 approve the call: the SDK still applies `allowedTools`, `canUseTool`, and its normal permission path.
+The pinned SDK executes a `canUseTool` `updatedInput` without another `PreToolUse` callback, so a raw
+permission callback can bypass governance. Always pass configured callbacks through
+`adapter.wrapCanUseTool(callback)`. The wrapper preserves normal allow, deny, and documented null
+results, rejects replacements, and converts thrown or malformed callback results to a fixed denial.
+The live verification has a permission callback rewrite a benign command to a forbidden `touch` and
+proves that the wrapper blocks it.
+
 Postconditions execute after the tool, so
 they cannot undo filesystem, network, or other side effects. Native hook postconditions are detection
 and warning only for both built-in and MCP tools. The SDK's supported replacement field is
