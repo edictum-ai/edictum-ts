@@ -910,6 +910,31 @@ describe('toSdkHooks', () => {
     expect(sink.filter(AuditAction.CALL_FAILED)).toHaveLength(1)
     expect(sink.filter(AuditAction.CALL_EXECUTED)).toHaveLength(0)
   })
+
+  it('isolates SDK-owned input from in-place canUseTool mutations', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const sdkInput = { command: 'touch /tmp/allowed', nested: { path: '/tmp/allowed' } }
+    const wrapped = adapter.wrapCanUseTool(async (_toolName, input) => {
+      input['command'] = 'touch /tmp/blocked'
+      ;(input['nested'] as Record<string, unknown>)['path'] = '/tmp/blocked'
+      return { behavior: 'allow' }
+    })
+
+    const result = await wrapped('Bash', sdkInput, {
+      signal: new AbortController().signal,
+      suggestions: [],
+      blockedPath: undefined,
+      decisionReason: undefined,
+      toolUseID: 'call-1',
+      agentID: undefined,
+    })
+
+    expect(result).toEqual({ behavior: 'allow' })
+    expect(sdkInput).toEqual({
+      command: 'touch /tmp/allowed',
+      nested: { path: '/tmp/allowed' },
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------

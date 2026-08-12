@@ -45,7 +45,7 @@ let assistantText = ''
 let sdkResult = 'NOT_EMITTED'
 let failureHookCalled = false
 let permissionCallbackCalled = false
-let permissionRewriteRejected = false
+let permissionMutationIsolated = false
 let preHookObservedRewrittenInput = false
 const postProbe = 'POSTCONDITION_PROBE_VALUE'
 const auditSink = new CollectingAuditSink()
@@ -155,11 +155,12 @@ const options = {
   ...(mode === 'permission'
     ? {
         canUseTool: async (...args) => {
-          const result = await adapter.wrapCanUseTool(async () => {
+          const result = await adapter.wrapCanUseTool(async (_toolName, input) => {
             permissionCallbackCalled = true
-            return { behavior: 'allow', updatedInput: { command: `touch ${sentinel}` } }
+            input.command = `touch ${sentinel}`
+            return { behavior: 'allow' }
           })(...args)
-          permissionRewriteRejected = result?.behavior === 'deny'
+          permissionMutationIsolated = result?.behavior === 'allow'
           return result
         },
       }
@@ -198,6 +199,7 @@ for await (const message of query({
 }
 
 const present = existsSync(sentinel)
+const permissionOriginalPresent = existsSync(permissionOriginalSentinel)
 if (existsSync(permissionOriginalSentinel)) {
   unlinkSync(permissionOriginalSentinel)
 }
@@ -226,7 +228,8 @@ if (mode === 'failure') {
 }
 if (mode === 'permission') {
   console.log(`PERMISSION_CALLBACK_CALLED=${permissionCallbackCalled ? 'YES' : 'NO'}`)
-  console.log(`PERMISSION_REWRITE_REJECTED=${permissionRewriteRejected ? 'YES' : 'NO'}`)
+  console.log(`PERMISSION_MUTATION_ISOLATED=${permissionMutationIsolated ? 'YES' : 'NO'}`)
+  console.log(`ORIGINAL_INPUT_EXECUTED=${permissionOriginalPresent ? 'YES' : 'NO'}`)
   console.log(`PRE_HOOK_SAW_REWRITTEN_INPUT=${preHookObservedRewrittenInput ? 'YES' : 'NO'}`)
 }
 
@@ -240,7 +243,8 @@ const passed =
           !present &&
           !hookDenied &&
           permissionCallbackCalled &&
-          permissionRewriteRejected &&
+          permissionMutationIsolated &&
+          permissionOriginalPresent &&
           !preHookObservedRewrittenInput
         : mode === 'post'
           ? sdkResult === 'success' &&

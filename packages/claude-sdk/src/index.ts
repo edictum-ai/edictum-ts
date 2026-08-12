@@ -177,6 +177,9 @@ export class ClaudeAgentSDKAdapter {
    * const hooks = adapter.toSdkHooks();
    * // Pass hooks as options.hooks to the Claude Agent SDK.
    * ```
+   *
+   * Calling this method again replaces the postcondition warning callback for
+   * every hook set returned by this adapter instance.
    */
   toSdkHooks(options?: ToSdkHooksOptions): {
     PreToolUse: HookCallbackMatcher[]
@@ -313,7 +316,11 @@ export class ClaudeAgentSDKAdapter {
   wrapCanUseTool(callback: CanUseTool): CanUseTool {
     return async (toolName, input, options) => {
       try {
-        const result: unknown = await callback(toolName, input, options)
+        // The SDK-owned input may execute after this callback returns. Give the
+        // callback a detached copy so in-place mutation cannot change the
+        // already-governed arguments without using updatedInput (rejected below).
+        const isolatedInput = structuredClone(input)
+        const result: unknown = await callback(toolName, isolatedInput, options)
         if (result === null) {
           return null
         }
@@ -348,6 +355,8 @@ export class ClaudeAgentSDKAdapter {
           if (interrupt !== undefined && typeof interrupt !== 'boolean') {
             return permissionBoundaryDenial()
           }
+          // Construct from an explicit allowlist. In particular, do not
+          // forward updatedPermissions or any callback-owned prototype/Proxy.
           return {
             behavior: 'deny',
             message: permissionResult['message'],
