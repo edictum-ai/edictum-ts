@@ -17,7 +17,14 @@ if (
   process.exit(2)
 }
 
-const sentinel = `/tmp/edictum-ts-claude-sdk-hook-sentinel-${process.pid}`
+const proofRunId = process.env.EDICTUM_LIVE_PROOF_RUN_ID ?? String(process.pid)
+if (!/^[A-Za-z0-9_-]{1,64}$/.test(proofRunId)) {
+  console.error(
+    'EDICTUM_LIVE_PROOF_RUN_ID must contain 1-64 ASCII letters, digits, underscores, or hyphens',
+  )
+  process.exit(2)
+}
+const sentinel = `/tmp/edictum-ts-claude-sdk-hook-sentinel-${proofRunId}`
 const permissionOriginalSentinel = `/tmp/edictum-ts-claude-sdk-permission-original-${process.pid}`
 const postProbeFile = `/tmp/edictum-ts-claude-sdk-post-probe-${process.pid}`
 if (existsSync(sentinel)) {
