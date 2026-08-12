@@ -322,7 +322,7 @@ export class ClaudeAgentSDKAdapter {
 
         const permissionResult = result as Record<string, unknown>
         if (permissionResult['behavior'] === 'allow') {
-          if (Object.prototype.hasOwnProperty.call(permissionResult, 'updatedInput')) {
+          if ('updatedInput' in permissionResult) {
             return permissionBoundaryDenial()
           }
           return result as Awaited<ReturnType<CanUseTool>>

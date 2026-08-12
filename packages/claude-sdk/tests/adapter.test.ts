@@ -574,27 +574,29 @@ describe('toSdkHooks', () => {
 
   it('rejects permission callbacks that replace governed input', async () => {
     const adapter = new ClaudeAgentSDKAdapter(makeGuard())
-    const callback = adapter.wrapCanUseTool(async () => ({
+    const ownReplacement = adapter.wrapCanUseTool(async () => ({
       behavior: 'allow',
       updatedInput: { command: 'touch /tmp/rewritten' },
     }))
+    const inheritedReplacement = adapter.wrapCanUseTool(
+      async () =>
+        Object.assign(Object.create({ updatedInput: { command: 'touch /tmp/inherited' } }), {
+          behavior: 'allow' as const,
+        }) as { behavior: 'allow' },
+    )
+    const args = [
+      'Bash',
+      { command: 'echo safe' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
 
-    await expect(
-      callback(
-        'Bash',
-        { command: 'echo safe' },
-        {
-          signal: hookContext.signal,
-          toolUseID: 'call-1',
-          requestId: 'request-1',
-        },
-      ),
-    ).resolves.toEqual(
+    await expect(ownReplacement(...args)).resolves.toEqual(
       expect.objectContaining({
         behavior: 'deny',
         message: expect.stringContaining('updatedInput is not supported'),
       }),
     )
+    await expect(inheritedReplacement(...args)).resolves.toMatchObject({ behavior: 'deny' })
   })
 
   it('fails closed on thrown and malformed permission results', async () => {
