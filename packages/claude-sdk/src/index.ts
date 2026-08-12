@@ -341,7 +341,11 @@ export class ClaudeAgentSDKAdapter {
 
         const behavior = permissionResult['behavior']
         if (behavior === 'allow') {
-          if ('updatedInput' in permissionResult || 'updatedPermissions' in permissionResult) {
+          if (
+            'updatedInput' in permissionResult ||
+            'updatedPermissions' in permissionResult ||
+            decisionClassification === 'user_reject'
+          ) {
             return permissionBoundaryDenial()
           }
           return decisionClassification === undefined

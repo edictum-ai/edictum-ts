@@ -615,6 +615,29 @@ describe('toSdkHooks', () => {
     expect('updatedInput' in (normalized as object)).toBe(false)
   })
 
+  it('rejects permission mutations and contradictory allow classifications', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const args = [
+      'Bash',
+      { command: 'echo safe' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
+    const withPermissions = adapter.wrapCanUseTool(
+      async () =>
+        ({
+          behavior: 'allow',
+          updatedPermissions: [],
+        }) as never,
+    )
+    const contradictory = adapter.wrapCanUseTool(async () => ({
+      behavior: 'allow',
+      decisionClassification: 'user_reject',
+    }))
+
+    await expect(withPermissions(...args)).resolves.toMatchObject({ behavior: 'deny' })
+    await expect(contradictory(...args)).resolves.toMatchObject({ behavior: 'deny' })
+  })
+
   it('fails closed on thrown and malformed permission results', async () => {
     const adapter = new ClaudeAgentSDKAdapter(makeGuard())
     const args = [
