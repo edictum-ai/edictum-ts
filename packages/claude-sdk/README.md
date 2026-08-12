@@ -21,13 +21,11 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 
 const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new ClaudeAgentSDKAdapter(guard)
-const permissionHandler = async () => ({ behavior: 'allow' as const })
 
 for await (const message of query({
   prompt: 'Inspect this repository',
   options: {
     hooks: adapter.toSdkHooks(),
-    canUseTool: adapter.wrapCanUseTool(permissionHandler),
   },
 })) {
   // Consume SDK messages.
@@ -60,6 +58,13 @@ results, rejects replacements, and converts thrown or malformed callback results
 The live verification has a permission callback rewrite a benign command to a forbidden `touch` and
 proves that the wrapper blocks it.
 
+```typescript
+const options = {
+  hooks: adapter.toSdkHooks(),
+  canUseTool: adapter.wrapCanUseTool(permissionHandler),
+}
+```
+
 Postconditions execute after the tool, so
 they cannot undo filesystem, network, or other side effects. Native hook postconditions are detection
 and warning only for both built-in and MCP tools. The SDK's supported replacement field is
@@ -67,8 +72,8 @@ and warning only for both built-in and MCP tools. The SDK's supported replacemen
 redact/deny result does not carry enough schema information to do that safely, so the adapter does not
 claim output suppression. Both `PostToolUse` and `PostToolUseFailure` finalize pending calls so failed
 tools still run postconditions, fire warnings, and attempt failure audit emission. An SDK failure event
-is authoritative and cannot be overridden by a custom success check. Use a precondition when a tool
-call or its output must be blocked.
+is authoritative and cannot be overridden by a custom success check. Use a precondition to prevent a
+tool call. Suppressing a completed tool result requires a separate schema-aware wrapper.
 
 Post finalization is at-most-once. If a postcondition, workflow store, session store, or audit sink
 throws, the hook propagates that error but does not retry: those ports do not share a transaction or
