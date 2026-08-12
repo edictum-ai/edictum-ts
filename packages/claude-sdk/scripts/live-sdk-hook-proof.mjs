@@ -6,8 +6,14 @@ import { AuditAction, CollectingAuditSink, Decision, Edictum } from '@edictum/co
 import { ClaudeAgentSDKAdapter } from '../dist/index.mjs'
 
 const mode = process.argv[2]
-if (mode !== 'control' && mode !== 'block' && mode !== 'post' && mode !== 'failure') {
-  console.error('usage: pnpm verify:live-hooks <control|block|post|failure>')
+if (
+  mode !== 'control' &&
+  mode !== 'block' &&
+  mode !== 'permission' &&
+  mode !== 'post' &&
+  mode !== 'failure'
+) {
+  console.error('usage: pnpm verify:live-hooks <control|block|permission|post|failure>')
   process.exit(2)
 }
 
@@ -27,6 +33,7 @@ let returnedHookOutputKeys = 'NOT_CALLED'
 let assistantText = ''
 let sdkResult = 'NOT_EMITTED'
 let failureHookCalled = false
+let permissionCallbackCalled = false
 const postProbe = 'POSTCONDITION_PROBE_VALUE'
 const auditSink = new CollectingAuditSink()
 const denyTouch = {
@@ -64,7 +71,13 @@ const warnOnFailure = {
 
 const guard = new Edictum({
   rules:
-    mode === 'post' ? [suppressProbeOutput] : mode === 'failure' ? [warnOnFailure] : [denyTouch],
+    mode === 'post'
+      ? [suppressProbeOutput]
+      : mode === 'failure'
+        ? [warnOnFailure]
+        : mode === 'permission'
+          ? []
+          : [denyTouch],
   tools: mode === 'post' ? { Read: { side_effect: 'read' } } : { Bash: { side_effect: 'execute' } },
   auditSink,
   onDeny: () => {
@@ -113,16 +126,26 @@ if (mode === 'failure') {
 }
 
 const options = {
-  allowedTools: [mode === 'post' ? 'Read' : 'Bash'],
+  ...(mode === 'permission' ? {} : { allowedTools: [mode === 'post' ? 'Read' : 'Bash'] }),
   permissionMode: 'acceptEdits',
   settingSources: [],
   maxTurns: 2,
+  ...(mode === 'permission'
+    ? {
+        canUseTool: async () => {
+          permissionCallbackCalled = true
+          return { behavior: 'deny', message: 'live proof SDK permission denial' }
+        },
+      }
+    : {}),
   ...(mode === 'control' ? {} : { hooks }),
 }
 
 console.log(`MODE=${mode}`)
 console.log('SDK=@anthropic-ai/claude-agent-sdk@0.3.221')
-console.log(`PREAPPROVED_TOOLS=${mode === 'post' ? 'Read' : 'Bash'}`)
+console.log(
+  `PREAPPROVED_TOOLS=${mode === 'permission' ? 'NONE' : mode === 'post' ? 'Read' : 'Bash'}`,
+)
 console.log(`HOOKS=${mode === 'control' ? 'REMOVED' : 'ADAPTER'}`)
 
 for await (const message of query({
@@ -170,23 +193,28 @@ if (mode === 'failure') {
   console.log(`POSTCONDITION_WARNED=${postconditionWarned ? 'YES' : 'NO'}`)
   console.log(`CALL_FAILED_AUDIT_COUNT=${auditSink.filter(AuditAction.CALL_FAILED).length}`)
 }
+if (mode === 'permission') {
+  console.log(`PERMISSION_CALLBACK_CALLED=${permissionCallbackCalled ? 'YES' : 'NO'}`)
+}
 
 const passed =
   mode === 'control'
     ? sdkResult === 'success' && present && !hookDenied
     : mode === 'block'
       ? sdkResult === 'success' && !present && hookDenied
-      : mode === 'post'
-        ? sdkResult === 'success' &&
-          postInputShape !== 'NOT_CALLED' &&
-          postInputContainedProbe &&
-          postconditionWarned &&
-          !returnedUpdatedToolOutput &&
-          assistantText.trim().endsWith('ORIGINAL')
-        : sdkResult === 'success' &&
-          failureHookCalled &&
-          postconditionWarned &&
-          auditSink.filter(AuditAction.CALL_FAILED).length === 1
+      : mode === 'permission'
+        ? sdkResult === 'success' && !present && !hookDenied && permissionCallbackCalled
+        : mode === 'post'
+          ? sdkResult === 'success' &&
+            postInputShape !== 'NOT_CALLED' &&
+            postInputContainedProbe &&
+            postconditionWarned &&
+            !returnedUpdatedToolOutput &&
+            assistantText.trim().endsWith('ORIGINAL')
+          : sdkResult === 'success' &&
+            failureHookCalled &&
+            postconditionWarned &&
+            auditSink.filter(AuditAction.CALL_FAILED).length === 1
 if (!passed) {
   process.exitCode = 1
 }

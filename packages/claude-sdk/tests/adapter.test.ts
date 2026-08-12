@@ -25,7 +25,7 @@ import {
   type ToolCall,
 } from '@edictum/core'
 
-import { ClaudeAgentSDKAdapter } from '../src/index.js'
+import { ClaudeAgentSDKAdapter, type PreToolUseHookOutput } from '../src/index.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -572,7 +572,7 @@ describe('toSdkHooks', () => {
     expect(options.hooks.PostToolUseFailure[0]).toEqual({ hooks: [expect.any(Function)] })
   })
 
-  it('PreToolUse hook returns allow for passing rules', async () => {
+  it('PreToolUse hook returns no permission decision for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)
     const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
@@ -583,13 +583,26 @@ describe('toSdkHooks', () => {
       hookContext,
     )
 
-    expect(result).toEqual({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-      },
-    })
+    expect(result).toEqual({})
   })
+
+  it.each([null, [], 'string', 42])(
+    'denies PreToolUse when tool_input is malformed: %j',
+    async (toolInput) => {
+      const guard = makeGuard()
+      const adapter = new ClaudeAgentSDKAdapter(guard)
+      const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+      const input = { ...preInput('Bash', {}), tool_input: toolInput } as PreToolUseHookInput
+
+      const result = (await sdkCallback(options, 'PreToolUse')(
+        input,
+        'call-malformed',
+        hookContext,
+      )) as PreToolUseHookOutput
+
+      expect(result.hookSpecificOutput.permissionDecision).toBe('deny')
+    },
+  )
 
   it('PreToolUse hook returns deny for failing rules', async () => {
     const alwaysDeny: Precondition = {

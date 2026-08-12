@@ -45,7 +45,7 @@ import {
   defaultSuccessCheck,
 } from '@edictum/core'
 
-export const VERSION = '0.1.0' as const
+export const VERSION = '0.3.0' as const
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
 
 // ---------------------------------------------------------------------------
@@ -209,12 +209,9 @@ export class ClaudeAgentSDKAdapter {
         }
       }
 
-      return {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'allow',
-        },
-      }
+      // Passing Edictum is not permission approval. Return no decision so the
+      // SDK still applies allowedTools, canUseTool, and its normal prompt path.
+      return {}
     }
 
     const finalizePending = async (
