@@ -914,11 +914,12 @@ describe('toSdkHooks', () => {
   it('isolates SDK-owned input from in-place canUseTool mutations', async () => {
     const adapter = new ClaudeAgentSDKAdapter(makeGuard())
     const sdkInput = { command: 'touch /tmp/allowed', nested: { path: '/tmp/allowed' } }
-    const wrapped = adapter.wrapCanUseTool(async (_toolName, input) => {
+    const callback = vi.fn(async (_toolName: string, input: Record<string, unknown>) => {
       input['command'] = 'touch /tmp/blocked'
       ;(input['nested'] as Record<string, unknown>)['path'] = '/tmp/blocked'
-      return { behavior: 'allow' }
+      return { behavior: 'allow' as const }
     })
+    const wrapped = adapter.wrapCanUseTool(callback)
 
     const result = await wrapped('Bash', sdkInput, {
       signal: new AbortController().signal,
@@ -930,10 +931,41 @@ describe('toSdkHooks', () => {
     })
 
     expect(result).toEqual({ behavior: 'allow' })
+    expect(callback).toHaveBeenCalledOnce()
     expect(sdkInput).toEqual({
       command: 'touch /tmp/allowed',
       nested: { path: '/tmp/allowed' },
     })
+  })
+
+  it('passes the SDK interrupt flag to failure postconditions', async () => {
+    const observedResponses: unknown[] = []
+    const guard = makeGuard({
+      rules: [
+        {
+          tool: 'Bash',
+          contractType: 'post',
+          check: async (_toolCall, response) => {
+            observedResponses.push(response)
+            return Decision.pass_()
+          },
+        } satisfies Postcondition,
+      ],
+      tools: { Bash: { side_effect: 'execute' } },
+    })
+    const adapter = new ClaudeAgentSDKAdapter(guard)
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+
+    await sdkCallback(options, 'PreToolUse')(preInput('Bash', {}), 'call-1', hookContext)
+    await sdkCallback(options, 'PostToolUseFailure')(
+      { ...failureInput('Bash', 'interrupted'), is_interrupt: true },
+      'call-1',
+      hookContext,
+    )
+
+    expect(observedResponses).toEqual([
+      { is_error: true, error: 'interrupted', is_interrupt: true },
+    ])
   })
 })
 

@@ -1,10 +1,10 @@
 # @edictum/claude-sdk
 
-Claude Agent SDK adapter for Edictum agency-boundary enforcement.
+Claude Agent SDK adapter for Edictum runtime rule enforcement on AI agent tool calls.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): runtime rule enforcement for AI agent tool calls in production.
 
-Agent frameworks build the agent. Edictum bounds the agency. This package composes Edictum with Claude SDK tool hooks while the core pipeline enforces rulesets and Workflow Gates.
+This package composes Edictum with Claude SDK tool hooks while the core pipeline enforces rulesets and Workflow Gates.
 
 ## Install
 
@@ -57,8 +57,8 @@ permission callback can bypass governance. Always pass configured callbacks thro
 objects, preserves documented null responses, rejects input and permission mutations, and converts
 thrown or malformed callback results to a fixed denial. It deliberately does not forward
 `updatedPermissions`; pre-approve stable permissions through SDK options instead.
-The live verification has a permission callback rewrite a benign command to a forbidden `touch` and
-proves that the wrapper blocks it.
+The live verification has a permission callback mutate a detached copy of a benign command to a
+forbidden `touch` and proves that the SDK executes the original governed input unchanged.
 
 ```typescript
 const options = {

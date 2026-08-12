@@ -339,7 +339,8 @@ export class ClaudeAgentSDKAdapter {
           return permissionBoundaryDenial()
         }
 
-        if (permissionResult['behavior'] === 'allow') {
+        const behavior = permissionResult['behavior']
+        if (behavior === 'allow') {
           if ('updatedInput' in permissionResult || 'updatedPermissions' in permissionResult) {
             return permissionBoundaryDenial()
           }
@@ -347,10 +348,11 @@ export class ClaudeAgentSDKAdapter {
             ? { behavior: 'allow' }
             : { behavior: 'allow', decisionClassification }
         }
-        if (
-          permissionResult['behavior'] === 'deny' &&
-          typeof permissionResult['message'] === 'string'
-        ) {
+        if (behavior === 'deny') {
+          const message = permissionResult['message']
+          if (typeof message !== 'string') {
+            return permissionBoundaryDenial()
+          }
           const interrupt = permissionResult['interrupt']
           if (interrupt !== undefined && typeof interrupt !== 'boolean') {
             return permissionBoundaryDenial()
@@ -359,7 +361,7 @@ export class ClaudeAgentSDKAdapter {
           // forward updatedPermissions or any callback-owned prototype/Proxy.
           return {
             behavior: 'deny',
-            message: permissionResult['message'],
+            message,
             ...(interrupt === undefined ? {} : { interrupt }),
             ...(decisionClassification === undefined ? {} : { decisionClassification }),
           }
