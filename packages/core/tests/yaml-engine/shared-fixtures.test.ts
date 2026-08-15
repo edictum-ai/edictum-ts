@@ -3,17 +3,26 @@
  * cross-SDK rejection corpus maintained in edictum-schemas.
  *
  * Fixture discovery (first match wins):
- *   1. EDICTUM_FIXTURES_DIR env var (direct path to rejection/ directory)
- *   2. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo)
- *   3. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
- *   4. <repo-root>/../edictum-schemas/ (sibling checkout)
+ *   1. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo)
+ *   2. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
+ *   3. <repo-root>/../edictum-schemas/ (sibling checkout)
  *
- * Missing-fixture behavior:
- *   - EDICTUM_CONFORMANCE_REQUIRED=1 → fail the test run
- *   - Otherwise → skip the suite cleanly
+ * EDICTUM_FIXTURES_DIR is no longer read: it once meant the fixtures root
+ * here and the rejection/ subdirectory in other runners, so one name
+ * silently selected different directories per SDK.
+ *
+ * Missing-fixture behavior — gated on the LOADED fixture list, not on the
+ * directory existing:
+ *   - EDICTUM_CONFORMANCE_REQUIRED=1 with zero loadable fixtures (missing
+ *     directory, empty directory, or files carrying no fixtures) → fail
+ *     the test run
+ *   - Otherwise → skip the suite cleanly (a named skip, never a pass)
  *
  * Each fixture provides a bundle that must be rejected by the loader, plus
- * an `error_contains` substring that the error message must include.
+ * an `error_contains` substring that the error message must include. A
+ * fixture entry whose `expected.rejected` is absent or not a boolean is a
+ * hard failure at load time: a missing or misspelled expectation must
+ * never silently invert into "must load successfully".
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -36,22 +45,18 @@ const REJECTION_SUBPATH = join('fixtures', 'rejection')
 
 /** Resolve the rejection fixtures directory using the discovery order. */
 function resolveFixturesDir(): string | null {
-  // 1. Direct path via env var
-  const fixturesEnv = process.env.EDICTUM_FIXTURES_DIR
-  if (fixturesEnv && existsSync(fixturesEnv)) return fixturesEnv
-
-  // 2. Schemas repo root via env var
+  // 1. Schemas repo root via env var
   const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
   if (schemasEnv) {
     const candidate = join(schemasEnv, REJECTION_SUBPATH)
     if (existsSync(candidate)) return candidate
   }
 
-  // 3. Nested inside repo root (monorepo / vendored)
+  // 2. Nested inside repo root (monorepo / vendored)
   const nested = join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH)
   if (existsSync(nested)) return nested
 
-  // 4. Sibling checkout
+  // 3. Sibling checkout
   const sibling = resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH)
   if (existsSync(sibling)) return sibling
 
@@ -126,13 +131,14 @@ function normalizeExpectedErrorSubstring(value: string): string {
   return value
 }
 
-function loadFixtureSuites(dir: string): FixtureSuite[] | null {
+function loadFixtureSuites(dir: string): FixtureSuite[] {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.rejection.yaml'))
     .sort()
 
-  if (files.length === 0) return null
-
+  // An empty directory is returned as zero suites — the required-mode gate
+  // below rejects on the loaded fixture count, so an empty checkout fails
+  // instead of silently skipping.
   return files.map((file) => {
     const content = readFileSync(join(dir, file), 'utf-8')
 
@@ -153,7 +159,18 @@ function loadFixtureSuites(dir: string): FixtureSuite[] | null {
       throw new Error(`Fixture file ${file} is missing a 'fixtures' array`)
     }
 
-    return parsed as FixtureSuite
+    const suite = parsed as FixtureSuite
+    for (const fixture of suite.fixtures) {
+      const expected = fixture?.expected as { rejected?: unknown } | undefined
+      if (expected == null || typeof expected.rejected !== 'boolean') {
+        throw new Error(
+          `Fixture file ${file}: fixture ${fixture?.id ?? '(missing id)'} is missing a boolean ` +
+            `expected.rejected — a missing or misspelled expectation must fail the suite, ` +
+            `not silently invert the assertion into "must load successfully"`,
+        )
+      }
+    }
+    return suite
   })
 }
 
@@ -163,17 +180,21 @@ function loadFixtureSuites(dir: string): FixtureSuite[] | null {
 
 const fixturesDir = resolveFixturesDir()
 const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
+const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
+const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.length, 0) ?? 0
 
-if (!fixturesDir && conformanceRequired) {
+// Required-mode gate on the loaded fixture list, not on the directory: a
+// resolved-but-empty directory (truncated checkout, wrong ref, moved
+// corpus) is a hard failure, never a green skip.
+if (conformanceRequired && loadedFixtures === 0) {
   throw new Error(
-    'EDICTUM_CONFORMANCE_REQUIRED=1 but no rejection fixtures found. ' +
-      'Set EDICTUM_FIXTURES_DIR or EDICTUM_SCHEMAS_DIR, or check out edictum-schemas as a sibling.',
+    'EDICTUM_CONFORMANCE_REQUIRED=1 but zero rejection fixtures were loaded' +
+      (fixturesDir ? ` from ${fixturesDir}` : ' — no rejection fixtures directory was found') +
+      '. Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling.',
   )
 }
 
-const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
-
-if (suites) {
+if (suites && loadedFixtures > 0) {
   describe('shared rejection fixtures (edictum-schemas)', () => {
     for (const suite of suites) {
       if (!Array.isArray(suite.fixtures)) {
@@ -222,5 +243,5 @@ if (suites) {
     }
   })
 } else {
-  it.skip('shared rejection fixtures — edictum-schemas not found', () => {})
+  it.skip('shared rejection fixtures — edictum-schemas not found or empty (optional mode)', () => {})
 }

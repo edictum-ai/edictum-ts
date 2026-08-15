@@ -17,7 +17,12 @@ concurrency:
 
 jobs:
   gate:
-    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@a8b075f4d60354e79bd26e06353c5367b75296b2
+    # Pin points at the sdk-gate commit that exports absolute
+    # EDICTUM_SCHEMAS_DIR and no longer exports EDICTUM_FIXTURES_DIR.
+    # The inline relative EDICTUM_SCHEMAS_DIR assignment is gone on
+    # purpose: it shadowed the workflow's export with a path that only
+    # resolved via the runner's nested-checkout fallback.
+    uses: edictum-ai/.github/.github/workflows/sdk-gate.yml@d82a6556454dd3707043cc21a728569397693de4
     with:
       runner: blacksmith-2vcpu-ubuntu-2404-arm
       runtime: node
@@ -26,7 +31,6 @@ jobs:
       test-command: pnpm -r build && pnpm -r test
       conformance-command: >-
         pnpm --filter @edictum/core build &&
-        EDICTUM_SCHEMAS_DIR=edictum-schemas
         EDICTUM_CONFORMANCE_REQUIRED=1
         pnpm --filter @edictum/core test -- tests/yaml-engine/shared-fixtures.test.ts
-      fixture-ref: bfb633c6019d6b545f5d0e8986c05d9a95087520
+      fixture-ref: 59df5f7f029f7ddcde35e35343405a62c7a405ce
