@@ -194,24 +194,15 @@ const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
 if (schemasEnv && !envHit) {
   if (conformanceRequired) {
     throw new Error(
-      'EDICTUM_SCHEMAS_DIR is set to "' +
-        schemasEnv +
-      '" but none of the resolved ' +
-        REJECTION_SUBPATH +
-      ' directories exist — refusing to fall through to ' +
-      'repo-relative discovery. Tried: ' +
-      envCandidates.join(', ') +
-      '. Fix the schemas checkout or unset the variable.',
+      `EDICTUM_SCHEMAS_DIR is set to "${schemasEnv}" but none of the resolved ` +
+        `${REJECTION_SUBPATH} directories exist — refusing to fall through to ` +
+        `repo-relative discovery. Tried: ${envCandidates.join(', ')}. ` +
+        'Fix the schemas checkout or unset the variable.',
     )
   }
   console.warn(
-    '[edictum] EDICTUM_SCHEMAS_DIR="' +
-      schemasEnv +
-      '" has no ' +
-      REJECTION_SUBPATH +
-      ' at tried paths [' +
-      envCandidates.join(', ') +
-      ']; falling back to repo-relative discovery.',
+    `[edictum] EDICTUM_SCHEMAS_DIR="${schemasEnv}" has no ${REJECTION_SUBPATH} ` +
+      `at tried paths [${envCandidates.join(', ')}]; falling back to repo-relative discovery.`,
   )
 }
 
@@ -224,12 +215,12 @@ const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.l
 // corpus) is a hard failure, never a green skip.
 if (conformanceRequired && loadedFixtures === 0) {
   const alreadySet = schemasEnv
-    ? 'EDICTUM_SCHEMAS_DIR is already set to "' + schemasEnv + '"'
+    ? `EDICTUM_SCHEMAS_DIR is already set to "${schemasEnv}"`
     : 'Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling'
   throw new Error(
     'EDICTUM_CONFORMANCE_REQUIRED=1 but zero rejection fixtures were loaded' +
-      (fixturesDir ? ' from ' + fixturesDir : ' — no rejection fixtures directory was found') +
-      '. Tried: ' + triedPaths.join(', ') + '. ' + alreadySet + '.',
+      (fixturesDir ? ` from ${fixturesDir}` : ' — no rejection fixtures directory was found') +
+      `. Tried: ${triedPaths.join(', ')}. ${alreadySet}.`,
   )
 }
 
