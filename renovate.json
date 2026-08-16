@@ -1,22 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
-  "enabledManagers": [
-    "github-actions",
-    "npm"
-  ],
+  "extends": ["config:recommended"],
+  "enabledManagers": ["github-actions", "npm"],
   "minimumReleaseAge": "15 days",
   "internalChecksFilter": "strict",
   "prCreation": "not-pending",
   "timezone": "Europe/Berlin",
-  "schedule": [
-    "after 9am on monday"
-  ],
-  "labels": [
-    "dependencies"
-  ],
+  "schedule": ["after 9am on monday"],
+  "labels": ["dependencies"],
   "dependencyDashboard": true,
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
@@ -26,50 +17,33 @@
   "packageRules": [
     {
       "description": "GitHub Actions: pin to commit SHA (the repo already SHA-pins; Renovate updates the SHA + the version comment), batch into one PR, 15-day release-age floor.",
-      "matchManagers": [
-        "github-actions"
-      ],
+      "matchManagers": ["github-actions"],
       "groupName": "github-actions",
       "pinDigests": true,
       "commitMessagePrefix": "chore(deps):"
     },
     {
       "description": "First-party process-guard action (own repo): exempt from the 15-day release-age floor so hardening fixes propagate immediately. Scoped exclusion per the dependency-ledger my own packages are exempt rule — never a blanket disable.",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchPackageNames": [
-        "/^acartag7\\/engineering-os/"
-      ],
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["/^acartag7\\/engineering-os/"],
       "minimumReleaseAge": "0"
     },
     {
       "description": "npm minor+patch: one weekly PR. Adapter-hosts are carved out below.",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "npm minor+patch"
     },
     {
       "description": "npm majors (non-adapter-host): visible, not automerged.",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchUpdateTypes": [
-        "major"
-      ],
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
       "groupName": "npm majors",
       "automerge": false
     },
     {
       "description": "Adapter-hosts (crewai, langchain-core, starlette, otel 1 to 2 and experimental otlp 0.x jumps): visible, not automerged.",
-      "matchManagers": [
-        "npm"
-      ],
+      "matchManagers": ["npm"],
       "matchPackageNames": [
         "crewai",
         "langchain-core",
