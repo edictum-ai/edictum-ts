@@ -3,7 +3,10 @@
  * cross-SDK rejection corpus maintained in edictum-schemas.
  *
  * Fixture discovery (first match wins):
- *   1. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo)
+ *   1. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo). A relative
+ *      value is resolved against cwd and then the repo root, so
+ *      a relative edictum-schemas value still works when core tests run
+ *      with cwd packages/core.
  *   2. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
  *   3. <repo-root>/../edictum-schemas/ (sibling checkout)
  *
@@ -43,24 +46,22 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..', '..', '..')
 const REJECTION_SUBPATH = join('fixtures', 'rejection')
 
-/** Resolve the rejection fixtures directory using the discovery order. */
-function resolveFixturesDir(): string | null {
-  // 1. Schemas repo root via env var
-  const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
-  if (schemasEnv) {
-    const candidate = join(schemasEnv, REJECTION_SUBPATH)
-    if (existsSync(candidate)) return candidate
+const FALLBACK_REJECTION_DIRS = [
+  join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH),
+  resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH),
+]
+
+function firstExisting(paths: readonly string[]): string | null {
+  for (const p of paths) {
+    if (existsSync(p)) return p
   }
-
-  // 2. Nested inside repo root (monorepo / vendored)
-  const nested = join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH)
-  if (existsSync(nested)) return nested
-
-  // 3. Sibling checkout
-  const sibling = resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH)
-  if (existsSync(sibling)) return sibling
-
   return null
+}
+
+function envRejectionCandidates(schemasEnv: string): string[] {
+  const fromCwd = resolve(process.cwd(), schemasEnv, REJECTION_SUBPATH)
+  const fromRoot = resolve(REPO_ROOT, schemasEnv, REJECTION_SUBPATH)
+  return fromCwd === fromRoot ? [fromCwd] : [fromCwd, fromRoot]
 }
 
 // ---------------------------------------------------------------------------
@@ -178,40 +179,57 @@ function loadFixtureSuites(dir: string): FixtureSuite[] {
 // Runner
 // ---------------------------------------------------------------------------
 
-const fixturesDir = resolveFixturesDir()
+const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
+const envCandidates = schemasEnv ? envRejectionCandidates(schemasEnv) : []
+const envHit = firstExisting(envCandidates)
+const fallbackHit = firstExisting(FALLBACK_REJECTION_DIRS)
+const triedPaths = [...envCandidates, ...FALLBACK_REJECTION_DIRS]
 const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
-const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
-const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.length, 0) ?? 0
 
 // An explicitly-set EDICTUM_SCHEMAS_DIR that does not resolve is never
 // silently stepped over (contract C5): a wrong pin or truncated checkout
 // must fail in required mode rather than quietly load whatever
-// nested/sibling directory happens to exist — a corpus mismatch that
-// reads as a pass.
-const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
-if (schemasEnv && !existsSync(join(schemasEnv, REJECTION_SUBPATH))) {
+// nested/sibling directory happens to exist. Relative values are tried
+// from cwd and from the repo root before this refusal.
+if (schemasEnv && !envHit) {
   if (conformanceRequired) {
     throw new Error(
-      `EDICTUM_SCHEMAS_DIR is set to "${schemasEnv}" but ` +
-        `${join(schemasEnv, REJECTION_SUBPATH)} does not exist — ` +
-        'refusing to fall through to repo-relative discovery. ' +
-        'Fix the schemas checkout or unset the variable.',
+      'EDICTUM_SCHEMAS_DIR is set to "' +
+        schemasEnv +
+      '" but none of the resolved ' +
+        REJECTION_SUBPATH +
+      ' directories exist — refusing to fall through to ' +
+      'repo-relative discovery. Tried: ' +
+      envCandidates.join(', ') +
+      '. Fix the schemas checkout or unset the variable.',
     )
   }
   console.warn(
-    `[edictum] EDICTUM_SCHEMAS_DIR="${schemasEnv}" has no ${REJECTION_SUBPATH}; ` +
-      'falling back to repo-relative discovery.',
+    '[edictum] EDICTUM_SCHEMAS_DIR="' +
+      schemasEnv +
+      '" has no ' +
+      REJECTION_SUBPATH +
+      ' at tried paths [' +
+      envCandidates.join(', ') +
+      ']; falling back to repo-relative discovery.',
   )
 }
+
+const fixturesDir = envHit ?? fallbackHit
+const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
+const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.length, 0) ?? 0
 
 // Required-mode gate on the loaded fixture list, not on the directory: a
 // resolved-but-empty directory (truncated checkout, wrong ref, moved
 // corpus) is a hard failure, never a green skip.
 if (conformanceRequired && loadedFixtures === 0) {
+  const alreadySet = schemasEnv
+    ? 'EDICTUM_SCHEMAS_DIR is already set to "' + schemasEnv + '"'
+    : 'Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling'
   throw new Error(
     'EDICTUM_CONFORMANCE_REQUIRED=1 but zero rejection fixtures were loaded' +
-      (fixturesDir ? ` from ${fixturesDir}` : ' — no rejection fixtures directory was found') +
-      '. Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling.',
+      (fixturesDir ? ' from ' + fixturesDir : ' — no rejection fixtures directory was found') +
+      '. Tried: ' + triedPaths.join(', ') + '. ' + alreadySet + '.',
   )
 }
 

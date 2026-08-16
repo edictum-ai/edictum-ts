@@ -17,7 +17,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -25,7 +25,8 @@ import { describe, expect, it } from 'vitest'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CORE_ROOT = resolve(HERE, '..', '..')
 const RUNNER_FILE = 'tests/yaml-engine/shared-fixtures.test.ts'
-const VITEST_BIN = join(CORE_ROOT, 'node_modules', '.bin', 'vitest')
+const REPO_ROOT = resolve(CORE_ROOT, '..', '..')
+const VITEST_ENTRY = fileURLToPath(import.meta.resolve('vitest/vitest.mjs'))
 
 interface RunnerResult {
   status: number | null
@@ -38,8 +39,8 @@ interface RunnerResult {
  * stripped so a parent conformance run cannot leak into the child.
  */
 function runRunner(env: Record<string, string>): RunnerResult {
-  if (!existsSync(VITEST_BIN)) {
-    throw new Error(`vitest binary not found at ${VITEST_BIN} — run pnpm install first`)
+  if (!existsSync(VITEST_ENTRY)) {
+    throw new Error(`vitest CLI entry not found at ${VITEST_ENTRY} — run pnpm install first`)
   }
 
   const childEnv: NodeJS.ProcessEnv = { ...process.env }
@@ -48,7 +49,7 @@ function runRunner(env: Record<string, string>): RunnerResult {
   delete childEnv.EDICTUM_CONFORMANCE_REQUIRED
   Object.assign(childEnv, env)
 
-  const result = spawnSync(VITEST_BIN, ['run', RUNNER_FILE], {
+  const result = spawnSync(process.execPath, [VITEST_ENTRY, 'run', RUNNER_FILE], {
     cwd: CORE_ROOT,
     env: childEnv,
     encoding: 'utf8',
@@ -164,10 +165,45 @@ describe('shared rejection runner — fail-closed gates', () => {
       try {
         const result = runRunner({ EDICTUM_SCHEMAS_DIR: root })
         expect(result.status, `runner output:\n${result.output}`).toBe(0)
-        expect(result.output).toContain('skipped')
+        expect(result.output).toContain('edictum-schemas not found or empty (optional mode)')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
+    },
+  )
+
+  it(
+    'required mode: relative EDICTUM_SCHEMAS_DIR resolves from repo root, not only cwd',
+    { timeout: 180_000 },
+    () => {
+      const root = makeEmptyRejectionDir()
+      try {
+        const rel = relative(REPO_ROOT, root)
+        const result = runRunner({
+          EDICTUM_SCHEMAS_DIR: rel,
+          EDICTUM_CONFORMANCE_REQUIRED: '1',
+        })
+        expect(result.status, `runner output:\n${result.output}`).not.toBeNull()
+        expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
+        expect(result.output).toContain('zero rejection fixtures were loaded')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it(
+    'required mode: relative EDICTUM_SCHEMAS_DIR that misses cwd and repo root refuses fallthrough',
+    { timeout: 180_000 },
+    () => {
+      const result = runRunner({
+        EDICTUM_SCHEMAS_DIR: 'definitely-not-a-schemas-checkout-xyz',
+        EDICTUM_CONFORMANCE_REQUIRED: '1',
+      })
+      expect(result.status, `runner output:\n${result.output}`).not.toBeNull()
+      expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
+      expect(result.output).toContain('refusing to fall through')
+      expect(result.output).toContain('Tried:')
     },
   )
 })
