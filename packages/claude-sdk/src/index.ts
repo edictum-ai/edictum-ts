@@ -147,7 +147,7 @@ export type HookMatcher = HookCallbackMatcher
 export type PreToolUseInput = SDKPreToolUseHookInput
 export type PostToolUseInput = SDKPostToolUseHookInput
 export type PostToolUseFailureInput = SDKPostToolUseFailureHookInput
-export type PreToolUseHookOutput = { hookSpecificOutput: PreToolUseHookSpecificOutput }
+export type PreToolUseHookOutput = { hookSpecificOutput?: PreToolUseHookSpecificOutput }
 export type PostToolUseHookOutput = { hookSpecificOutput?: PostToolUseHookSpecificOutput }
 export type PostToolUseFailureHookOutput = {
   hookSpecificOutput?: PostToolUseFailureHookSpecificOutput
