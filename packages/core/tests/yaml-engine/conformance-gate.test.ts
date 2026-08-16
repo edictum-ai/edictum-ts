@@ -15,12 +15,17 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { existsSync, rmSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+
+import {
+  makeEmptyRejectionDir,
+  makeMissingExpectationDir,
+  makeWrongRefRoot,
+} from './conformance-gate-helpers.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CORE_ROOT = resolve(HERE, '..', '..')
@@ -63,40 +68,6 @@ function runRunner(env: Record<string, string>): RunnerResult {
     status: result.status,
     output: `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
   }
-}
-
-/** Create a temp schemas root whose rejection directory exists but is empty. */
-function makeEmptyRejectionDir(): string {
-  const root = mkdtempSync(join(tmpdir(), 'edictum-gate-empty-'))
-  mkdirSync(join(root, 'fixtures', 'rejection'), { recursive: true })
-  return root
-}
-
-/** Create a temp schemas root with no fixtures tree at all (wrong-ref checkout shape). */
-function makeWrongRefRoot(): string {
-  return mkdtempSync(join(tmpdir(), 'edictum-gate-wrongref-'))
-}
-
-/** Create a temp schemas root with one suite file whose fixtures lack expected.rejected. */
-function makeMissingExpectationDir(): string {
-  const root = mkdtempSync(join(tmpdir(), 'edictum-gate-expect-'))
-  mkdirSync(join(root, 'fixtures', 'rejection'), { recursive: true })
-  writeFileSync(
-    join(root, 'fixtures', 'rejection', 'sabotage.rejection.yaml'),
-    [
-      'suite: sabotage',
-      'description: fixture entry with a misspelled expectation key',
-      'fixtures:',
-      '  - id: sab-001',
-      '    description: expectation key misspelled as rejectd',
-      '    bundle: {}',
-      '    expected:',
-      '      rejectd: true',
-      '      error_contains: whatever',
-      '',
-    ].join('\n'),
-  )
-  return root
 }
 
 describe('shared rejection runner — fail-closed gates', () => {
@@ -204,6 +175,21 @@ describe('shared rejection runner — fail-closed gates', () => {
       expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
       expect(result.output).toContain('refusing to fall through')
       expect(result.output).toContain('Tried:')
+    },
+  )
+
+  it(
+    'optional mode: wrong EDICTUM_SCHEMAS_DIR warns and falls back instead of failing',
+    { timeout: 180_000 },
+    () => {
+      const root = makeWrongRefRoot()
+      try {
+        const result = runRunner({ EDICTUM_SCHEMAS_DIR: root })
+        expect(result.status, `runner output:\n${result.output}`).toBe(0)
+        expect(result.output).toContain('falling back to repo-relative discovery')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
     },
   )
 })
