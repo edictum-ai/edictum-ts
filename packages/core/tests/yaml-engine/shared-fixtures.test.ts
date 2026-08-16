@@ -183,6 +183,27 @@ const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
 const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
 const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.length, 0) ?? 0
 
+// An explicitly-set EDICTUM_SCHEMAS_DIR that does not resolve is never
+// silently stepped over (contract C5): a wrong pin or truncated checkout
+// must fail in required mode rather than quietly load whatever
+// nested/sibling directory happens to exist — a corpus mismatch that
+// reads as a pass.
+const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
+if (schemasEnv && !existsSync(join(schemasEnv, REJECTION_SUBPATH))) {
+  if (conformanceRequired) {
+    throw new Error(
+      `EDICTUM_SCHEMAS_DIR is set to "${schemasEnv}" but ` +
+        `${join(schemasEnv, REJECTION_SUBPATH)} does not exist — ` +
+        'refusing to fall through to repo-relative discovery. ' +
+        'Fix the schemas checkout or unset the variable.',
+    )
+  }
+  console.warn(
+    `[edictum] EDICTUM_SCHEMAS_DIR="${schemasEnv}" has no ${REJECTION_SUBPATH}; ` +
+      'falling back to repo-relative discovery.',
+  )
+}
+
 // Required-mode gate on the loaded fixture list, not on the directory: a
 // resolved-but-empty directory (truncated checkout, wrong ref, moved
 // corpus) is a hard failure, never a green skip.

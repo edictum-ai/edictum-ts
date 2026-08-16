@@ -52,7 +52,10 @@ function runRunner(env: Record<string, string>): RunnerResult {
     cwd: CORE_ROOT,
     env: childEnv,
     encoding: 'utf8',
-    timeout: 120_000,
+    // Headroom inside the 180 s vitest test timeout: a child killed at its
+    // own deadline reports status null, which must fail every assertion
+    // below rather than satisfy `not.toBe(0)`.
+    timeout: 150_000,
   })
 
   return {
@@ -66,6 +69,11 @@ function makeEmptyRejectionDir(): string {
   const root = mkdtempSync(join(tmpdir(), 'edictum-gate-empty-'))
   mkdirSync(join(root, 'fixtures', 'rejection'), { recursive: true })
   return root
+}
+
+/** Create a temp schemas root with no fixtures tree at all (wrong-ref checkout shape). */
+function makeWrongRefRoot(): string {
+  return mkdtempSync(join(tmpdir(), 'edictum-gate-wrongref-'))
 }
 
 /** Create a temp schemas root with one suite file whose fixtures lack expected.rejected. */
@@ -101,8 +109,28 @@ describe('shared rejection runner — fail-closed gates', () => {
           EDICTUM_SCHEMAS_DIR: root,
           EDICTUM_CONFORMANCE_REQUIRED: '1',
         })
+        expect(result.status, `runner output:\n${result.output}`).not.toBeNull()
         expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
         expect(result.output).toContain('zero rejection fixtures were loaded')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it(
+    'required mode: EDICTUM_SCHEMAS_DIR set but wrong fails instead of falling through to other discoveries',
+    { timeout: 180_000 },
+    () => {
+      const root = makeWrongRefRoot()
+      try {
+        const result = runRunner({
+          EDICTUM_SCHEMAS_DIR: root,
+          EDICTUM_CONFORMANCE_REQUIRED: '1',
+        })
+        expect(result.status, `runner output:\n${result.output}`).not.toBeNull()
+        expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
+        expect(result.output).toContain('refusing to fall through')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
@@ -119,6 +147,7 @@ describe('shared rejection runner — fail-closed gates', () => {
           EDICTUM_SCHEMAS_DIR: root,
           EDICTUM_CONFORMANCE_REQUIRED: '1',
         })
+        expect(result.status, `runner output:\n${result.output}`).not.toBeNull()
         expect(result.status, `runner output:\n${result.output}`).not.toBe(0)
         expect(result.output).toContain('missing a boolean expected.rejected')
       } finally {
