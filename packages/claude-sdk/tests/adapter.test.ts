@@ -669,6 +669,94 @@ describe('toSdkHooks', () => {
     await expect(adapter.wrapCanUseTool(async () => null)(...args)).resolves.toBeNull()
   })
 
+  it('blocks wrapCanUseTool when input differs from pending governed args', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    await adapter._pre('Bash', { command: 'echo safe' }, 'call-1')
+    const wrapped = adapter.wrapCanUseTool(async () => ({ behavior: 'allow' }))
+    const args = [
+      'Bash',
+      { command: 'touch /tmp/rewritten' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
+
+    await expect(wrapped(...args)).resolves.toEqual(
+      expect.objectContaining({
+        behavior: 'deny',
+        message: expect.stringContaining('BLOCKED'),
+      }),
+    )
+  })
+
+  it('preserves wrapCanUseTool allow and deny when input matches pending governed args', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    await adapter._pre('Bash', { command: 'echo safe', nested: { n: 1 } }, 'call-1')
+    const args = [
+      'Bash',
+      { nested: { n: 1 }, command: 'echo safe' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    ] as const
+
+    await expect(
+      adapter.wrapCanUseTool(async () => ({ behavior: 'allow' }))(...args),
+    ).resolves.toEqual({ behavior: 'allow' })
+    await expect(
+      adapter.wrapCanUseTool(async () => ({ behavior: 'deny', message: 'operator blocked' }))(
+        ...args,
+      ),
+    ).resolves.toEqual({ behavior: 'deny', message: 'operator blocked' })
+  })
+
+  it('blocks neighbor-hook updatedInput when the SDK hands rewritten args to wrapCanUseTool', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+
+    // A later neighbor PreToolUse hook can return hookSpecificOutput.updatedInput.
+    // The SDK applies that rewrite and then calls canUseTool with the replacement.
+    // There is no second Edictum PreToolUse for that neighbor output, so
+    // wrapCanUseTool is the execution-time gate.
+    const preResult = await sdkCallback(options, 'PreToolUse')(
+      preInput('Bash', { command: 'echo safe' }),
+      'call-1',
+      hookContext,
+    )
+    expect(preResult).toEqual({})
+
+    const result = await adapter.wrapCanUseTool(async () => ({ behavior: 'allow' }))(
+      'Bash',
+      { command: 'touch /tmp/neighbor-rewrite' },
+      { signal: hookContext.signal, toolUseID: 'call-1', requestId: 'request-1' },
+    )
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        behavior: 'deny',
+        message: expect.stringContaining('BLOCKED'),
+      }),
+    )
+  })
+
+  it('blocks PreToolUse when tool_input is a replacement for a pending call', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+
+    await expect(
+      sdkCallback(options, 'PreToolUse')(
+        preInput('Bash', { command: 'echo safe' }),
+        'call-1',
+        hookContext,
+      ),
+    ).resolves.toEqual({})
+
+    const result = (await sdkCallback(options, 'PreToolUse')(
+      preInput('Bash', { command: 'touch /tmp/replaced' }),
+      'call-1',
+      hookContext,
+    )) as PreToolUseHookOutput
+
+    expect(result.hookSpecificOutput.permissionDecision).toBe('deny')
+    expect(result.hookSpecificOutput.permissionDecisionReason).toContain('BLOCKED')
+  })
+
   it('PreToolUse hook returns no permission decision for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)

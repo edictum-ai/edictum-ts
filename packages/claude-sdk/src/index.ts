@@ -60,6 +60,84 @@ function permissionBoundaryDenial(): {
   }
 }
 
+const MAX_GOVERNED_INPUT_DEPTH = 64
+
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * Deep-compare the tool args that will execute against the governed snapshot.
+ * Throws on exotic or overly deep values so callers can fail closed.
+ */
+function governedInputEquals(left: unknown, right: unknown, depth = 0): boolean {
+  if (depth > MAX_GOVERNED_INPUT_DEPTH) {
+    throw new TypeError('BLOCKED: tool input exceeded compare depth')
+  }
+  if (Object.is(left, right)) {
+    return true
+  }
+  if (left == null || right == null) {
+    return false
+  }
+
+  const leftType = typeof left
+  if (leftType !== typeof right) {
+    return false
+  }
+  if (leftType !== 'object') {
+    return false
+  }
+
+  if (left instanceof Date || right instanceof Date) {
+    return left instanceof Date && right instanceof Date && left.getTime() === right.getTime()
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false
+    }
+    for (let i = 0; i < left.length; i += 1) {
+      if (!governedInputEquals(left[i], right[i], depth + 1)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  if (!isPlainObject(left) || !isPlainObject(right)) {
+    throw new TypeError('BLOCKED: governed input compare requires plain JSON-like values')
+  }
+
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  const rightKeys = Object.keys(rightRecord)
+  if (leftKeys.length !== rightKeys.length) {
+    return false
+  }
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(rightRecord, key)) {
+      return false
+    }
+    if (!governedInputEquals(leftRecord[key], rightRecord[key], depth + 1)) {
+      return false
+    }
+  }
+  return true
+}
+
+function pendingMatchesGovernedCall(
+  pending: PendingCall,
+  toolName: string,
+  toolInput: unknown,
+): boolean {
+  return (
+    pending.toolCall.toolName === toolName && governedInputEquals(pending.toolCall.args, toolInput)
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Claude Agent SDK hook types
 // ---------------------------------------------------------------------------
@@ -208,6 +286,35 @@ export class ClaudeAgentSDKAdapter {
       }
 
       const callId = toolUseID ?? input.tool_use_id ?? randomUUID()
+      const pending = this._pending.get(callId)
+      if (pending !== undefined) {
+        let inputMatches = false
+        try {
+          inputMatches = pendingMatchesGovernedCall(pending, input.tool_name, input.tool_input)
+        } catch {
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason:
+                'BLOCKED: Edictum could not compare tool input against the governed snapshot',
+            },
+          }
+        }
+        if (!inputMatches) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason:
+                'BLOCKED: Edictum rejected a tool input replacement after PreToolUse governance',
+            },
+          }
+        }
+        // Same governed input: do not re-run _pre or emit a permission decision.
+        return {}
+      }
+
       const result = await this._pre(
         input.tool_name,
         input.tool_input as Record<string, unknown>,
@@ -309,13 +416,23 @@ export class ClaudeAgentSDKAdapter {
 
   /**
    * Wrap an SDK permission callback so it cannot mutate arguments or permissions
-   * after PreToolUse governance. Accepted decisions are copied into fresh plain
-   * objects. Null is preserved for documented out-of-band responses. Throws and
-   * malformed results fail closed with a fixed denial.
+   * after PreToolUse governance. If the tool input reaching this wrapper differs
+   * from the pending governed args for that toolUseID, the call is blocked.
+   * Accepted decisions are copied into fresh plain objects. Null is preserved
+   * for documented out-of-band responses. Throws and malformed results fail
+   * closed with a fixed block.
    */
   wrapCanUseTool(callback: CanUseTool): CanUseTool {
     return async (toolName, input, options) => {
       try {
+        const pending = this._pending.get(options.toolUseID)
+        if (pending !== undefined) {
+          const inputMatches = pendingMatchesGovernedCall(pending, toolName, input)
+          if (!inputMatches) {
+            return permissionBoundaryDenial()
+          }
+        }
+
         // The SDK-owned input may execute after this callback returns. Give the
         // callback a detached copy so in-place mutation cannot change the
         // already-governed arguments without using updatedInput (rejected below).
