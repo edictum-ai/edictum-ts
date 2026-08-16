@@ -56,13 +56,13 @@ function runRunner(env: Record<string, string>): RunnerResult {
   delete childEnv.EDICTUM_CONFORMANCE_REQUIRED
   Object.assign(childEnv, env)
 
-  const result = spawnSync(process.execPath, [VITEST_ENTRY, 'run', RUNNER_FILE], {
+  const vitestArgs = [VITEST_ENTRY, 'run', '--reporter=verbose', RUNNER_FILE]
+  const result = spawnSync(process.execPath, vitestArgs, {
     cwd: CORE_ROOT,
     env: childEnv,
     encoding: 'utf8',
-    // Headroom inside the 180 s vitest test timeout: a child killed at its
-    // own deadline reports status null, which must fail every assertion
-    // below rather than satisfy `not.toBe(0)`.
+    // Child timeout sits inside the 180 s test timeout. status null must
+    // fail every assertion below rather than satisfy not.toBe(0).
     timeout: 150_000,
   })
 
@@ -138,7 +138,9 @@ describe('shared rejection runner — fail-closed gates', () => {
       try {
         const result = runRunner({ EDICTUM_SCHEMAS_DIR: root })
         expect(result.status, `runner output:\n${result.output}`).toBe(0)
-        expect(result.output).toContain('1 skipped')
+        expect(result.output).toContain(
+          'shared rejection fixtures — edictum-schemas not found or empty',
+        )
       } finally {
         rmSync(root, { recursive: true, force: true })
       }

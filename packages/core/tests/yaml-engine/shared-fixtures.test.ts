@@ -187,10 +187,10 @@ const triedPaths = [...envCandidates, ...FALLBACK_REJECTION_DIRS]
 const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
 
 // An explicitly-set EDICTUM_SCHEMAS_DIR that does not resolve is never
-// silently stepped over (contract C5): a wrong pin or truncated checkout
-// must fail in required mode rather than quietly load whatever
-// nested/sibling directory happens to exist. Relative values are tried
-// from cwd and from the repo root before this refusal.
+// silently stepped over: a wrong pin or truncated checkout must fail in
+// required mode rather than quietly load whatever repo-relative directory
+// happens to exist. Relative values are tried from cwd and from the repo
+// root before this refusal.
 if (schemasEnv && !envHit) {
   if (conformanceRequired) {
     throw new Error(
