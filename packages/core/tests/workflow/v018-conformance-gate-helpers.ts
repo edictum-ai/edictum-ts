@@ -6,6 +6,15 @@ const V018 = join('fixtures', 'workflow-v0.18')
 
 const MINIMAL_SUITE = [
   'suite: placeholder',
+  'workflows:',
+  '  unused:',
+  '    apiVersion: edictum/v1',
+  '    kind: Workflow',
+  '    metadata:',
+  '      name: unused',
+  '    stages:',
+  '      - id: unused',
+  '        tools: []',
   'fixtures:',
   '  - id: present',
   '    description: nonempty so this named suite is loaded',
