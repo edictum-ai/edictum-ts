@@ -2,12 +2,21 @@
  * Conformance runner for v0.18 workflow fixtures from edictum-schemas.
  *
  * Fixture discovery (first match wins):
- *   1. EDICTUM_SCHEMAS_DIR env var / fixtures/workflow-v0.18/
+ *   1. EDICTUM_SCHEMAS_DIR env var / fixtures/workflow-v0.18/. A relative
+ *      value is resolved against cwd and then the repo root.
  *   2. <repo-root>/edictum-schemas/fixtures/workflow-v0.18/
  *   3. <repo-root>/../edictum-schemas/fixtures/workflow-v0.18/
  *
- * Missing-fixture behavior:
- *   - Skip the suite cleanly (check out edictum-schemas sibling to run locally)
+ * Missing-fixture behavior — gated on each named suite's loaded fixture
+ * list, not on the directory existing or on the union of the four lists
+ * (matches edictum#242):
+ *   - EDICTUM_CONFORMANCE_REQUIRED=1 with any of the four named suites
+ *     empty (missing directory, empty directory, or a missing/empty
+ *     suite file) → fail the test run
+ *   - Otherwise → skip the empty suite cleanly (a named skip, never a pass)
+ *
+ * An explicitly-set EDICTUM_SCHEMAS_DIR whose workflow-v0.18 subdirectory
+ * does not exist refuses fallthrough in required mode.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -33,20 +42,54 @@ import type { MutableWorkflowState, MutableWorkflowEvidence } from '../../src/wo
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..', '..', '..')
 
-function findV018Dir(): string | null {
-  const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
-  if (schemasEnv) {
-    const candidate = join(schemasEnv, 'fixtures', 'workflow-v0.18')
+const V018_SUBPATH = join('fixtures', 'workflow-v0.18')
+const V018_SUITE_FILES = [
+  ['wildcard-tools', 'wildcard-tools.workflow-v0.18.yaml'],
+  ['terminal-stage', 'terminal-stage.workflow-v0.18.yaml'],
+  ['mcp-result-evidence', 'mcp-result-evidence.workflow-v0.18.yaml'],
+  ['extends-inheritance', 'extends-inheritance.workflow-v0.18.yaml'],
+] as const
+
+const FALLBACK_V018_DIRS = [
+  join(REPO_ROOT, 'edictum-schemas', V018_SUBPATH),
+  resolve(REPO_ROOT, '..', 'edictum-schemas', V018_SUBPATH),
+]
+
+function firstExisting(paths: readonly string[]): string | null {
+  for (const candidate of paths) {
     if (existsSync(candidate)) return candidate
   }
-  const nested = join(REPO_ROOT, 'edictum-schemas', 'fixtures', 'workflow-v0.18')
-  if (existsSync(nested)) return nested
-  const sibling = resolve(REPO_ROOT, '..', 'edictum-schemas', 'fixtures', 'workflow-v0.18')
-  if (existsSync(sibling)) return sibling
   return null
 }
 
-const v018Dir = findV018Dir()
+function envV018Candidates(schemasEnv: string): string[] {
+  const fromCwd = resolve(process.cwd(), schemasEnv, V018_SUBPATH)
+  const fromRoot = resolve(REPO_ROOT, schemasEnv, V018_SUBPATH)
+  return fromCwd === fromRoot ? [fromCwd] : [fromCwd, fromRoot]
+}
+
+const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
+const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
+const envCandidates = schemasEnv ? envV018Candidates(schemasEnv) : []
+const envHit = firstExisting(envCandidates)
+const fallbackHit = firstExisting(FALLBACK_V018_DIRS)
+
+if (schemasEnv && !envHit) {
+  if (conformanceRequired) {
+    throw new Error(
+      `EDICTUM_SCHEMAS_DIR is set to "${schemasEnv}" but none of the resolved ` +
+        `${V018_SUBPATH} directories exist — refusing to fall through to ` +
+        `repo-relative discovery. Tried: ${envCandidates.join(', ')}. ` +
+        'Fix the schemas checkout or unset the variable.',
+    )
+  }
+  console.warn(
+    `[edictum] EDICTUM_SCHEMAS_DIR="${schemasEnv}" has no ${V018_SUBPATH} ` +
+      `at tried paths [${envCandidates.join(', ')}]; falling back to repo-relative discovery.`,
+  )
+}
+
+const v018Dir = envHit ?? fallbackHit
 
 function loadSuite(filename: string): Record<string, unknown> | null {
   if (!v018Dir) return null
@@ -56,6 +99,32 @@ function loadSuite(filename: string): Record<string, unknown> | null {
     string,
     unknown
   >
+}
+
+function suiteFixtures(suite: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (suite == null || !Array.isArray(suite.fixtures)) return []
+  return suite.fixtures as Record<string, unknown>[]
+}
+
+const loadedSuites = V018_SUITE_FILES.map(([name, file]) => {
+  const suite = loadSuite(file)
+  return { name, file, suite, fixtures: suiteFixtures(suite) }
+})
+const emptySuites = loadedSuites
+  .filter((entry) => entry.fixtures.length === 0)
+  .map((entry) => entry.name)
+
+if (conformanceRequired && emptySuites.length > 0) {
+  const location = v018Dir ? ` from ${v018Dir}` : ' — the fixtures directory was not found'
+  const alreadySet = schemasEnv
+    ? `EDICTUM_SCHEMAS_DIR is already set to "${schemasEnv}"`
+    : 'Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling'
+  throw new Error(
+    'EDICTUM_CONFORMANCE_REQUIRED=1 but no workflow-v0.18 fixtures were loaded' +
+      ` (empty suites: ${emptySuites.join(', ')})` +
+      location +
+      `. ${alreadySet}.`,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +297,17 @@ async function runExtendsFixture(
   const rulesetRef = String(fixture.contract)
   const envelopeData = fixture.envelope as Record<string, unknown>
   const expected = fixture.expected as Record<string, unknown>
+  const verdict = expected.verdict
+  if (
+    verdict !== 'denied' &&
+    verdict !== 'block' &&
+    verdict !== 'blocked' &&
+    verdict !== 'allowed'
+  ) {
+    throw new Error(
+      `fixture ${String(fixture.id)}: unknown expected verdict ${JSON.stringify(verdict)}`,
+    )
+  }
 
   const merged = resolveRulesetExtends(rulesets, rulesetRef)
   const mergedYaml = yaml.dump(merged)
@@ -237,10 +317,10 @@ async function runExtendsFixture(
   const args = (envelopeData.arguments ?? {}) as Record<string, unknown>
   const result = await guard.evaluate(toolName, args)
 
-  // Fixture format uses 'denied' as the blocked-verdict string (cross-SDK convention from
-  // edictum-schemas). EvaluationResult.decision uses 'deny' internally. Assert on the raw
-  // decision value to prevent terminology regressions.
-  if (expected.verdict === 'denied') {
+  // Known verdicts match edictum#242: allowed / block|blocked|denied.
+  // Anything else is a hard failure — an unknown verdict must not pass as
+  // "not deny".
+  if (verdict === 'denied' || verdict === 'block' || verdict === 'blocked') {
     expect(result.decision, `fixture ${String(fixture.id)}: verdict`).toBe('deny')
     if (typeof expected.message_contains === 'string') {
       const allReasons = result.denyReasons.join(' ').toLowerCase()
@@ -248,8 +328,12 @@ async function runExtendsFixture(
         expected.message_contains.toLowerCase(),
       )
     }
-  } else {
+  } else if (verdict === 'allowed') {
     expect(result.decision, `fixture ${String(fixture.id)}: verdict`).not.toBe('deny')
+  } else {
+    throw new Error(
+      `fixture ${String(fixture.id)}: unknown expected verdict ${JSON.stringify(verdict)}`,
+    )
   }
 }
 
@@ -257,76 +341,25 @@ async function runExtendsFixture(
 // Test suites
 // ---------------------------------------------------------------------------
 
-if (v018Dir) {
-  describe('workflow-v0.18 conformance', () => {
-    // --- wildcard tools ---
-    describe('wildcard-tools', () => {
-      const suite = loadSuite('wildcard-tools.workflow-v0.18.yaml')
-      if (suite == null) {
-        it.skip('fixture file not found', () => {})
-      } else {
-        const fixtures = Array.isArray(suite.fixtures)
-          ? (suite.fixtures as Record<string, unknown>[])
-          : []
-        for (const fixture of fixtures) {
-          it(`${String(suite.suite ?? 'wildcard-tools')}/${String(fixture.id)}: ${String(fixture.description ?? '')}`, async () => {
-            await runWorkflowFixture(suite, fixture)
-          })
-        }
-      }
-    })
-
-    // --- terminal stage ---
-    describe('terminal-stage', () => {
-      const suite = loadSuite('terminal-stage.workflow-v0.18.yaml')
-      if (suite == null) {
-        it.skip('fixture file not found', () => {})
-      } else {
-        const fixtures = Array.isArray(suite.fixtures)
-          ? (suite.fixtures as Record<string, unknown>[])
-          : []
-        for (const fixture of fixtures) {
-          it(`${String(suite.suite ?? 'terminal-stage')}/${String(fixture.id)}: ${String(fixture.description ?? '')}`, async () => {
-            await runWorkflowFixture(suite, fixture)
-          })
-        }
-      }
-    })
-
-    // --- MCP result evidence ---
-    describe('mcp-result-evidence', () => {
-      const suite = loadSuite('mcp-result-evidence.workflow-v0.18.yaml')
-      if (suite == null) {
-        it.skip('fixture file not found', () => {})
-      } else {
-        const fixtures = Array.isArray(suite.fixtures)
-          ? (suite.fixtures as Record<string, unknown>[])
-          : []
-        for (const fixture of fixtures) {
-          it(`${String(suite.suite ?? 'mcp-result-evidence')}/${String(fixture.id)}: ${String(fixture.description ?? '')}`, async () => {
-            await runWorkflowFixture(suite, fixture)
-          })
-        }
-      }
-    })
-
-    // --- extends inheritance ---
-    describe('extends-inheritance', () => {
-      const suite = loadSuite('extends-inheritance.workflow-v0.18.yaml')
-      if (suite == null) {
-        it.skip('fixture file not found', () => {})
-      } else {
-        const fixtures = Array.isArray(suite.fixtures)
-          ? (suite.fixtures as Record<string, unknown>[])
-          : []
-        for (const fixture of fixtures) {
-          it(`${String(suite.suite ?? 'extends-inheritance')}/${String(fixture.id)}: ${String(fixture.description ?? '')}`, async () => {
-            await runExtendsFixture(suite, fixture)
-          })
-        }
-      }
-    })
-  })
+if (emptySuites.length === 4) {
+  it.skip('workflow-v0.18 conformance — edictum-schemas not found or empty', () => {})
 } else {
-  it.skip('workflow-v0.18 conformance — edictum-schemas not found', () => {})
+  describe('workflow-v0.18 conformance', () => {
+    for (const entry of loadedSuites) {
+      describe(entry.name, () => {
+        if (entry.suite == null || entry.fixtures.length === 0) {
+          it.skip('fixture file not found or empty', () => {})
+          return
+        }
+        const run = entry.name === 'extends-inheritance' ? runExtendsFixture : runWorkflowFixture
+        for (const fixture of entry.fixtures) {
+          it(`${String(entry.suite.suite ?? entry.name)}/${String(fixture.id)}: ${String(
+            fixture.description ?? '',
+          )}`, async () => {
+            await run(entry.suite as Record<string, unknown>, fixture)
+          })
+        }
+      })
+    }
+  })
 }

@@ -3,17 +3,29 @@
  * cross-SDK rejection corpus maintained in edictum-schemas.
  *
  * Fixture discovery (first match wins):
- *   1. EDICTUM_FIXTURES_DIR env var (direct path to rejection/ directory)
- *   2. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo)
- *   3. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
- *   4. <repo-root>/../edictum-schemas/ (sibling checkout)
+ *   1. EDICTUM_SCHEMAS_DIR env var (root of edictum-schemas repo). A relative
+ *      value is resolved against cwd and then the repo root, so
+ *      a relative edictum-schemas value still works when core tests run
+ *      with cwd packages/core.
+ *   2. <repo-root>/edictum-schemas/ (monorepo / vendored checkout)
+ *   3. <repo-root>/../edictum-schemas/ (sibling checkout)
  *
- * Missing-fixture behavior:
- *   - EDICTUM_CONFORMANCE_REQUIRED=1 → fail the test run
- *   - Otherwise → skip the suite cleanly
+ * EDICTUM_FIXTURES_DIR is no longer read: it once meant the fixtures root
+ * here and the rejection/ subdirectory in other runners, so one name
+ * silently selected different directories per SDK.
+ *
+ * Missing-fixture behavior — gated on the LOADED fixture list, not on the
+ * directory existing:
+ *   - EDICTUM_CONFORMANCE_REQUIRED=1 with zero loadable fixtures (missing
+ *     directory, empty directory, or files carrying no fixtures) → fail
+ *     the test run
+ *   - Otherwise → skip the suite cleanly (a named skip, never a pass)
  *
  * Each fixture provides a bundle that must be rejected by the loader, plus
- * an `error_contains` substring that the error message must include.
+ * an `error_contains` substring that the error message must include. A
+ * fixture entry whose `expected.rejected` is absent or not a boolean is a
+ * hard failure at load time: a missing or misspelled expectation must
+ * never silently invert into "must load successfully".
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -34,28 +46,22 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..', '..', '..')
 const REJECTION_SUBPATH = join('fixtures', 'rejection')
 
-/** Resolve the rejection fixtures directory using the discovery order. */
-function resolveFixturesDir(): string | null {
-  // 1. Direct path via env var
-  const fixturesEnv = process.env.EDICTUM_FIXTURES_DIR
-  if (fixturesEnv && existsSync(fixturesEnv)) return fixturesEnv
+const FALLBACK_REJECTION_DIRS = [
+  join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH),
+  resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH),
+]
 
-  // 2. Schemas repo root via env var
-  const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
-  if (schemasEnv) {
-    const candidate = join(schemasEnv, REJECTION_SUBPATH)
-    if (existsSync(candidate)) return candidate
+function firstExisting(paths: readonly string[]): string | null {
+  for (const p of paths) {
+    if (existsSync(p)) return p
   }
-
-  // 3. Nested inside repo root (monorepo / vendored)
-  const nested = join(REPO_ROOT, 'edictum-schemas', REJECTION_SUBPATH)
-  if (existsSync(nested)) return nested
-
-  // 4. Sibling checkout
-  const sibling = resolve(REPO_ROOT, '..', 'edictum-schemas', REJECTION_SUBPATH)
-  if (existsSync(sibling)) return sibling
-
   return null
+}
+
+function envRejectionCandidates(schemasEnv: string): string[] {
+  const fromCwd = resolve(process.cwd(), schemasEnv, REJECTION_SUBPATH)
+  const fromRoot = resolve(REPO_ROOT, schemasEnv, REJECTION_SUBPATH)
+  return fromCwd === fromRoot ? [fromCwd] : [fromCwd, fromRoot]
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +132,14 @@ function normalizeExpectedErrorSubstring(value: string): string {
   return value
 }
 
-function loadFixtureSuites(dir: string): FixtureSuite[] | null {
+function loadFixtureSuites(dir: string): FixtureSuite[] {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.rejection.yaml'))
     .sort()
 
-  if (files.length === 0) return null
-
+  // An empty directory is returned as zero suites — the required-mode gate
+  // below rejects on the loaded fixture count, so an empty checkout fails
+  // instead of silently skipping.
   return files.map((file) => {
     const content = readFileSync(join(dir, file), 'utf-8')
 
@@ -153,7 +160,18 @@ function loadFixtureSuites(dir: string): FixtureSuite[] | null {
       throw new Error(`Fixture file ${file} is missing a 'fixtures' array`)
     }
 
-    return parsed as FixtureSuite
+    const suite = parsed as FixtureSuite
+    for (const fixture of suite.fixtures) {
+      const expected = fixture?.expected as { rejected?: unknown } | undefined
+      if (expected == null || typeof expected.rejected !== 'boolean') {
+        throw new Error(
+          `Fixture file ${file}: fixture ${fixture?.id ?? '(missing id)'} is missing a boolean ` +
+            `expected.rejected — a missing or misspelled expectation must fail the suite, ` +
+            `not silently invert the assertion into "must load successfully"`,
+        )
+      }
+    }
+    return suite
   })
 }
 
@@ -161,19 +179,52 @@ function loadFixtureSuites(dir: string): FixtureSuite[] | null {
 // Runner
 // ---------------------------------------------------------------------------
 
-const fixturesDir = resolveFixturesDir()
+const schemasEnv = process.env.EDICTUM_SCHEMAS_DIR
+const envCandidates = schemasEnv ? envRejectionCandidates(schemasEnv) : []
+const envHit = firstExisting(envCandidates)
+const fallbackHit = firstExisting(FALLBACK_REJECTION_DIRS)
+const triedPaths = [...envCandidates, ...FALLBACK_REJECTION_DIRS]
 const conformanceRequired = process.env.EDICTUM_CONFORMANCE_REQUIRED === '1'
 
-if (!fixturesDir && conformanceRequired) {
-  throw new Error(
-    'EDICTUM_CONFORMANCE_REQUIRED=1 but no rejection fixtures found. ' +
-      'Set EDICTUM_FIXTURES_DIR or EDICTUM_SCHEMAS_DIR, or check out edictum-schemas as a sibling.',
+// An explicitly-set EDICTUM_SCHEMAS_DIR that does not resolve is never
+// silently stepped over: a wrong pin or truncated checkout must fail in
+// required mode rather than quietly load whatever repo-relative directory
+// happens to exist. Relative values are tried from cwd and from the repo
+// root before this refusal.
+if (schemasEnv && !envHit) {
+  if (conformanceRequired) {
+    throw new Error(
+      `EDICTUM_SCHEMAS_DIR is set to "${schemasEnv}" but none of the resolved ` +
+        `${REJECTION_SUBPATH} directories exist — refusing to fall through to ` +
+        `repo-relative discovery. Tried: ${envCandidates.join(', ')}. ` +
+        'Fix the schemas checkout or unset the variable.',
+    )
+  }
+  console.warn(
+    `[edictum] EDICTUM_SCHEMAS_DIR="${schemasEnv}" has no ${REJECTION_SUBPATH} ` +
+      `at tried paths [${envCandidates.join(', ')}]; falling back to repo-relative discovery.`,
   )
 }
 
+const fixturesDir = envHit ?? fallbackHit
 const suites = fixturesDir ? loadFixtureSuites(fixturesDir) : null
+const loadedFixtures = suites?.reduce((count, suite) => count + suite.fixtures.length, 0) ?? 0
 
-if (suites) {
+// Required-mode gate on the loaded fixture list, not on the directory: a
+// resolved-but-empty directory (truncated checkout, wrong ref, moved
+// corpus) is a hard failure, never a green skip.
+if (conformanceRequired && loadedFixtures === 0) {
+  const alreadySet = schemasEnv
+    ? `EDICTUM_SCHEMAS_DIR is already set to "${schemasEnv}"`
+    : 'Set EDICTUM_SCHEMAS_DIR or check out edictum-schemas as a sibling'
+  throw new Error(
+    'EDICTUM_CONFORMANCE_REQUIRED=1 but zero rejection fixtures were loaded' +
+      (fixturesDir ? ` from ${fixturesDir}` : ' — no rejection fixtures directory was found') +
+      `. Tried: ${triedPaths.join(', ')}. ${alreadySet}.`,
+  )
+}
+
+if (suites && loadedFixtures > 0) {
   describe('shared rejection fixtures (edictum-schemas)', () => {
     for (const suite of suites) {
       if (!Array.isArray(suite.fixtures)) {
@@ -222,5 +273,5 @@ if (suites) {
     }
   })
 } else {
-  it.skip('shared rejection fixtures — edictum-schemas not found', () => {})
+  it.skip('shared rejection fixtures — edictum-schemas not found or empty (optional mode)', () => {})
 }

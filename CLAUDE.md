@@ -211,8 +211,6 @@ Edictum spans multiple repos that work together:
 - **edictum** (core Python): `edictum-ai/edictum` — MIT Python library. PyPI: `edictum`.
 - **edictum-ts** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
 - **edictum-go** (core Go): `edictum-ai/edictum-go` — Go SDK and CLI.
-- **edictum-api** (control-plane API): `edictum-ai/edictum-api` — hosted backend for runs, approvals, notifications, and audit.
-- **edictum-app** (control-plane UI): `edictum-ai/edictum-app` — hosted frontend for runs, approvals, policies, and settings.
 - **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared schema and conformance fixtures.
 
 The SDKs work standalone. The control plane is optional. The schema repo is the single source of truth for shared formats and fixtures.
@@ -226,11 +224,13 @@ When a change affects shared semantics, YAML validation, fixture behavior, audit
 3. **Ensure all three SDKs pass** — Python (`edictum`), Go (`edictum-go`), and TypeScript (this repo) shared-fixture runners must all pass with `EDICTUM_CONFORMANCE_REQUIRED=1`
 4. **Do not merge** parity-affecting behavior without the Parity Check workflow passing in all affected repos
 
-The conformance runner in this repo lives at `packages/core/tests/yaml-engine/shared-fixtures.test.ts` and is executed in CI by:
+The conformance runner in this repo lives at `packages/core/tests/yaml-engine/shared-fixtures.test.ts` and is executed in CI by the command below.
+
+A relative schemas-dir value is resolved from cwd and from the repo root (so it still works when core tests run with cwd packages/core).
 
 ```bash
 EDICTUM_SCHEMAS_DIR=edictum-schemas EDICTUM_CONFORMANCE_REQUIRED=1 \
-  pnpm --filter @edictum/core test -- --grep "shared rejection fixtures"
+  pnpm --filter @edictum/core test -- tests/yaml-engine/shared-fixtures.test.ts
 ```
 
 The `Parity Check` workflow (`.github/workflows/parity-check.yml`) runs on PRs to main, pushes to main, and weekly. It is intended to be a required status check.
