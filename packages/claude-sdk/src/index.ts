@@ -4,15 +4,27 @@
  * Translates Edictum pipeline decisions into Claude Agent SDK hook format.
  * The adapter does NOT contain governance logic -- that lives in CheckPipeline.
  *
- * Integration point: PreToolUse / PostToolUse hooks.
+ * Integration point: PreToolUse / PostToolUse / PostToolUseFailure hooks.
  *
- * Note: toSdkHooks() fully enforces preconditions. For postcondition
- * redact/deny, the adapter sets updatedMCPToolOutput in the PostToolUse
- * response, but full enforcement depends on the Claude Agent SDK honoring
- * this field. Use the wrapper integration path for guaranteed enforcement.
+ * Note: toSdkHooks() fully enforces preconditions. Postconditions run after
+ * the tool, so they cannot undo side effects. Native hook output replacement
+ * is not enforced: updatedToolOutput requires a schema-preserving replacement,
+ * which Edictum cannot safely synthesize from its generic postcondition result.
  */
 
 import { randomUUID } from 'node:crypto'
+
+import type {
+  CanUseTool,
+  HookCallback as SDKHookCallback,
+  HookCallbackMatcher,
+  PostToolUseFailureHookInput as SDKPostToolUseFailureHookInput,
+  PostToolUseFailureHookSpecificOutput,
+  PostToolUseHookInput as SDKPostToolUseHookInput,
+  PostToolUseHookSpecificOutput,
+  PreToolUseHookInput as SDKPreToolUseHookInput,
+  PreToolUseHookSpecificOutput,
+} from '@anthropic-ai/claude-agent-sdk'
 
 import {
   type AuditAction,
@@ -34,53 +46,112 @@ import {
   defaultSuccessCheck,
 } from '@edictum/core'
 
-export const VERSION = '0.1.0' as const
+export const VERSION = '0.3.0' as const
 const MAX_WORKFLOW_APPROVAL_ROUNDS = 32
 
-// ---------------------------------------------------------------------------
-// Claude Agent SDK hook types (structural -- no framework import needed)
-// ---------------------------------------------------------------------------
-
-/** Shape of input passed to a PreToolUse hook callback. */
-export interface PreToolUseInput {
-  readonly hook_event_name: string
-  readonly tool_name: string
-  readonly tool_input: Record<string, unknown>
-  readonly tool_use_id?: string
-}
-
-/** Shape of input passed to a PostToolUse hook callback. */
-export interface PostToolUseInput {
-  readonly hook_event_name: string
-  readonly tool_name: string
-  readonly tool_use_id?: string
-  readonly tool_response?: unknown
-  /** @deprecated Use tool_response instead. Kept for backward compatibility. */
-  readonly tool_result?: unknown
-}
-
-/** PreToolUse hook output for deny. */
-export interface PreToolUseHookOutput {
-  readonly hookSpecificOutput: {
-    readonly hookEventName: 'PreToolUse'
-    readonly permissionDecision: 'allow' | 'deny'
-    readonly permissionDecisionReason?: string
+function permissionBoundaryDenial(): {
+  behavior: 'deny'
+  message: string
+} {
+  return {
+    behavior: 'deny',
+    message:
+      'BLOCKED: Edictum rejected an unsafe or invalid SDK permission result; input and permission mutations are not supported after PreToolUse governance',
   }
 }
 
-/** PostToolUse hook output (informational + optional result substitution). */
-export interface PostToolUseHookOutput {
-  readonly hookSpecificOutput?: {
-    readonly hookEventName: 'PostToolUse'
-    readonly additionalContext?: string
-    readonly updatedMCPToolOutput?: unknown
-  }
+const MAX_GOVERNED_INPUT_DEPTH = 64
+
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
 }
 
-/** Hook callback type matching Claude Agent SDK convention. */
-export type HookCallback = (input: {
-  readonly input: PreToolUseInput | PostToolUseInput
-}) => Promise<PreToolUseHookOutput | PostToolUseHookOutput | Record<string, never>>
+/**
+ * Deep-compare the tool args that will execute against the governed snapshot.
+ * Throws on exotic or overly deep values so callers can fail closed.
+ */
+function governedInputEquals(left: unknown, right: unknown, depth = 0): boolean {
+  if (depth > MAX_GOVERNED_INPUT_DEPTH) {
+    throw new TypeError('BLOCKED: tool input exceeded compare depth')
+  }
+  if (Object.is(left, right)) {
+    return true
+  }
+  if (left == null || right == null) {
+    return false
+  }
+
+  const leftType = typeof left
+  if (leftType !== typeof right) {
+    return false
+  }
+  if (leftType !== 'object') {
+    return false
+  }
+
+  if (left instanceof Date || right instanceof Date) {
+    return left instanceof Date && right instanceof Date && left.getTime() === right.getTime()
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false
+    }
+    for (let i = 0; i < left.length; i += 1) {
+      if (!governedInputEquals(left[i], right[i], depth + 1)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  if (!isPlainObject(left) || !isPlainObject(right)) {
+    throw new TypeError('BLOCKED: governed input compare requires plain JSON-like values')
+  }
+
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  const rightKeys = Object.keys(rightRecord)
+  if (leftKeys.length !== rightKeys.length) {
+    return false
+  }
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(rightRecord, key)) {
+      return false
+    }
+    if (!governedInputEquals(leftRecord[key], rightRecord[key], depth + 1)) {
+      return false
+    }
+  }
+  return true
+}
+
+function pendingMatchesGovernedCall(
+  pending: PendingCall,
+  toolName: string,
+  toolInput: unknown,
+): boolean {
+  return (
+    pending.toolCall.toolName === toolName && governedInputEquals(pending.toolCall.args, toolInput)
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Claude Agent SDK hook types
+// ---------------------------------------------------------------------------
+
+export type HookCallback = SDKHookCallback
+export type HookMatcher = HookCallbackMatcher
+export type PreToolUseInput = SDKPreToolUseHookInput
+export type PostToolUseInput = SDKPostToolUseHookInput
+export type PostToolUseFailureInput = SDKPostToolUseFailureHookInput
+export type PreToolUseHookOutput = { hookSpecificOutput: PreToolUseHookSpecificOutput }
+export type PostToolUseHookOutput = { hookSpecificOutput?: PostToolUseHookSpecificOutput }
+export type PostToolUseFailureHookOutput = {
+  hookSpecificOutput?: PostToolUseFailureHookSpecificOutput
+}
 
 // ---------------------------------------------------------------------------
 // ClaudeAgentSDKAdapterOptions
@@ -121,7 +192,7 @@ interface PendingCall {
  * The adapter does NOT contain governance logic -- that lives in
  * CheckPipeline. The adapter only:
  * 1. Creates envelopes from SDK hook data
- * 2. Manages pending state (toolCall) between PreToolUse/PostToolUse
+ * 2. Manages pending state between PreToolUse and either post-tool exit event
  * 3. Translates PreDecision/PostDecision into hook behavior
  * 4. Handles observe mode (deny -> allow conversion)
  */
@@ -182,108 +253,285 @@ export class ClaudeAgentSDKAdapter {
    * ```ts
    * const adapter = new ClaudeAgentSDKAdapter(guard);
    * const hooks = adapter.toSdkHooks();
-   * // Pass hooks.PreToolUse and hooks.PostToolUse to Claude Agent SDK
+   * // Pass hooks as options.hooks to the Claude Agent SDK.
    * ```
+   *
+   * Calling this method again replaces the postcondition warning callback for
+   * every hook set returned by this adapter instance.
    */
   toSdkHooks(options?: ToSdkHooksOptions): {
-    PreToolUse: HookCallback[]
-    PostToolUse: HookCallback[]
+    PreToolUse: HookCallbackMatcher[]
+    PostToolUse: HookCallbackMatcher[]
+    PostToolUseFailure: HookCallbackMatcher[]
   } {
     this._onPostconditionWarn = options?.onPostconditionWarn ?? null
 
-    return {
-      PreToolUse: [
-        async ({ input }): Promise<PreToolUseHookOutput> => {
-          const hookInput = input as PreToolUseInput
-          const toolName = hookInput.tool_name
-          const toolInput = hookInput.tool_input
-          const callId = hookInput.tool_use_id ?? randomUUID()
+    const preToolUse: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PreToolUse') {
+        return {}
+      }
 
-          const result = await this._pre(toolName, toolInput, callId)
+      if (
+        typeof input.tool_input !== 'object' ||
+        input.tool_input == null ||
+        Array.isArray(input.tool_input)
+      ) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: 'BLOCKED: Claude Agent SDK supplied invalid tool input',
+          },
+        }
+      }
 
-          if (result != null) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: result,
-              },
-            }
-          }
-
+      const callId = toolUseID ?? input.tool_use_id ?? randomUUID()
+      const pending = this._pending.get(callId)
+      if (pending !== undefined) {
+        let inputMatches = false
+        try {
+          inputMatches = pendingMatchesGovernedCall(pending, input.tool_name, input.tool_input)
+        } catch {
           return {
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
-              permissionDecision: 'allow',
+              permissionDecision: 'deny',
+              permissionDecisionReason:
+                'BLOCKED: Edictum could not compare tool input against the governed snapshot',
             },
           }
-        },
-      ],
-      PostToolUse: [
-        async ({ input }): Promise<PostToolUseHookOutput | Record<string, never>> => {
-          const hookInput = input as PostToolUseInput
-          // Note 2: read tool_response (preferred), fall back to tool_result
-          const toolResponse =
-            hookInput.tool_response !== undefined ? hookInput.tool_response : hookInput.tool_result
-
-          // Correlate via tool_use_id (exact match), then tool_name (only if unambiguous)
-          let callId: string | undefined
-
-          // Note 2: use tool_use_id for correlation if available
-          if (hookInput.tool_use_id && this._pending.has(hookInput.tool_use_id)) {
-            callId = hookInput.tool_use_id
+        }
+        if (!inputMatches) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason:
+                'BLOCKED: Edictum rejected a tool input replacement after PreToolUse governance',
+            },
           }
+        }
+        // Same governed input: do not re-run _pre or emit a permission decision.
+        return {}
+      }
 
-          // Fall back to tool_name match — only if unambiguous (exactly one match)
-          if (!callId) {
-            const toolName = hookInput.tool_name
-            if (toolName) {
-              let matchCount = 0
-              let matchedId: string | undefined
-              for (const [id, pending] of this._pending) {
-                if (pending.toolCall.toolName === toolName) {
-                  matchCount++
-                  matchedId = id
-                }
-              }
-              if (matchCount === 1 && matchedId) {
-                callId = matchedId
-              }
-              // If matchCount > 1 or 0, callId stays undefined → passthrough
-            }
+      const result = await this._pre(
+        input.tool_name,
+        input.tool_input as Record<string, unknown>,
+        callId,
+      )
+
+      if (result != null) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: result,
+          },
+        }
+      }
+
+      // _pre stored a deep copy. The SDK-owned tool_input can still change
+      // while that await is in flight. Recheck the live object before {}.
+      const stored = this._pending.get(callId)
+      let inputStillMatches = false
+      try {
+        inputStillMatches =
+          stored !== undefined &&
+          pendingMatchesGovernedCall(stored, input.tool_name, input.tool_input)
+      } catch {
+        this._pending.delete(callId)
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'BLOCKED: Edictum could not compare tool input against the governed snapshot',
+          },
+        }
+      }
+      if (!inputStillMatches) {
+        this._pending.delete(callId)
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'BLOCKED: Edictum rejected a tool input replacement after PreToolUse governance',
+          },
+        }
+      }
+
+      // Passing Edictum is not permission approval. Return no decision so the
+      // SDK still applies allowedTools, canUseTool, and its normal prompt path.
+      return {}
+    }
+
+    const finalizePending = async (
+      toolUseID: string | undefined,
+      inputToolUseID: string,
+      toolResponse: unknown,
+      forcedToolSuccess?: boolean,
+    ): Promise<PostCallResult | null> => {
+      const callId = toolUseID ?? inputToolUseID
+      if (!callId || !this._pending.has(callId)) {
+        return null
+      }
+      return this._post(callId, toolResponse, forcedToolSuccess)
+    }
+
+    const postContext = (postResult: PostCallResult, toolResponse: unknown): string | null => {
+      const outputChanged = postResult.outputSuppressed || postResult.result !== toolResponse
+      if (postResult.violations.length > 0 || outputChanged) {
+        const violations = postResult.violations.map((violation) => violation.message)
+        if (outputChanged) {
+          violations.push(
+            'Edictum did not replace tool output: Claude Agent SDK updatedToolOutput requires a schema-preserving replacement that the generic adapter cannot synthesize',
+          )
+        }
+        return violations.join('\n')
+      }
+      return null
+    }
+
+    const postToolUse: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PostToolUse') {
+        return {}
+      }
+
+      const postResult = await finalizePending(toolUseID, input.tool_use_id, input.tool_response)
+      if (!postResult) {
+        return {}
+      }
+
+      const additionalContext = postContext(postResult, input.tool_response)
+      if (additionalContext) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PostToolUse',
+            additionalContext,
+          },
+        }
+      }
+
+      return {}
+    }
+
+    const postToolUseFailure: SDKHookCallback = async (input, toolUseID) => {
+      if (input.hook_event_name !== 'PostToolUseFailure') {
+        return {}
+      }
+
+      const failureResponse = {
+        is_error: true,
+        error: input.error,
+        is_interrupt: input.is_interrupt === true,
+      }
+      const postResult = await finalizePending(toolUseID, input.tool_use_id, failureResponse, false)
+      if (!postResult) {
+        return {}
+      }
+
+      const additionalContext = postContext(postResult, failureResponse)
+      return additionalContext
+        ? { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext } }
+        : {}
+    }
+
+    return {
+      PreToolUse: [{ hooks: [preToolUse] }],
+      PostToolUse: [{ hooks: [postToolUse] }],
+      PostToolUseFailure: [{ hooks: [postToolUseFailure] }],
+    }
+  }
+
+  /**
+   * Wrap an SDK permission callback so it cannot mutate arguments or permissions
+   * after PreToolUse governance. If the tool input reaching this wrapper differs
+   * from the pending governed args for that toolUseID, the call is blocked.
+   * The same check runs again after the permission callback returns, so a
+   * mutation of the SDK-owned input during the await cannot sneak through.
+   * Accepted decisions are copied into fresh plain objects. Null is preserved
+   * for documented out-of-band responses. Throws and malformed results fail
+   * closed with a fixed block.
+   */
+  wrapCanUseTool(callback: CanUseTool): CanUseTool {
+    return async (toolName, input, options) => {
+      try {
+        const pending = this._pending.get(options.toolUseID)
+        if (pending !== undefined) {
+          const inputMatches = pendingMatchesGovernedCall(pending, toolName, input)
+          if (!inputMatches) {
+            return permissionBoundaryDenial()
           }
+        }
 
-          if (callId) {
-            const postResult = await this._post(callId, toolResponse)
-
-            // Note 3: return updatedMCPToolOutput for redacted/suppressed content
-            if (postResult.outputSuppressed || postResult.result !== toolResponse) {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PostToolUse',
-                  updatedMCPToolOutput: postResult.result,
-                  additionalContext:
-                    postResult.violations.length > 0
-                      ? postResult.violations.map((f) => f.message).join('\n')
-                      : undefined,
-                },
-              }
-            }
-
-            if (postResult.violations.length > 0) {
-              const context = postResult.violations.map((f) => f.message).join('\n')
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PostToolUse',
-                  additionalContext: context,
-                },
-              }
-            }
+        // The SDK-owned input may execute after this callback returns. Give the
+        // callback a detached copy so in-place mutation cannot change the
+        // already-governed arguments without using updatedInput (rejected below).
+        const isolatedInput = structuredClone(input)
+        const result: unknown = await callback(toolName, isolatedInput, options)
+        // Neighbor hooks can mutate the SDK-owned input while the callback
+        // is awaited. Re-check the object that will execute.
+        if (pending !== undefined) {
+          const inputStillMatches = pendingMatchesGovernedCall(pending, toolName, input)
+          if (!inputStillMatches) {
+            return permissionBoundaryDenial()
           }
+        }
+        if (result === null) {
+          return null
+        }
+        if (typeof result !== 'object') {
+          return permissionBoundaryDenial()
+        }
 
-          return {}
-        },
-      ],
+        const permissionResult = result as Record<string, unknown>
+        const decisionClassification = permissionResult['decisionClassification']
+        if (
+          decisionClassification !== undefined &&
+          decisionClassification !== 'user_temporary' &&
+          decisionClassification !== 'user_permanent' &&
+          decisionClassification !== 'user_reject'
+        ) {
+          return permissionBoundaryDenial()
+        }
+
+        const behavior = permissionResult['behavior']
+        if (behavior === 'allow') {
+          if (
+            'updatedInput' in permissionResult ||
+            'updatedPermissions' in permissionResult ||
+            decisionClassification === 'user_reject'
+          ) {
+            return permissionBoundaryDenial()
+          }
+          return decisionClassification === undefined
+            ? { behavior: 'allow' }
+            : { behavior: 'allow', decisionClassification }
+        }
+        if (behavior === 'deny') {
+          const message = permissionResult['message']
+          if (typeof message !== 'string') {
+            return permissionBoundaryDenial()
+          }
+          const interrupt = permissionResult['interrupt']
+          if (interrupt !== undefined && typeof interrupt !== 'boolean') {
+            return permissionBoundaryDenial()
+          }
+          // Construct from an explicit allowlist. In particular, do not
+          // forward updatedPermissions or any callback-owned prototype/Proxy.
+          return {
+            behavior: 'deny',
+            message,
+            ...(interrupt === undefined ? {} : { interrupt }),
+            ...(decisionClassification === undefined ? {} : { decisionClassification }),
+          }
+        }
+        return permissionBoundaryDenial()
+      } catch {
+        return permissionBoundaryDenial()
+      }
     }
   }
 
@@ -532,9 +780,19 @@ export class ClaudeAgentSDKAdapter {
   /**
    * Run post-execution governance. Returns PostCallResult with violations.
    *
+   * Finalization is at-most-once: pending state is consumed before calling
+   * postconditions, workflow storage, session storage, or the audit sink. Those
+   * ports do not share a transaction or idempotency key, so retrying after a
+   * partial failure could duplicate durable state. A thrown finalization error
+   * is propagated and is not retried by this adapter.
+   *
    * Exposed for direct testing without framework imports.
    */
-  async _post(callId: string, toolResponse: unknown = undefined): Promise<PostCallResult> {
+  async _post(
+    callId: string,
+    toolResponse: unknown = undefined,
+    forcedToolSuccess?: boolean,
+  ): Promise<PostCallResult> {
     const pending = this._pending.get(callId)
     this._pending.delete(callId)
 
@@ -544,8 +802,8 @@ export class ClaudeAgentSDKAdapter {
 
     const { toolCall, workflowStageId, workflowInvolved } = pending
 
-    // Derive tool_success from response
-    const toolSuccess = this._checkToolSuccess(toolCall.toolName, toolResponse)
+    // An SDK failure event is authoritative; otherwise derive success from the configured check.
+    const toolSuccess = forcedToolSuccess ?? this._checkToolSuccess(toolCall.toolName, toolResponse)
 
     // Run pipeline
     const postDecision = await this._pipeline.postExecute(toolCall, toolResponse, toolSuccess)

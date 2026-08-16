@@ -141,7 +141,10 @@ const { inputGuardrail, outputGuardrail } = adapter.asGuardrails()
 ```typescript
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
 const adapter = new ClaudeAgentSDKAdapter(guard)
-const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
+const options = {
+  allowedTools: ['Read'],
+  hooks: adapter.toSdkHooks(),
+}
 ```
 
 **LangChain.js** — middleware for ToolNode:
@@ -154,7 +157,7 @@ const middleware = adapter.asMiddleware()
 
 Adapters are thin wrappers. All rule enforcement logic lives in the pipeline.
 
-> **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. See adapter docs for per-SDK details.
+> **Output-check enforcement:** `guard.run()` guarantees full output-check enforcement. Native adapter hooks enforce preconditions deterministically; redact behavior after execution depends on SDK support. Claude Agent SDK native-hook postconditions are detection/warning only because replacement output must preserve each tool's result schema. See adapter docs for per-SDK details.
 
 ## What You Can Do
 

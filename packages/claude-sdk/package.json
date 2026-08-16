@@ -1,7 +1,7 @@
 {
   "name": "@edictum/claude-sdk",
-  "version": "0.2.1",
-  "description": "Claude Agent SDK adapter for Edictum agency-boundary enforcement",
+  "version": "0.3.0",
+  "description": "Claude Agent SDK adapter for Edictum runtime rule enforcement on AI agent tool calls",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -24,22 +24,26 @@
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:live-hooks": "node scripts/live-sdk-hook-proof.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@edictum/core": ">=0.3.0 <0.6.0",
-    "@anthropic-ai/claude-agent-sdk": ">=0.1.0"
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.221 <0.4.0",
+    "@edictum/core": ">=0.3.0 <0.6.0"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.221",
+    "@anthropic-ai/sdk": "0.115.0",
     "@edictum/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@types/node": "^25.5.0",
+    "eslint": "^10.1.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "eslint": "^10.1.0",
-    "typescript-eslint": "^8.57.2"
+    "typescript-eslint": "^8.57.2",
+    "vitest": "^3.0.0"
   },
   "keywords": [
     "ai",

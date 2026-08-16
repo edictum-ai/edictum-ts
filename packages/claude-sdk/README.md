@@ -1,10 +1,10 @@
 # @edictum/claude-sdk
 
-Claude Agent SDK adapter for Edictum agency-boundary enforcement.
+Claude Agent SDK adapter for Edictum runtime rule enforcement on AI agent tool calls.
 
-Part of [Edictum](https://github.com/edictum-ai/edictum-ts): the agency control layer for production AI agents.
+Part of [Edictum](https://github.com/edictum-ai/edictum-ts): runtime rule enforcement for AI agent tool calls in production.
 
-Agent frameworks build the agent. Edictum bounds the agency. This package composes Edictum with Claude SDK tool hooks while the core pipeline enforces rulesets and Workflow Gates.
+This package composes Edictum with Claude SDK tool hooks while the core pipeline enforces rulesets and Workflow Gates.
 
 ## Install
 
@@ -17,19 +17,70 @@ pnpm add @edictum/claude-sdk @edictum/core
 ```typescript
 import { Edictum } from '@edictum/core'
 import { ClaudeAgentSDKAdapter } from '@edictum/claude-sdk'
+import { query } from '@anthropic-ai/claude-agent-sdk'
 
 const guard = Edictum.fromYaml('rules.yaml')
 const adapter = new ClaudeAgentSDKAdapter(guard)
-const { PreToolUse, PostToolUse } = adapter.toSdkHooks()
+
+for await (const message of query({
+  prompt: 'Inspect this repository',
+  options: {
+    hooks: adapter.toSdkHooks(),
+  },
+})) {
+  // Consume SDK messages.
+}
 ```
 
 ## API
 
 - `ClaudeAgentSDKAdapter` — adapter class
-  - `toSdkHooks(options?)` — returns `{ PreToolUse, PostToolUse }` hook callback arrays
+  - `toSdkHooks(options?)` — returns the SDK-native `hooks` object. This is a breaking change from
+    the 0.2.x shape: each event now contains hook matcher objects, not bare callback arrays. The
+    corrected API ships as 0.3.0.
+  - `wrapCanUseTool(callback)` — wraps an SDK permission callback and rejects `updatedInput`
+    replacements after governance. Use it for every configured `canUseTool` callback.
   - `setPrincipal(principal)` — update principal mid-session
 - `ClaudeAgentSDKAdapterOptions` — constructor options (`sessionId`, `principal`, `principalResolver`)
 - `ToSdkHooksOptions` — `{ onPostconditionWarn }` callback
+
+The exported hook type aliases now also resolve to the SDK-native types. Code that imported the old
+structural `HookCallback`, input, or output aliases must update to the native three-argument callback
+and required SDK input fields. Code that only passed `toSdkHooks()` to `options.hooks` needs no
+additional bridge.
+
+Preconditions execute before the tool and can block it. Passing an Edictum precondition does not
+approve the call: the SDK still applies `allowedTools`, `canUseTool`, and its normal permission path.
+The pinned SDK executes a `canUseTool` `updatedInput` without another `PreToolUse` callback, so a raw
+permission callback can bypass governance. Always pass configured callbacks through
+`adapter.wrapCanUseTool(callback)`. The wrapper copies normal allow and deny results into fresh plain
+objects, preserves documented null responses, rejects input and permission mutations, and converts
+thrown or malformed callback results to a fixed denial. It deliberately does not forward
+`updatedPermissions`; pre-approve stable permissions through SDK options instead.
+The live verification has a permission callback mutate a detached copy of a benign command to a
+forbidden `touch` and proves that the SDK executes the original governed input unchanged.
+
+```typescript
+const options = {
+  hooks: adapter.toSdkHooks(),
+  canUseTool: adapter.wrapCanUseTool(permissionHandler),
+}
+```
+
+Postconditions execute after the tool, so
+they cannot undo filesystem, network, or other side effects. Native hook postconditions are detection
+and warning only for both built-in and MCP tools. The SDK's supported replacement field is
+`updatedToolOutput`, but its value must preserve the invoked tool's result schema. Edictum's generic
+redact/deny result does not carry enough schema information to do that safely, so the adapter does not
+claim output suppression. Both `PostToolUse` and `PostToolUseFailure` finalize pending calls so failed
+tools still run postconditions, fire warnings, and attempt failure audit emission. An SDK failure event
+is authoritative and cannot be overridden by a custom success check. Use a precondition to prevent a
+tool call. Suppressing a completed tool result requires a separate schema-aware wrapper.
+
+Post finalization is at-most-once. If a postcondition, workflow store, session store, or audit sink
+throws, the hook propagates that error but does not retry: those ports do not share a transaction or
+idempotency key, and retry could duplicate durable state. This is a core transaction-boundary gap,
+not a claim that failure audit is guaranteed.
 
 ## Links
 
