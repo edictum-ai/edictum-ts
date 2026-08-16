@@ -780,6 +780,22 @@ describe('toSdkHooks', () => {
     expect(result.hookSpecificOutput.permissionDecisionReason).toContain('BLOCKED')
   })
 
+  it('blocks PreToolUse when tool_input mutates while _pre is awaited', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
+    const toolInput = { command: 'echo safe' }
+    const pending = sdkCallback(options, 'PreToolUse')(
+      preInput('Bash', toolInput),
+      'call-1',
+      hookContext,
+    )
+    toolInput.command = 'touch /tmp/mutated-during-pre'
+    const result = (await pending) as PreToolUseHookOutput
+
+    expect(result.hookSpecificOutput.permissionDecision).toBe('deny')
+    expect(result.hookSpecificOutput.permissionDecisionReason).toContain('BLOCKED')
+  })
+
   it('PreToolUse hook returns no permission decision for passing rules', async () => {
     const guard = makeGuard()
     const adapter = new ClaudeAgentSDKAdapter(guard)

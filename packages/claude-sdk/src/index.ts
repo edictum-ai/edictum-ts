@@ -331,6 +331,37 @@ export class ClaudeAgentSDKAdapter {
         }
       }
 
+      // _pre stored a deep copy. The SDK-owned tool_input can still change
+      // while that await is in flight. Recheck the live object before {}.
+      const stored = this._pending.get(callId)
+      let inputStillMatches = false
+      try {
+        inputStillMatches =
+          stored !== undefined &&
+          pendingMatchesGovernedCall(stored, input.tool_name, input.tool_input)
+      } catch {
+        this._pending.delete(callId)
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'BLOCKED: Edictum could not compare tool input against the governed snapshot',
+          },
+        }
+      }
+      if (!inputStillMatches) {
+        this._pending.delete(callId)
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'BLOCKED: Edictum rejected a tool input replacement after PreToolUse governance',
+          },
+        }
+      }
+
       // Passing Edictum is not permission approval. Return no decision so the
       // SDK still applies allowedTools, canUseTool, and its normal prompt path.
       return {}
