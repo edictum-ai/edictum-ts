@@ -34,4 +34,4 @@ jobs:
         pnpm --filter @edictum/core build &&
         EDICTUM_CONFORMANCE_REQUIRED=1
         pnpm --filter @edictum/core test -- tests/yaml-engine/shared-fixtures.test.ts
-      fixture-ref: 59df5f7f029f7ddcde35e35343405a62c7a405ce
+      fixture-ref: c0cfa040c80b7ec22a10a6960108e82196025693
