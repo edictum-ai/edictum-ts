@@ -211,8 +211,6 @@ Edictum spans multiple repos that work together:
 - **edictum** (core Python): `edictum-ai/edictum` — MIT Python library. PyPI: `edictum`.
 - **edictum-ts** (core TypeScript): THIS REPO — MIT TypeScript library. npm: `@edictum/core`.
 - **edictum-go** (core Go): `edictum-ai/edictum-go` — Go SDK and CLI.
-- **edictum-api** (control-plane API): `edictum-ai/edictum-api` — hosted backend for runs, approvals, notifications, and audit.
-- **edictum-app** (control-plane UI): `edictum-ai/edictum-app` — hosted frontend for runs, approvals, policies, and settings.
 - **edictum-schemas** (shared): `edictum-ai/edictum-schemas` — Shared schema and conformance fixtures.
 
 The SDKs work standalone. The control plane is optional. The schema repo is the single source of truth for shared formats and fixtures.
