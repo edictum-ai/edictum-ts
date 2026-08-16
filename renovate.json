@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "npm"
+  ],
+  "minimumReleaseAge": "15 days",
+  "internalChecksFilter": "strict",
+  "prCreation": "not-pending",
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "after 9am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "description": "GitHub Actions: pin to commit SHA (the repo already SHA-pins; Renovate updates the SHA + the version comment), batch into one PR. The 15-day release-age floor is global and is never weakened here.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions",
+      "pinDigests": true,
+      "commitMessagePrefix": "chore(deps):"
+    },
+    {
+      "description": "First-party acartag7/* only: exempt from the 15-day release-age floor so hardening fixes propagate immediately. Scoped exclusion \u2014 never a blanket disable.",
+      "matchPackageNames": [
+        "/^acartag7\\//"
+      ],
+      "minimumReleaseAge": "0"
+    },
+    {
+      "description": "npm minor+patch together.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "npm minor+patch"
+    },
+    {
+      "description": "Adapter hosts (langchain-core, otel 1->2 / experimental OTLP) - separate group, not automerged.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "langchain",
+        "langchain-core",
+        "/^@langchain\\//",
+        "/^@opentelemetry\\//"
+      ],
+      "groupName": "npm majors and adapter-hosts",
+      "automerge": false
+    },
+    {
+      "description": "Remaining npm majors join the non-automerge majors/adapter-hosts group.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "groupName": "npm majors and adapter-hosts",
+      "automerge": false
+    }
+  ]
+}
