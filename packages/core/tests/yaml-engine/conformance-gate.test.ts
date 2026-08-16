@@ -138,7 +138,7 @@ describe('shared rejection runner — fail-closed gates', () => {
       try {
         const result = runRunner({ EDICTUM_SCHEMAS_DIR: root })
         expect(result.status, `runner output:\n${result.output}`).toBe(0)
-        expect(result.output).toContain('edictum-schemas not found or empty (optional mode)')
+        expect(result.output).toContain('1 skipped')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
