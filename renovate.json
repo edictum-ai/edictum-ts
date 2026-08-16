@@ -3,10 +3,6 @@
   "extends": ["config:recommended"],
   "enabledManagers": ["github-actions", "npm"],
   "minimumReleaseAge": "15 days",
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["after 9am on monday"]
-  },
   "internalChecksFilter": "strict",
   "prCreation": "not-pending",
   "timezone": "Europe/Berlin",
