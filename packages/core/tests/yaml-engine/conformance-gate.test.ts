@@ -17,6 +17,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -31,7 +32,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CORE_ROOT = resolve(HERE, '..', '..')
 const RUNNER_FILE = 'tests/yaml-engine/shared-fixtures.test.ts'
 const REPO_ROOT = resolve(CORE_ROOT, '..', '..')
-const VITEST_ENTRY = fileURLToPath(import.meta.resolve('vitest/vitest.mjs'))
+const require = createRequire(import.meta.url)
+const VITEST_ENTRY = require.resolve('vitest/vitest.mjs')
 
 interface RunnerResult {
   status: number | null
