@@ -801,13 +801,14 @@ describe('toSdkHooks', () => {
     const adapter = new ClaudeAgentSDKAdapter(guard)
     const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
 
-    const result = await sdkCallback(options, 'PreToolUse')(
+    const result: PreToolUseHookOutput = await sdkCallback(options, 'PreToolUse')(
       preInput('MyTool', {}),
       'call-1',
       hookContext,
     )
 
     expect(result).toEqual({})
+    expect(result.hookSpecificOutput).toBeUndefined()
   })
 
   it.each([null, [], 'string', 42])(
