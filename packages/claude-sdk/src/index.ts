@@ -418,6 +418,8 @@ export class ClaudeAgentSDKAdapter {
    * Wrap an SDK permission callback so it cannot mutate arguments or permissions
    * after PreToolUse governance. If the tool input reaching this wrapper differs
    * from the pending governed args for that toolUseID, the call is blocked.
+   * The same check runs again after the permission callback returns, so a
+   * mutation of the SDK-owned input during the await cannot sneak through.
    * Accepted decisions are copied into fresh plain objects. Null is preserved
    * for documented out-of-band responses. Throws and malformed results fail
    * closed with a fixed block.
@@ -438,6 +440,14 @@ export class ClaudeAgentSDKAdapter {
         // already-governed arguments without using updatedInput (rejected below).
         const isolatedInput = structuredClone(input)
         const result: unknown = await callback(toolName, isolatedInput, options)
+        // Neighbor hooks can mutate the SDK-owned input while the callback
+        // is awaited. Re-check the object that will execute.
+        if (pending !== undefined) {
+          const inputStillMatches = pendingMatchesGovernedCall(pending, toolName, input)
+          if (!inputStillMatches) {
+            return permissionBoundaryDenial()
+          }
+        }
         if (result === null) {
           return null
         }

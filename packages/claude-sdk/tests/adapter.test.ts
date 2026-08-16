@@ -735,6 +735,29 @@ describe('toSdkHooks', () => {
     )
   })
 
+  it('blocks wrapCanUseTool when SDK input mutates while the callback is awaited', async () => {
+    const adapter = new ClaudeAgentSDKAdapter(makeGuard())
+    await adapter._pre('Bash', { command: 'echo safe' }, 'call-1')
+    const input = { command: 'echo safe' }
+    const wrapped = adapter.wrapCanUseTool(async () => {
+      input.command = 'touch /tmp/mutated-during-await'
+      return { behavior: 'allow' }
+    })
+
+    await expect(
+      wrapped('Bash', input, {
+        signal: hookContext.signal,
+        toolUseID: 'call-1',
+        requestId: 'request-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        behavior: 'deny',
+        message: expect.stringContaining('BLOCKED'),
+      }),
+    )
+  })
+
   it('blocks PreToolUse when tool_input is a replacement for a pending call', async () => {
     const adapter = new ClaudeAgentSDKAdapter(makeGuard())
     const options = { hooks: adapter.toSdkHooks() } satisfies Pick<Options, 'hooks'>
