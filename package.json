@@ -1,7 +1,7 @@
 {
   "name": "edictum-ts",
   "private": true,
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.34.4",
   "engines": {
     "node": ">=22"
   },
