@@ -30,13 +30,13 @@
   },
   "peerDependencies": {
     "@edictum/core": ">=0.4.0 <0.6.0",
-    "ai": ">=5.0.0 <7.0.0"
+    "ai": ">=5.0.0 <8.0.0"
   },
   "devDependencies": {
     "@edictum/core": "workspace:*",
     "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.0",
     "vitest": "^3.0.0",
     "eslint": "^10.1.0",
     "typescript-eslint": "^8.58.0"
