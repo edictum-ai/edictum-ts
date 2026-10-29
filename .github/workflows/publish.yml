@@ -4,26 +4,47 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
+    # No OIDC here: this job installs dependencies and runs the build.
     runs-on: ubuntu-latest
-    environment: npm
+    permissions:
+      contents: read
+    outputs:
+      sums-digest: ${{ steps.sums.outputs.digest }}
     steps:
+      # Default ref: the release event's commit, the one the provenance names.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the release commit to be on main and match the package version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          # Tags look like core-v0.5.0: the package dir, then -v, then its version.
+          pkg="${TAG_NAME%-v*}"
+          want="${TAG_NAME##*-v}"
+          test -n "$pkg"
+          test "$pkg" != "$TAG_NAME"
+          test -f "packages/$pkg/package.json"
+          have=$(node -p 'require("./packages/" + process.argv[1] + "/package.json").version' "$pkg")
+          test "$have" = "$want"
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
@@ -82,19 +103,67 @@ jobs:
           fi
           echo "All workspace references resolved"
 
-      - name: Publish all packages
+      - name: Pack packages
         run: |
+          mkdir dist
           for pkg in core otel vercel-ai claude-sdk openai-agents langchain server; do
-            echo "Publishing @edictum/$pkg..."
-            cd packages/$pkg
-            output=$(npm publish --access public --provenance 2>&1) && echo "$output" || {
+            (cd "packages/$pkg" && npm pack --pack-destination ../../dist)
+          done
+
+      - name: Record digests
+        id: sums
+        working-directory: dist
+        run: |
+          sha256sum ./*.tgz > SHA256SUMS
+          echo "digest=$(sha256sum SHA256SUMS | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing + provenance
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Verify the artifact is the one the build job produced
+        working-directory: dist
+        env:
+          EXPECTED: ${{ needs.build.outputs.sums-digest }}
+        run: |
+          test -n "$EXPECTED"
+          test "$(sha256sum SHA256SUMS | cut -d' ' -f1)" = "$EXPECTED"
+          sha256sum --check --strict SHA256SUMS
+          test "$(find . -mindepth 1 -printf "%P\n" | sort)" = "$( { cut -d' ' -f3 SHA256SUMS | sed 's|^\./||'; echo SHA256SUMS; } | sort)"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Publishing a packed tarball runs no package lifecycle scripts.
+      - name: Publish all packages
+        working-directory: dist
+        run: |
+          for tgz in ./*.tgz; do
+            echo "Publishing $tgz..."
+            output=$(npm publish "$tgz" --access public --provenance 2>&1) && echo "$output" || {
               exit_code=$?
               if echo "$output" | grep -qE "EPUBLISHCONFLICT|E409|already exists|cannot publish over"; then
-                echo "Skipped @edictum/$pkg (already published)"
+                echo "Skipped $tgz (already published)"
               else
                 echo "$output" >&2
                 exit $exit_code
               fi
             }
-            cd ../..
           done
