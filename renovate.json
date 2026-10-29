@@ -17,6 +17,11 @@
   },
   "packageRules": [
     {
+      "description": "Major updates wait 30 days (the 15-day floor applies to everything else).",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "30 days"
+    },
+    {
       "description": "GitHub Actions: pin to commit SHA (the repo already SHA-pins; Renovate updates the SHA + the version comment), batch into one PR, 15-day release-age floor.",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
