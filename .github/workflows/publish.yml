@@ -6,6 +6,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   build:
     # No OIDC here: this job installs dependencies and runs the build.
@@ -21,17 +25,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require the release commit to be on main
+      - name: Require the release commit to be on main and match the package version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          # Tags look like core-v0.5.0: the package dir, then -v, then its version.
+          pkg="${TAG_NAME%-v*}"
+          want="${TAG_NAME##*-v}"
+          test -n "$pkg"
+          test "$pkg" != "$TAG_NAME"
+          test -f "packages/$pkg/package.json"
+          have=$(node -p 'require("./packages/" + process.argv[1] + "/package.json").version' "$pkg")
+          test "$have" = "$want"
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
