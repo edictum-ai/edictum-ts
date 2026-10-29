@@ -22,7 +22,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CORE_ROOT = resolve(HERE, '..', '..')
 const RUNNER_FILE = 'tests/workflow/workflow-v018-conformance.test.ts'
 const require = createRequire(import.meta.url)
-const VITEST_ENTRY = require.resolve('vitest/vitest.mjs')
+// vitest 4 no longer exports the CLI file as a subpath; locate it beside package.json.
+const VITEST_ENTRY = resolve(dirname(require.resolve('vitest/package.json')), 'vitest.mjs')
 
 function runRunner(env: Record<string, string>): { status: number | null; output: string } {
   if (!existsSync(VITEST_ENTRY)) {

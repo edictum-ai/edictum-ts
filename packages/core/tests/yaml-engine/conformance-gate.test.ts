@@ -33,7 +33,8 @@ const CORE_ROOT = resolve(HERE, '..', '..')
 const RUNNER_FILE = 'tests/yaml-engine/shared-fixtures.test.ts'
 const REPO_ROOT = resolve(CORE_ROOT, '..', '..')
 const require = createRequire(import.meta.url)
-const VITEST_ENTRY = require.resolve('vitest/vitest.mjs')
+// vitest 4 no longer exports the CLI file as a subpath; locate it beside package.json.
+const VITEST_ENTRY = resolve(dirname(require.resolve('vitest/package.json')), 'vitest.mjs')
 
 interface RunnerResult {
   status: number | null
