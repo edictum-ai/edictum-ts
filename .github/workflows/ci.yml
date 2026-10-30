@@ -24,6 +24,14 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      - name: Cooldown exceptions are within their dates
+        run: |
+          today=$(date -u +%F)
+          expired=$(grep -oE 'Expires: [0-9]{4}-[0-9]{2}-[0-9]{2}' pnpm-workspace.yaml | awk -v t="$today" '$2 <= t { print $2 }' || true)
+          if [ -n "$expired" ]; then
+            echo "::error file=pnpm-workspace.yaml::cooldown exception past its expiry ($expired); delete it and re-check the lockfile"
+            exit 1
+          fi
       - name: Build
         run: pnpm -r build
       - name: Lint
