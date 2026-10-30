@@ -6,29 +6,17 @@ packages:
 minimumReleaseAge: 21600
 
 # Advisory exceptions to the floor, each pinned to the exact version
-# edictum-ts#198 moved to. Remove an entry on or after the date shown, then
-# run `pnpm install --lockfile-only` and confirm the lockfile doesn't change.
+# edictum-ts#198 moved to. Each group has an "Expires:" date, the day the
+# floor admits the version. CI fails once that date is reached: delete the
+# group, run `pnpm install --lockfile-only`, and confirm the lockfile doesn't
+# change.
 minimumReleaseAgeExclude:
-  # GHSA-82fw-gwwq-j7x9, GHSA-qxg6-89mg-rqv8; vitest 4 also retires tinypool
-  # (GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr). Published 2026-10-15; remove
-  # on or after 2026-10-30.
-  - vitest@4.1.12
-  - '@vitest/expect@4.1.12'
-  - '@vitest/mocker@4.1.12'
-  - '@vitest/pretty-format@4.1.12'
-  - '@vitest/runner@4.1.12'
-  - '@vitest/snapshot@4.1.12'
-  - '@vitest/spy@4.1.12'
-  - '@vitest/utils@4.1.12'
-  # GHSA-27r3-jxmh-p828, GHSA-v422-hmwv-36x6. Published 2026-10-22; remove on
-  # or after 2026-11-06.
+  # GHSA-27r3-jxmh-p828, GHSA-v422-hmwv-36x6. Published 2026-10-22.
+  # Expires: 2026-11-06
   - body-parser@2.4.0
-  # The fast-uri advisories listed in edictum-ts#198. Published 2026-10-19;
-  # remove on or after 2026-11-03.
+  # The fast-uri advisories listed in edictum-ts#198. Published 2026-10-19.
+  # Expires: 2026-11-03
   - fast-uri@3.1.9
-  # The markdown-it advisories listed in edictum-ts#198. Published 2026-10-16;
-  # remove on or after 2026-10-31.
+  # The markdown-it advisories listed in edictum-ts#198. Published 2026-10-16.
+  # Expires: 2026-10-31
   - markdown-it@14.3.3
-  # GHSA-4mjr-xmp4-gh2g and the other qs advisories in edictum-ts#198.
-  # Published 2026-10-14; remove on or after 2026-10-29.
-  - qs@6.16.1
