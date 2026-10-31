@@ -17,6 +17,3 @@ minimumReleaseAgeExclude:
   # The fast-uri advisories listed in edictum-ts#198. Published 2026-10-19.
   # Expires: 2026-11-03
   - fast-uri@3.1.9
-  # The markdown-it advisories listed in edictum-ts#198. Published 2026-10-16.
-  # Expires: 2026-10-31
-  - markdown-it@14.3.3
