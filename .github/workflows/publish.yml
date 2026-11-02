@@ -20,7 +20,7 @@ jobs:
       sums-digest: ${{ steps.sums.outputs.digest }}
     steps:
       # Default ref: the release event's commit, the one the provenance names.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -40,9 +40,9 @@ jobs:
           have=$(node -p 'require("./packages/" + process.argv[1] + "/package.json").version' "$pkg")
           test "$have" = "$want"
 
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
 
@@ -117,7 +117,7 @@ jobs:
           sha256sum ./*.tgz > SHA256SUMS
           echo "digest=$(sha256sum SHA256SUMS | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dist
           path: dist/
@@ -131,7 +131,7 @@ jobs:
       contents: read
       id-token: write # npm trusted publishing + provenance
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: dist
           path: dist
@@ -146,7 +146,7 @@ jobs:
           sha256sum --check --strict SHA256SUMS
           test "$(find . -mindepth 1 -printf "%P\n" | sort)" = "$( { cut -d' ' -f3 SHA256SUMS | sed 's|^\./||'; echo SHA256SUMS; } | sort)"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
