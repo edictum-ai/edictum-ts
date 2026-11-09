@@ -34,9 +34,9 @@
   "devDependencies": {
     "@edictum/core": "workspace:*",
     "tsup": "^8.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.12",
-    "@types/node": "^25.5.0",
+    "typescript": "^7.0.0",
+    "vitest": "^5.0.0",
+    "@types/node": "^26.0.0",
     "eslint": "^10.1.0",
     "typescript-eslint": "^8.58.0"
   },
