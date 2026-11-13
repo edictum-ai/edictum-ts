@@ -17,3 +17,5 @@ minimumReleaseAgeExclude:
   # The fast-uri advisories listed in edictum-ts#198. Published 2026-10-19.
   # Expires: 2026-11-03
   - fast-uri@3.1.9
+  # Renovate security update: hono@4.13.16
+  - hono@4.13.16
